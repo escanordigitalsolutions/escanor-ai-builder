@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -11,9 +11,17 @@ type ActivityItem = {
 };
 
 type Message = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
   activity?: ActivityItem[];
+};
+
+type Conversation = {
+  id: string;
+  title: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export default function ProjectAIChat({
@@ -23,8 +31,138 @@ export default function ProjectAIChat({
 }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function initializeHistory() {
+      setHistoryLoading(true);
+
+      try {
+        const response = await fetch(
+          `/api/projects/${projectId}/conversations`,
+          {
+            cache: "no-store",
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error ?? "Could not load conversations.");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const loadedConversations: Conversation[] = Array.isArray(
+          data.conversations
+        )
+          ? data.conversations
+          : [];
+
+        setConversations(loadedConversations);
+
+        const firstConversation = loadedConversations[0];
+
+        if (!firstConversation) {
+          setConversationId(null);
+          setMessages([]);
+          return;
+        }
+
+        const detailResponse = await fetch(
+          `/api/projects/${projectId}/conversations/${firstConversation.id}`,
+          {
+            cache: "no-store",
+          }
+        );
+
+        const detailData = await detailResponse.json();
+
+        if (!detailResponse.ok || !detailData.success) {
+          throw new Error(detailData.error ?? "Could not load conversation.");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setConversationId(firstConversation.id);
+        setMessages(normalizeMessages(detailData.messages));
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Could not load chat history."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    }
+
+    void initializeHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  async function openConversation(id: string) {
+    if (loading || historyLoading || id === conversationId) {
+      return;
+    }
+
+    setHistoryLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/conversations/${id}`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error ?? "Could not load conversation.");
+      }
+
+      setConversationId(id);
+      setMessages(normalizeMessages(data.messages));
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load conversation."
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function startNewChat() {
+    if (loading) {
+      return;
+    }
+
+    setConversationId(null);
+    setMessages([]);
+    setInput("");
+    setError("");
+  }
 
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
@@ -34,7 +172,7 @@ export default function ProjectAIChat({
   async function submitMessage(rawMessage: string) {
     const message = rawMessage.trim();
 
-    if (!message || loading) {
+    if (!message || loading || historyLoading) {
       return;
     }
 
@@ -58,6 +196,7 @@ export default function ProjectAIChat({
         },
         body: JSON.stringify({
           message,
+          conversationId,
         }),
       });
 
@@ -67,6 +206,17 @@ export default function ProjectAIChat({
         throw new Error(data.error ?? "AI request failed.");
       }
 
+      const returnedConversation: Conversation = data.conversation;
+
+      setConversationId(returnedConversation.id);
+
+      setConversations((current) => [
+        returnedConversation,
+        ...current.filter(
+          (conversation) => conversation.id !== returnedConversation.id
+        ),
+      ]);
+
       setMessages((current) => [
         ...current,
         {
@@ -75,9 +225,11 @@ export default function ProjectAIChat({
           activity: Array.isArray(data.activity) ? data.activity : [],
         },
       ]);
-    } catch (error) {
+    } catch (requestError) {
       setError(
-        error instanceof Error ? error.message : "Something went wrong."
+        requestError instanceof Error
+          ? requestError.message
+          : "Something went wrong."
       );
     } finally {
       setLoading(false);
@@ -86,124 +238,224 @@ export default function ProjectAIChat({
 
   return (
     <div className="overflow-hidden rounded-xl border border-neutral-800">
-      <div className="border-b border-neutral-800 p-5">
-        <div className="flex items-center gap-3">
-          <div className="h-2 w-2 rounded-full bg-green-400" />
-
-          <div>
-            <h2 className="font-medium">AI Workspace</h2>
-            <p className="mt-1 text-xs text-neutral-500">
-              Read-only project analysis
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="min-h-[350px] max-h-[650px] space-y-5 overflow-y-auto p-6">
-        {messages.length === 0 && (
-          <div className="py-16 text-center">
-            <p className="text-neutral-400">
-              Ask about this WordPress project.
-            </p>
-
-            <p className="mt-2 text-sm text-neutral-600">
-              The AI can inspect the theme and companion plugin.
-            </p>
-
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              <Suggestion
-                onClick={() => submitMessage("Analyze the project structure")}
-              >
-                Analyze the project structure
-              </Suggestion>
-
-              <Suggestion
-                onClick={() => submitMessage("How is the homepage built?")}
-              >
-                How is the homepage built?
-              </Suggestion>
-
-              <Suggestion
-                onClick={() => submitMessage("Explain the theme architecture")}
-              >
-                Explain the theme architecture
-              </Suggestion>
+      <div className="grid min-h-[650px] md:grid-cols-[220px_1fr]">
+        <aside className="border-b border-neutral-800 bg-neutral-950/70 md:border-b-0 md:border-r">
+          <div className="flex items-center justify-between border-b border-neutral-800 p-4">
+            <div>
+              <p className="text-xs font-medium text-neutral-400">Chats</p>
+              <p className="mt-1 text-[11px] text-neutral-600">
+                Saved per project
+              </p>
             </div>
-          </div>
-        )}
 
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={
-              message.role === "user"
-                ? "ml-auto max-w-[80%]"
-                : "mr-auto max-w-[92%]"
-            }
-          >
-            <p className="mb-2 text-xs text-neutral-600">
-              {message.role === "user" ? "You" : "AI Builder"}
-            </p>
-
-            <div
-              className={
-                message.role === "user"
-                  ? "rounded-xl bg-white px-4 py-3 text-black"
-                  : "rounded-xl border border-neutral-800 bg-neutral-900 px-5 py-4"
-              }
+            <button
+              type="button"
+              onClick={startNewChat}
+              disabled={loading}
+              className="rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs text-neutral-400 transition hover:border-neutral-700 hover:text-white disabled:opacity-40"
             >
-              {message.role === "assistant" ? (
-                <MarkdownContent content={message.content} />
-              ) : (
-                <p className="whitespace-pre-wrap">{message.content}</p>
-              )}
-            </div>
-
-            {message.role === "assistant" &&
-              message.activity &&
-              message.activity.length > 0 && (
-                <ActivityPanel activity={message.activity} />
-              )}
+              + New
+            </button>
           </div>
-        ))}
 
-        {loading && (
-          <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 px-4 py-3 text-sm text-neutral-500">
+          <div className="max-h-[190px] overflow-y-auto p-2 md:max-h-[590px]">
+            {conversations.length === 0 && !historyLoading && (
+              <p className="px-2 py-4 text-xs text-neutral-600">
+                No saved chats yet.
+              </p>
+            )}
+
+            {conversations.map((conversation) => {
+              const active = conversation.id === conversationId;
+
+              return (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => openConversation(conversation.id)}
+                  disabled={loading || historyLoading}
+                  className={
+                    active
+                      ? "mb-1 w-full rounded-lg bg-neutral-800 px-3 py-2.5 text-left text-sm text-white"
+                      : "mb-1 w-full rounded-lg px-3 py-2.5 text-left text-sm text-neutral-500 transition hover:bg-neutral-900 hover:text-neutral-300"
+                  }
+                >
+                  <span className="block truncate">{conversation.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+
+        <section className="flex min-w-0 flex-col">
+          <div className="border-b border-neutral-800 p-5">
             <div className="flex items-center gap-3">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
-              Inspecting project files...
+              <div className="h-2 w-2 rounded-full bg-green-400" />
+
+              <div className="min-w-0">
+                <h2 className="font-medium">AI Workspace</h2>
+                <p className="mt-1 truncate text-xs text-neutral-500">
+                  {conversationId
+                    ? conversations.find(
+                        (conversation) => conversation.id === conversationId
+                      )?.title ?? "Saved conversation"
+                    : "New conversation · read-only project analysis"}
+                </p>
+              </div>
             </div>
           </div>
-        )}
 
-        {error && (
-          <div className="rounded-lg border border-red-900 bg-red-950/30 p-4 text-sm text-red-400">
-            {error}
+          <div className="min-h-[430px] flex-1 space-y-5 overflow-y-auto p-6">
+            {historyLoading && (
+              <div className="py-16 text-center text-sm text-neutral-600">
+                Loading chat history...
+              </div>
+            )}
+
+            {!historyLoading && messages.length === 0 && (
+              <div className="py-16 text-center">
+                <p className="text-neutral-400">
+                  Ask about this WordPress project.
+                </p>
+
+                <p className="mt-2 text-sm text-neutral-600">
+                  Conversations are now saved automatically.
+                </p>
+
+                <div className="mt-6 flex flex-wrap justify-center gap-2">
+                  <Suggestion
+                    onClick={() =>
+                      submitMessage("Analyze the project structure")
+                    }
+                  >
+                    Analyze the project structure
+                  </Suggestion>
+
+                  <Suggestion
+                    onClick={() => submitMessage("How is the homepage built?")}
+                  >
+                    How is the homepage built?
+                  </Suggestion>
+
+                  <Suggestion
+                    onClick={() =>
+                      submitMessage("Explain the theme architecture")
+                    }
+                  >
+                    Explain the theme architecture
+                  </Suggestion>
+                </div>
+              </div>
+            )}
+
+            {!historyLoading &&
+              messages.map((message, index) => (
+                <div
+                  key={message.id ?? index}
+                  className={
+                    message.role === "user"
+                      ? "ml-auto max-w-[80%]"
+                      : "mr-auto max-w-[92%]"
+                  }
+                >
+                  <p className="mb-2 text-xs text-neutral-600">
+                    {message.role === "user" ? "You" : "AI Builder"}
+                  </p>
+
+                  <div
+                    className={
+                      message.role === "user"
+                        ? "rounded-xl bg-white px-4 py-3 text-black"
+                        : "rounded-xl border border-neutral-800 bg-neutral-900 px-5 py-4"
+                    }
+                  >
+                    {message.role === "assistant" ? (
+                      <MarkdownContent content={message.content} />
+                    ) : (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    )}
+                  </div>
+
+                  {message.role === "assistant" &&
+                    message.activity &&
+                    message.activity.length > 0 && (
+                      <ActivityPanel activity={message.activity} />
+                    )}
+                </div>
+              ))}
+
+            {loading && (
+              <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 px-4 py-3 text-sm text-neutral-500">
+                <div className="flex items-center gap-3">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
+                  Inspecting project files...
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <div className="rounded-lg border border-red-900 bg-red-950/30 p-4 text-sm text-red-400">
+                {error}
+              </div>
+            )}
           </div>
-        )}
+
+          <form
+            onSubmit={sendMessage}
+            className="flex gap-3 border-t border-neutral-800 p-4"
+          >
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Ask AI about this project..."
+              disabled={historyLoading}
+              className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-500 disabled:opacity-50"
+            />
+
+            <button
+              type="submit"
+              disabled={loading || historyLoading || !input.trim()}
+              className="rounded-lg bg-white px-6 font-medium text-black disabled:opacity-40"
+            >
+              Send
+            </button>
+          </form>
+        </section>
       </div>
-
-      <form
-        onSubmit={sendMessage}
-        className="flex gap-3 border-t border-neutral-800 p-4"
-      >
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="Ask AI about this project..."
-          className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-500"
-        />
-
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          className="rounded-lg bg-white px-6 font-medium text-black disabled:opacity-40"
-        >
-          Send
-        </button>
-      </form>
     </div>
   );
+}
+
+function normalizeMessages(value: unknown): Message[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(
+      (message) =>
+        message &&
+        typeof message === "object" &&
+        "role" in message &&
+        "content" in message &&
+        (message.role === "user" || message.role === "assistant") &&
+        typeof message.content === "string"
+    )
+    .map((message) => {
+      const typed = message as {
+        id?: string;
+        role: "user" | "assistant";
+        content: string;
+        activity?: ActivityItem[];
+      };
+
+      return {
+        id: typed.id,
+        role: typed.role,
+        content: typed.content,
+        activity: Array.isArray(typed.activity) ? typed.activity : [],
+      };
+    });
 }
 
 function MarkdownContent({ content }: { content: string }) {
