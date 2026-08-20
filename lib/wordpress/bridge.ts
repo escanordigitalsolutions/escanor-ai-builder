@@ -1,5 +1,17 @@
 export type ProjectScope = "theme" | "plugin";
 
+export class WordPressBridgeError extends Error {
+  status: number;
+  data: unknown;
+
+  constructor(message: string, status: number, data: unknown) {
+    super(message);
+    this.name = "WordPressBridgeError";
+    this.status = status;
+    this.data = data;
+  }
+}
+
 function getAllowedHosts() {
   return new Set(
     (process.env.WP_BRIDGE_ALLOWED_HOSTS ?? "")
@@ -29,39 +41,70 @@ async function bridgeRequest(
   siteUrl: string,
   token: string,
   endpoint: string,
-  params?: Record<string, string>
+  options?: {
+    method?: "GET" | "POST";
+    params?: Record<string, string>;
+    body?: unknown;
+    timeoutMs?: number;
+  }
 ) {
   const origin = getSafeOrigin(siteUrl);
   const url = new URL(`/wp-json/wp-ai-builder/v1/${endpoint}`, origin);
 
-  if (params) {
-    for (const [key, value] of Object.entries(params)) {
+  if (options?.params) {
+    for (const [key, value] of Object.entries(options.params)) {
       url.searchParams.set(key, value);
     }
   }
 
+  const method = options?.method ?? "GET";
+
   const response = await fetch(url.toString(), {
-    method: "GET",
+    method,
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
+      ...(method === "POST"
+        ? {
+            "Content-Type": "application/json",
+          }
+        : {}),
     },
+    body:
+      method === "POST" && options && "body" in options
+        ? JSON.stringify(options.body)
+        : undefined,
     cache: "no-store",
     redirect: "error",
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(options?.timeoutMs ?? 10000),
   });
 
-  if (!response.ok) {
-    throw new Error(`WordPress Bridge returned HTTP ${response.status}.`);
-  }
-
   const contentType = response.headers.get("content-type") ?? "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : null;
+
+  if (!response.ok) {
+    const message =
+      data &&
+      typeof data === "object" &&
+      "message" in data &&
+      typeof data.message === "string"
+        ? data.message
+        : `WordPress Bridge returned HTTP ${response.status}.`;
+
+    throw new WordPressBridgeError(message, response.status, data);
+  }
 
   if (!contentType.includes("application/json")) {
-    throw new Error("WordPress Bridge did not return JSON.");
+    throw new WordPressBridgeError(
+      "WordPress Bridge did not return JSON.",
+      response.status,
+      null
+    );
   }
 
-  return response.json();
+  return data;
 }
 
 export async function getBridgeStatus(siteUrl: string, token: string) {
@@ -76,12 +119,20 @@ export async function getBridgeManifest(siteUrl: string, token: string) {
   return bridgeRequest(siteUrl, token, "manifest");
 }
 
+export async function getBridgeSnapshots(siteUrl: string, token: string) {
+  return bridgeRequest(siteUrl, token, "snapshots");
+}
+
 export async function listProjectFiles(
   siteUrl: string,
   token: string,
   scope: ProjectScope
 ) {
-  return bridgeRequest(siteUrl, token, "files", { scope });
+  return bridgeRequest(siteUrl, token, "files", {
+    params: {
+      scope,
+    },
+  });
 }
 
 export async function readProjectFile(
@@ -90,7 +141,12 @@ export async function readProjectFile(
   scope: ProjectScope,
   path: string
 ) {
-  return bridgeRequest(siteUrl, token, "file", { scope, path });
+  return bridgeRequest(siteUrl, token, "file", {
+    params: {
+      scope,
+      path,
+    },
+  });
 }
 
 export async function readProjectFiles(
@@ -131,4 +187,38 @@ export async function readProjectFiles(
     count: files.length,
     files,
   };
+}
+
+export async function applyProjectChanges(
+  siteUrl: string,
+  token: string,
+  payload: {
+    proposal_id: string;
+    files: Array<{
+      scope: ProjectScope;
+      path: string;
+      expected_sha256: string;
+      content: string;
+    }>;
+  }
+) {
+  return bridgeRequest(siteUrl, token, "apply", {
+    method: "POST",
+    body: payload,
+    timeoutMs: 30000,
+  });
+}
+
+export async function rollbackProjectSnapshot(
+  siteUrl: string,
+  token: string,
+  snapshotId: string
+) {
+  return bridgeRequest(siteUrl, token, "rollback", {
+    method: "POST",
+    body: {
+      snapshot_id: snapshotId,
+    },
+    timeoutMs: 30000,
+  });
 }

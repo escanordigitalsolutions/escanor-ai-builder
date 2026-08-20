@@ -207,7 +207,7 @@ export default function ProjectProposalEngine({
     if (
       status === "approved" &&
       !window.confirm(
-        "Approve this proposal? This records approval only. No live WordPress files will be changed yet."
+        "Approve this proposal? Approval does not change WordPress until you explicitly apply it in Deployment Control."
       )
     ) {
       return;
@@ -281,7 +281,7 @@ export default function ProjectProposalEngine({
 
             <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-500">
               AI inspects the live project and creates a reviewable change set.
-              This version never writes to WordPress.
+              Review and approve here; live changes are applied separately through Deployment Control below.
             </p>
           </div>
 
@@ -392,7 +392,7 @@ export default function ProjectProposalEngine({
                 Your first AI change proposal will appear here.
               </p>
               <p className="mt-2 text-sm text-neutral-600">
-                No WordPress file can be modified from this screen yet.
+                Generate and approve a proposal here, then deploy it explicitly below.
               </p>
             </div>
           )}
@@ -429,7 +429,7 @@ export default function ProjectProposalEngine({
               <div className="mt-6 flex flex-col justify-between gap-4 border-t border-neutral-800 pt-5 sm:flex-row sm:items-center">
                 <div>
                   <p className="text-xs text-neutral-500">
-                    Approval does not modify WordPress in v2E.
+                    Approval does not modify WordPress by itself.
                   </p>
                   <p className="mt-1 text-[11px] text-neutral-700">
                     Controlled apply + snapshot + rollback arrives with Bridge

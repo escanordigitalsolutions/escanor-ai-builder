@@ -8,6 +8,7 @@ import ProjectAIChat from "@/components/project-ai-chat";
 import ProjectConnectionPanel from "@/components/project-connection-panel";
 import ProjectUsageSummary from "@/components/project-usage-summary";
 import ProjectProposalEngine from "@/components/project-proposal-engine";
+import ProjectDeploymentControl from "@/components/project-deployment-control";
 
 type Props = {
   params: Promise<{
@@ -109,6 +110,10 @@ export default async function ProjectPage({
 
         <div className="mt-8">
           <ProjectProposalEngine projectId={project.id} />
+        </div>
+
+        <div className="mt-8">
+          <ProjectDeploymentControl projectId={project.id} />
         </div>
 
         <div className="mt-8">
