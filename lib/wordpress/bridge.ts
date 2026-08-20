@@ -72,6 +72,10 @@ export async function getBridgeProject(siteUrl: string, token: string) {
   return bridgeRequest(siteUrl, token, "project");
 }
 
+export async function getBridgeManifest(siteUrl: string, token: string) {
+  return bridgeRequest(siteUrl, token, "manifest");
+}
+
 export async function listProjectFiles(
   siteUrl: string,
   token: string,

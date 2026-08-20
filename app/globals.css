@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0d0f11;
+  --foreground: #edf0f2;
+  --silver-glow: rgba(231, 235, 238, 0.08);
+  --silver-line: rgba(203, 209, 214, 0.16);
 }
 
 @theme inline {
@@ -10,17 +12,59 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-neutral-50: #f7f8f9;
+  --color-neutral-100: #eceff1;
+  --color-neutral-200: #d9dde0;
+  --color-neutral-300: #c2c7cb;
+  --color-neutral-400: #a8afb5;
+  --color-neutral-500: #858d94;
+  --color-neutral-600: #687078;
+  --color-neutral-700: #4a5157;
+  --color-neutral-800: #30353a;
+  --color-neutral-900: #1b1f22;
+  --color-neutral-950: #0d0f11;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  min-height: 100%;
+  color-scheme: dark;
+  background: #0d0f11;
 }
 
 body {
-  background: var(--background);
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(236, 239, 242, 0.09), transparent 34rem),
+    radial-gradient(circle at 8% 18%, rgba(180, 188, 195, 0.04), transparent 28rem),
+    linear-gradient(180deg, #111417 0%, #0d0f11 42%, #0a0c0e 100%);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  background-attachment: fixed;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background: linear-gradient(115deg, transparent 18%, rgba(255,255,255,0.018) 45%, transparent 70%);
+}
+
+::selection {
+  background: #d4d8dc;
+  color: #111315;
+}
+
+* {
+  scrollbar-color: #444b51 #15181b;
+}
+
+input,
+button,
+textarea,
+select {
+  font: inherit;
 }

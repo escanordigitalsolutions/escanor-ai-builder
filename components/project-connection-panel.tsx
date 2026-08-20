@@ -38,6 +38,9 @@ export default function ProjectConnectionPanel({
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
 
+  const resolvedSiteUrl = connection?.siteUrl ?? siteUrl ?? "";
+  const wpAdminBridgeUrl = getWpAdminBridgeUrl(resolvedSiteUrl);
+
   async function testConnection() {
     setTesting(true);
     setError("");
@@ -89,9 +92,7 @@ export default function ProjectConnectionPanel({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          token,
-        }),
+        body: JSON.stringify({ token }),
       });
 
       const data = await response.json();
@@ -118,9 +119,9 @@ export default function ProjectConnectionPanel({
   const connected = connection?.connected !== false;
 
   return (
-    <div className="rounded-xl border border-neutral-800 p-5">
+    <div className="rounded-xl border border-neutral-800 bg-neutral-950/45 p-5 shadow-[inset_0_1px_rgba(255,255,255,0.025)]">
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs uppercase tracking-wide text-neutral-600">
             WordPress connection
           </p>
@@ -133,19 +134,26 @@ export default function ProjectConnectionPanel({
                   : "h-2 w-2 rounded-full bg-red-400"
               }
             />
-            <span className="text-sm">
+            <span className="text-sm text-neutral-200">
               {connected ? "Connected" : "Needs attention"}
             </span>
           </div>
 
           <p className="mt-2 max-w-md truncate text-xs text-neutral-500">
-            {connection?.siteUrl ?? siteUrl ?? "No site URL"}
+            {resolvedSiteUrl || "No site URL"}
           </p>
 
           <p className="mt-1 text-xs text-neutral-600">
-            Last checked:{" "}
-            {formatDate(connection?.lastConnectedAt ?? lastConnectedAt)}
+            Last checked: {formatDate(connection?.lastConnectedAt ?? lastConnectedAt)}
           </p>
+
+          {connection?.bridgeVersion && (
+            <p className="mt-2 text-[11px] text-neutral-500">
+              Bridge {connection.bridgeVersion}
+              {connection.themeName ? ` · ${connection.themeName}` : ""}
+              {connection.pluginName ? ` · ${connection.pluginName}` : ""}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap justify-end gap-2">
@@ -153,7 +161,7 @@ export default function ProjectConnectionPanel({
             type="button"
             onClick={testConnection}
             disabled={testing}
-            className="rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-300 transition hover:bg-neutral-900 disabled:opacity-40"
+            className="rounded-lg border border-neutral-700 bg-neutral-900/70 px-3 py-2 text-xs text-neutral-300 transition hover:border-neutral-500 hover:bg-neutral-800 disabled:opacity-40"
           >
             {testing ? "Checking..." : "Test connection"}
           </button>
@@ -165,10 +173,21 @@ export default function ProjectConnectionPanel({
               setError("");
             }}
             disabled={testing}
-            className="rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-300 transition hover:bg-neutral-900 disabled:opacity-40"
+            className="rounded-lg border border-neutral-700 bg-neutral-900/70 px-3 py-2 text-xs text-neutral-300 transition hover:border-neutral-500 hover:bg-neutral-800 disabled:opacity-40"
           >
             Replace token
           </button>
+
+          {wpAdminBridgeUrl && (
+            <a
+              href={wpAdminBridgeUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-lg border border-neutral-700 bg-neutral-900/70 px-3 py-2 text-xs text-neutral-300 transition hover:border-neutral-500 hover:bg-neutral-800"
+            >
+              WP Admin ↗
+            </a>
+          )}
         </div>
       </div>
 
@@ -191,15 +210,14 @@ export default function ProjectConnectionPanel({
               type="button"
               onClick={replaceToken}
               disabled={testing || !token.trim()}
-              className="rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-40"
+              className="rounded-lg bg-neutral-100 px-4 text-sm font-medium text-neutral-950 transition hover:bg-white disabled:opacity-40"
             >
               Save
             </button>
           </div>
 
           <p className="mt-2 text-[11px] text-neutral-600">
-            The token is validated against WordPress before the encrypted copy is
-            replaced.
+            The token is validated against WordPress before the encrypted copy is replaced.
           </p>
         </div>
       )}
@@ -211,6 +229,19 @@ export default function ProjectConnectionPanel({
       )}
     </div>
   );
+}
+
+function getWpAdminBridgeUrl(siteUrl: string) {
+  if (!siteUrl) {
+    return "";
+  }
+
+  try {
+    const url = new URL(siteUrl);
+    return `${url.origin}/wp-admin/admin.php?page=wp-ai-builder`;
+  } catch {
+    return "";
+  }
 }
 
 function formatDate(value?: string | null) {

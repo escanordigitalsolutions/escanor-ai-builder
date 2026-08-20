@@ -12,6 +12,19 @@ type SiteRow = {
   bridge_token_encrypted: string;
 };
 
+type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
+
+type OwnedSiteResult =
+  | {
+      ok: true;
+      supabase: SupabaseServerClient;
+      site: SiteRow;
+    }
+  | {
+      ok: false;
+      response: NextResponse;
+    };
+
 function buildMetadata(status: any, bridgeProject: any) {
   const theme = bridgeProject?.scopes?.theme;
   const plugin = bridgeProject?.scopes?.plugin;
@@ -28,7 +41,7 @@ function buildMetadata(status: any, bridgeProject: any) {
   };
 }
 
-async function getOwnedSite(projectId: string) {
+async function getOwnedSite(projectId: string): Promise<OwnedSiteResult> {
   const supabase = await createClient();
 
   const {
@@ -37,12 +50,11 @@ async function getOwnedSite(projectId: string) {
 
   if (!user) {
     return {
-      errorResponse: NextResponse.json(
+      ok: false,
+      response: NextResponse.json(
         { success: false, error: "Unauthorized." },
         { status: 401 }
       ),
-      supabase,
-      site: null as SiteRow | null,
     };
   }
 
@@ -61,12 +73,11 @@ async function getOwnedSite(projectId: string) {
 
   if (projectError || !project) {
     return {
-      errorResponse: NextResponse.json(
+      ok: false,
+      response: NextResponse.json(
         { success: false, error: "Project not found." },
         { status: 404 }
       ),
-      supabase,
-      site: null as SiteRow | null,
     };
   }
 
@@ -77,17 +88,16 @@ async function getOwnedSite(projectId: string) {
 
   if (!site) {
     return {
-      errorResponse: NextResponse.json(
+      ok: false,
+      response: NextResponse.json(
         { success: false, error: "WordPress connection is missing." },
         { status: 404 }
       ),
-      supabase,
-      site: null as SiteRow | null,
     };
   }
 
   return {
-    errorResponse: null,
+    ok: true,
     supabase,
     site,
   };
@@ -99,12 +109,13 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const { errorResponse, supabase, site } = await getOwnedSite(id);
+    const owned = await getOwnedSite(id);
 
-    if (errorResponse || !site) {
-      return errorResponse;
+    if (!owned.ok) {
+      return owned.response;
     }
 
+    const { supabase, site } = owned;
     const token = decryptSecret(site.bridge_token_encrypted);
 
     const [status, bridgeProject] = await Promise.all([
@@ -158,12 +169,13 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params;
-    const { errorResponse, supabase, site } = await getOwnedSite(id);
+    const owned = await getOwnedSite(id);
 
-    if (errorResponse || !site) {
-      return errorResponse;
+    if (!owned.ok) {
+      return owned.response;
     }
 
+    const { supabase, site } = owned;
     const body = await request.json();
     const token = typeof body.token === "string" ? body.token.trim() : "";
 
