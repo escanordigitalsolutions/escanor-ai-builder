@@ -1,4 +1,5 @@
 export type ProjectScope = "theme" | "plugin";
+export type ProjectFileOperation = "modify" | "create";
 
 export class WordPressBridgeError extends Error {
   status: number;
@@ -189,17 +190,34 @@ export async function readProjectFiles(
   };
 }
 
+export type BridgeChangePayload = {
+  operation: ProjectFileOperation;
+  scope: ProjectScope;
+  path: string;
+  expected_sha256: string | null;
+  content: string;
+};
+
+export async function preflightProjectChanges(
+  siteUrl: string,
+  token: string,
+  files: BridgeChangePayload[]
+) {
+  return bridgeRequest(siteUrl, token, "preflight", {
+    method: "POST",
+    body: {
+      files,
+    },
+    timeoutMs: 30000,
+  });
+}
+
 export async function applyProjectChanges(
   siteUrl: string,
   token: string,
   payload: {
     proposal_id: string;
-    files: Array<{
-      scope: ProjectScope;
-      path: string;
-      expected_sha256: string;
-      content: string;
-    }>;
+    files: BridgeChangePayload[];
   }
 ) {
   return bridgeRequest(siteUrl, token, "apply", {

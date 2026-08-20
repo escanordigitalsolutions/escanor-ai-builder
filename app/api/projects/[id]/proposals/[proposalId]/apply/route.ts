@@ -3,9 +3,30 @@ import { createClient } from "@/lib/supabase/server";
 import { decryptSecret } from "@/lib/security/encryption";
 import {
   applyProjectChanges,
+  preflightProjectChanges,
   WordPressBridgeError,
+  type ProjectFileOperation,
   type ProjectScope,
 } from "@/lib/wordpress/bridge";
+
+function firstPreflightError(report: any) {
+  const files = Array.isArray(report?.files) ? report.files : [];
+  const failed = files.find((file) => file?.ready === false);
+
+  if (
+    failed?.error &&
+    typeof failed.error === "object" &&
+    typeof failed.error.message === "string"
+  ) {
+    return failed.error.message;
+  }
+
+  if (typeof report?.global_error === "string" && report.global_error) {
+    return report.global_error;
+  }
+
+  return "The live project is no longer ready for this proposal.";
+}
 
 export async function POST(
   _request: Request,
@@ -40,6 +61,7 @@ export async function POST(
       title,
       status,
       ai_proposal_files (
+        operation,
         scope,
         path,
         original_sha256,
@@ -112,6 +134,93 @@ export async function POST(
     );
   }
 
+  const bridgeFiles = files.map((file) => ({
+    operation: (file.operation ?? "modify") as ProjectFileOperation,
+    scope: file.scope as ProjectScope,
+    path: file.path,
+    expected_sha256: file.original_sha256 ?? null,
+    content: file.proposed_content,
+  }));
+
+  let token: string;
+
+  try {
+    token = decryptSecret(siteRow.bridge_token_encrypted);
+  } catch (error) {
+    return NextResponse.json(
+      { success: false, error: "Could not decrypt WordPress connection." },
+      { status: 500 }
+    );
+  }
+
+  // Mandatory last-second validation before creating a deployment record.
+  try {
+    const report = await preflightProjectChanges(
+      siteRow.site_url,
+      token,
+      bridgeFiles
+    );
+
+    const now = new Date().toISOString();
+
+    await supabase
+      .from("ai_proposals")
+      .update({
+        last_preflight_at: now,
+        last_preflight_ok: report?.ready === true,
+        last_preflight_json: report ?? {},
+        updated_at: now,
+      })
+      .eq("id", proposalId);
+
+    if (report?.ready !== true) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: firstPreflightError(report),
+          preflight: report,
+        },
+        { status: 409 }
+      );
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "WordPress preflight failed.";
+    const detail =
+      error instanceof WordPressBridgeError ? error.data : null;
+
+    const now = new Date().toISOString();
+
+    await supabase
+      .from("ai_proposals")
+      .update({
+        last_preflight_at: now,
+        last_preflight_ok: false,
+        last_preflight_json:
+          detail && typeof detail === "object"
+            ? detail
+            : {
+                error: message,
+              },
+        updated_at: now,
+      })
+      .eq("id", proposalId);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: message,
+        bridge: detail,
+      },
+      {
+        status:
+          error instanceof WordPressBridgeError
+            ? Math.max(400, Math.min(error.status, 599))
+            : 500,
+      }
+    );
+  }
+
   const { data: run, error: runError } = await supabase
     .from("ai_apply_runs")
     .insert({
@@ -131,16 +240,9 @@ export async function POST(
   }
 
   try {
-    const token = decryptSecret(siteRow.bridge_token_encrypted);
-
     const result = await applyProjectChanges(siteRow.site_url, token, {
       proposal_id: proposalId,
-      files: files.map((file) => ({
-        scope: file.scope as ProjectScope,
-        path: file.path,
-        expected_sha256: file.original_sha256,
-        content: file.proposed_content,
-      })),
+      files: bridgeFiles,
     });
 
     const now = new Date().toISOString();
@@ -177,19 +279,16 @@ export async function POST(
         filesCount: files.length,
         bridgeVersion: result?.bridge_version ?? null,
         health: result?.health ?? null,
+        files: result?.files ?? [],
         completedAt: now,
       },
     });
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "WordPress apply failed.";
+      error instanceof Error ? error.message : "WordPress apply failed.";
 
     const detail =
-      error instanceof WordPressBridgeError
-        ? error.data
-        : null;
+      error instanceof WordPressBridgeError ? error.data : null;
 
     const now = new Date().toISOString();
 

@@ -9,10 +9,11 @@ type DiffPart = {
 
 type ProposalFile = {
   id: string;
+  operation: "modify" | "create";
   scope: "theme" | "plugin";
   path: string;
   summary: string;
-  originalSha256: string;
+  originalSha256: string | null;
   diff: DiffPart[];
 };
 
@@ -302,7 +303,7 @@ export default function ProjectProposalEngine({
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-neutral-600">
-              Up to 4 existing files · full-content proposals · SHA-256 pinned
+              Up to 6 files · modify or create · full-content proposals · SHA-256 pinned for edits
             </p>
 
             <button
@@ -432,8 +433,8 @@ export default function ProjectProposalEngine({
                     Approval does not modify WordPress by itself.
                   </p>
                   <p className="mt-1 text-[11px] text-neutral-700">
-                    Controlled apply + snapshot + rollback arrives with Bridge
-                    v0.4.
+                    Bridge v0.5 validates every approved change again before deployment.
+                    New files are created exclusively and removed again on rollback.
                   </p>
                 </div>
 
@@ -483,6 +484,16 @@ function ProposalFileDiff({ file }: { file: ProposalFile }) {
                 {file.scope}
               </span>
 
+              <span
+                className={
+                  file.operation === "create"
+                    ? "rounded-md border border-sky-900/60 bg-sky-950/25 px-2 py-1 text-[10px] uppercase tracking-wide text-sky-300"
+                    : "rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-500"
+                }
+              >
+                {file.operation}
+              </span>
+
               <code className="truncate text-sm text-neutral-200">
                 {file.path}
               </code>
@@ -492,7 +503,9 @@ function ProposalFileDiff({ file }: { file: ProposalFile }) {
           </div>
 
           <code className="text-[10px] text-neutral-700">
-            SHA {file.originalSha256.slice(0, 10)}…
+            {file.operation === "create" || !file.originalSha256
+              ? "NEW FILE"
+              : `SHA ${file.originalSha256.slice(0, 10)}…`}
           </code>
         </div>
       </summary>

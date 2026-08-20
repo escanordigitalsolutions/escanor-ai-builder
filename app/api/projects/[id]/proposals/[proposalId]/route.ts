@@ -35,6 +35,9 @@ async function getOwnedProposal(projectId: string, proposalId: string) {
       tool_calls,
       theme_fingerprint,
       plugin_fingerprint,
+      last_preflight_at,
+      last_preflight_ok,
+      last_preflight_json,
       created_at,
       updated_at,
       approved_at,
@@ -83,6 +86,7 @@ export async function GET(
     .from("ai_proposal_files")
     .select(`
       id,
+      operation,
       scope,
       path,
       change_summary,
@@ -120,12 +124,16 @@ export async function GET(
       toolCalls: proposal.tool_calls,
       themeFingerprint: proposal.theme_fingerprint,
       pluginFingerprint: proposal.plugin_fingerprint,
+      lastPreflightAt: proposal.last_preflight_at,
+      lastPreflightOk: proposal.last_preflight_ok,
+      lastPreflight: proposal.last_preflight_json,
       createdAt: proposal.created_at,
       updatedAt: proposal.updated_at,
       approvedAt: proposal.approved_at,
       discardedAt: proposal.discarded_at,
       files: (files ?? []).map((file) => ({
         id: file.id,
+        operation: file.operation,
         scope: file.scope,
         path: file.path,
         summary: file.change_summary,
@@ -213,7 +221,7 @@ export async function PATCH(
     liveChanged: false,
     message:
       status === "approved"
-        ? "Proposal approved. No WordPress files were changed; live apply arrives with the controlled-write Bridge."
+        ? "Proposal approved. Run preflight again before explicit deployment."
         : "Proposal discarded. No WordPress files were changed.",
   });
 }

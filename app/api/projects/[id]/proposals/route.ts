@@ -6,8 +6,10 @@ import { decryptSecret } from "@/lib/security/encryption";
 import {
   getBridgeManifest,
   listProjectFiles,
+  preflightProjectChanges,
   readProjectFile,
   readProjectFiles,
+  type ProjectFileOperation,
   type ProjectScope,
 } from "@/lib/wordpress/bridge";
 
@@ -24,6 +26,7 @@ type ActivityItem = {
 };
 
 type ProposalModelFile = {
+  operation: ProjectFileOperation;
   scope: ProjectScope;
   path: string;
   summary: string;
@@ -48,7 +51,7 @@ const tools = [
     type: "function" as const,
     name: "list_project_files",
     description:
-      "List readable files from the WordPress project's active theme or approved companion plugin. Use before reading so paths are never guessed.",
+      "List readable files from the WordPress project's active theme or approved companion plugin. Use before reading so existing paths are never guessed.",
     strict: true,
     parameters: {
       type: "object",
@@ -66,7 +69,7 @@ const tools = [
     type: "function" as const,
     name: "read_project_files",
     description:
-      "Read 1-8 exact files from one project scope. Use this to inspect the minimum relevant files needed to create a safe proposal.",
+      "Read 1-8 exact existing files from one project scope. Use this to inspect the minimum relevant files needed to create a safe proposal.",
     strict: true,
     parameters: {
       type: "object",
@@ -110,10 +113,14 @@ const proposalFormat = {
       files: {
         type: "array",
         minItems: 1,
-        maxItems: 4,
+        maxItems: 6,
         items: {
           type: "object",
           properties: {
+            operation: {
+              type: "string",
+              enum: ["modify", "create"],
+            },
             scope: {
               type: "string",
               enum: ["theme", "plugin"],
@@ -128,7 +135,13 @@ const proposalFormat = {
               type: "string",
             },
           },
-          required: ["scope", "path", "summary", "proposedContent"],
+          required: [
+            "operation",
+            "scope",
+            "path",
+            "summary",
+            "proposedContent",
+          ],
           additionalProperties: false,
         },
       },
@@ -141,6 +154,14 @@ const proposalFormat = {
 function validateScope(value: unknown): ProjectScope {
   if (value !== "theme" && value !== "plugin") {
     throw new Error("Invalid project scope.");
+  }
+
+  return value;
+}
+
+function validateOperation(value: unknown): ProjectFileOperation {
+  if (value !== "modify" && value !== "create") {
+    throw new Error("Invalid project file operation.");
   }
 
   return value;
@@ -214,6 +235,25 @@ function manifestFileMap(manifest: any, scope: ProjectScope) {
   );
 }
 
+function firstPreflightError(report: any) {
+  const files = Array.isArray(report?.files) ? report.files : [];
+  const failed = files.find((file) => file?.ready === false);
+
+  if (
+    failed?.error &&
+    typeof failed.error === "object" &&
+    typeof failed.error.message === "string"
+  ) {
+    return failed.error.message;
+  }
+
+  if (typeof report?.global_error === "string" && report.global_error) {
+    return report.global_error;
+  }
+
+  return "WordPress Bridge preflight rejected the proposal.";
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -260,8 +300,11 @@ export async function GET(
       updated_at,
       approved_at,
       discarded_at,
+      last_preflight_at,
+      last_preflight_ok,
       ai_proposal_files (
-        id
+        id,
+        operation
       )
     `)
     .eq("project_id", id)
@@ -279,23 +322,31 @@ export async function GET(
 
   return NextResponse.json({
     success: true,
-    proposals: (data ?? []).map((proposal) => ({
-      id: proposal.id,
-      title: proposal.title,
-      summary: proposal.summary,
-      risk: proposal.risk,
-      status: proposal.status,
-      model: proposal.model,
-      totalTokens: proposal.total_tokens,
-      toolCalls: proposal.tool_calls,
-      fileCount: Array.isArray(proposal.ai_proposal_files)
-        ? proposal.ai_proposal_files.length
-        : 0,
-      createdAt: proposal.created_at,
-      updatedAt: proposal.updated_at,
-      approvedAt: proposal.approved_at,
-      discardedAt: proposal.discarded_at,
-    })),
+    proposals: (data ?? []).map((proposal) => {
+      const files = Array.isArray(proposal.ai_proposal_files)
+        ? proposal.ai_proposal_files
+        : [];
+
+      return {
+        id: proposal.id,
+        title: proposal.title,
+        summary: proposal.summary,
+        risk: proposal.risk,
+        status: proposal.status,
+        model: proposal.model,
+        totalTokens: proposal.total_tokens,
+        toolCalls: proposal.tool_calls,
+        fileCount: files.length,
+        createCount: files.filter((file) => file.operation === "create").length,
+        modifyCount: files.filter((file) => file.operation !== "create").length,
+        createdAt: proposal.created_at,
+        updatedAt: proposal.updated_at,
+        approvedAt: proposal.approved_at,
+        discardedAt: proposal.discarded_at,
+        lastPreflightAt: proposal.last_preflight_at,
+        lastPreflightOk: proposal.last_preflight_ok,
+      };
+    }),
   });
 }
 
@@ -391,7 +442,7 @@ export async function POST(
         {
           success: false,
           error:
-            "Change proposals require WP AI Builder Bridge 0.3.0 or newer with /manifest support.",
+            "Change proposals require WP AI Builder Bridge 0.5.0 or newer with manifest + preflight support.",
         },
         { status: 409 }
       );
@@ -407,15 +458,20 @@ Project: ${project.name}
 Theme: ${site.theme_name ?? "Unknown"}
 Companion plugin: ${site.plugin_name ?? "None"}
 
-The user wants a CODE CHANGE PROPOSAL only. Nothing will be written to WordPress.
+The user wants a CODE CHANGE PROPOSAL only. Nothing is written during planning.
 
 Rules:
-- Inspect the real live files before proposing project-specific edits.
-- Never guess file paths. List files first.
+- Inspect the real live files before making project-specific edits.
+- Never guess EXISTING file paths. List files first.
 - Read only the minimum relevant files.
-- Modify at most 4 EXISTING files.
-- Do not propose creating, deleting or renaming files in this version.
-- Return COMPLETE replacement content for every proposed file.
+- Propose at most 6 files total.
+- Each file operation must be either:
+  - modify: an existing file from the Bridge manifest; or
+  - create: a genuinely new file that does not currently exist.
+- Never propose delete or rename operations.
+- Use create only when a new modular file improves the implementation or the user explicitly asks for a new template/component/file.
+- New files must stay inside the active theme or approved companion plugin and use normal project paths. Never use vendor, node_modules, .git, .env, wp-config.php, uploads or WordPress core paths.
+- Return COMPLETE content for every proposed file.
 - Preserve unrelated code exactly where practical.
 - Do not remove existing functionality unless the user's request requires it.
 - Theme owns presentation/templates/styles.
@@ -424,7 +480,7 @@ Rules:
 - Do not claim anything has been applied.
 - Choose risk:
   low = isolated styling/presentation change,
-  medium = multiple files or behavioral logic,
+  medium = multiple files, new templates/components, or behavioral logic,
   high = core data flow, auth, persistence, destructive behavior or broad architecture.
 `;
 
@@ -470,7 +526,7 @@ Rules:
           !parsed ||
           !Array.isArray(parsed.files) ||
           parsed.files.length < 1 ||
-          parsed.files.length > 4
+          parsed.files.length > 6
         ) {
           throw new Error("AI returned an invalid proposal.");
         }
@@ -541,10 +597,11 @@ Rules:
 
     const seenFiles = new Set<string>();
     const resolvedFiles: Array<{
+      operation: ProjectFileOperation;
       scope: ProjectScope;
       path: string;
       summary: string;
-      originalSha256: string;
+      originalSha256: string | null;
       originalContent: string;
       proposedContent: string;
       diff: Array<{
@@ -554,6 +611,7 @@ Rules:
     }> = [];
 
     for (const file of modelProposal.files) {
+      const operation = validateOperation(file.operation);
       const scope = validateScope(file.scope);
       const path = typeof file.path === "string" ? file.path.trim() : "";
       const summary =
@@ -578,47 +636,94 @@ Rules:
       const fileMeta =
         scope === "theme" ? themeMap.get(path) : pluginMap.get(path);
 
-      if (!fileMeta) {
+      if (operation === "modify" && !fileMeta) {
         throw new Error(
-          `AI proposed ${scope}:${path}, but that file is not in the current Bridge manifest.`
+          `AI proposed modifying ${scope}:${path}, but that file is not in the current Bridge manifest.`
         );
       }
 
-      const liveFile = await readProjectFile(
+      if (operation === "create" && fileMeta) {
+        throw new Error(
+          `AI proposed creating ${scope}:${path}, but that file already exists.`
+        );
+      }
+
+      if (operation === "modify") {
+        const liveFile = await readProjectFile(
+          site.site_url,
+          bridgeToken,
+          scope,
+          path
+        );
+
+        const originalContent =
+          liveFile &&
+          typeof liveFile === "object" &&
+          "content" in liveFile &&
+          typeof liveFile.content === "string"
+            ? liveFile.content
+            : null;
+
+        if (originalContent === null) {
+          throw new Error(`Could not read live ${scope}:${path}.`);
+        }
+
+        if (originalContent === proposedContent) {
+          throw new Error(
+            `AI proposed no actual content change for ${scope}:${path}.`
+          );
+        }
+
+        resolvedFiles.push({
+          operation,
+          scope,
+          path,
+          summary,
+          originalSha256: fileMeta!.sha256,
+          originalContent,
+          proposedContent,
+          diff: makeDiff(originalContent, proposedContent),
+        });
+      } else {
+        resolvedFiles.push({
+          operation,
+          scope,
+          path,
+          summary,
+          originalSha256: null,
+          originalContent: "",
+          proposedContent,
+          diff: makeDiff("", proposedContent),
+        });
+      }
+    }
+
+    let preflight: any;
+
+    try {
+      preflight = await preflightProjectChanges(
         site.site_url,
         bridgeToken,
-        scope,
-        path
+        resolvedFiles.map((file) => ({
+          operation: file.operation,
+          scope: file.scope,
+          path: file.path,
+          expected_sha256: file.originalSha256,
+          content: file.proposedContent,
+        }))
       );
-
-      const originalContent =
-        liveFile &&
-        typeof liveFile === "object" &&
-        "content" in liveFile &&
-        typeof liveFile.content === "string"
-          ? liveFile.content
-          : null;
-
-      if (originalContent === null) {
-        throw new Error(`Could not read live ${scope}:${path}.`);
-      }
-
-      if (originalContent === proposedContent) {
-        throw new Error(
-          `AI proposed no actual content change for ${scope}:${path}.`
-        );
-      }
-
-      resolvedFiles.push({
-        scope,
-        path,
-        summary,
-        originalSha256: fileMeta.sha256,
-        originalContent,
-        proposedContent,
-        diff: makeDiff(originalContent, proposedContent),
-      });
+    } catch (preflightError) {
+      console.error("Proposal preflight error:", preflightError);
+      throw new Error(
+        "Proposal validation requires WP AI Builder Bridge 0.5.0 or newer."
+      );
     }
+
+    if (preflight?.ready !== true) {
+      throw new Error(firstPreflightError(preflight));
+    }
+
+    const now = new Date().toISOString();
 
     const { data: proposal, error: proposalError } = await supabase
       .from("ai_proposals")
@@ -637,6 +742,9 @@ Rules:
         tool_calls: totalToolCalls,
         theme_fingerprint: manifest?.scopes?.theme?.fingerprint ?? null,
         plugin_fingerprint: manifest?.scopes?.plugin?.fingerprint ?? null,
+        last_preflight_at: now,
+        last_preflight_ok: true,
+        last_preflight_json: preflight,
       })
       .select("id, title, summary, risk, status, created_at")
       .single();
@@ -652,6 +760,7 @@ Rules:
       .insert(
         resolvedFiles.map((file) => ({
           proposal_id: proposal.id,
+          operation: file.operation,
           scope: file.scope,
           path: file.path,
           change_summary: file.summary,
@@ -662,7 +771,7 @@ Rules:
         }))
       )
       .select(
-        "id, scope, path, change_summary, original_sha256, diff_json"
+        "id, operation, scope, path, change_summary, original_sha256, diff_json"
       );
 
     if (filesError) {
@@ -682,8 +791,10 @@ Rules:
         usage: usageTotals,
         toolCalls: totalToolCalls,
         activity,
+        preflight,
         files: (savedFiles ?? []).map((file) => ({
           id: file.id,
+          operation: file.operation,
           scope: file.scope,
           path: file.path,
           summary: file.change_summary,

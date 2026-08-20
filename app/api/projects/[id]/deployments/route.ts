@@ -52,8 +52,11 @@ export async function GET(
       status,
       approved_at,
       created_at,
+      last_preflight_at,
+      last_preflight_ok,
       ai_proposal_files (
-        id
+        id,
+        operation
       )
     `)
     .eq("project_id", id)
@@ -115,6 +118,8 @@ export async function GET(
     version: null as string | null,
     controlledWrite: false,
     writeEnabled: false,
+    createFiles: false,
+    preflight: false,
     error: null as string | null,
   };
 
@@ -131,6 +136,8 @@ export async function GET(
             : null,
         controlledWrite: status?.capabilities?.controlled_write === true,
         writeEnabled: status?.capabilities?.write_files === true,
+        createFiles: status?.capabilities?.create_files === true,
+        preflight: status?.capabilities?.preflight === true,
         error: null,
       };
     } catch (error) {
@@ -146,6 +153,9 @@ export async function GET(
     bridge,
     readyProposals: (proposals ?? []).map((proposal) => {
       const status = latestStatus.get(proposal.id) ?? null;
+      const files = Array.isArray(proposal.ai_proposal_files)
+        ? proposal.ai_proposal_files
+        : [];
 
       return {
         id: proposal.id,
@@ -153,13 +163,13 @@ export async function GET(
         risk: proposal.risk,
         approvedAt: proposal.approved_at,
         createdAt: proposal.created_at,
-        fileCount: Array.isArray(proposal.ai_proposal_files)
-          ? proposal.ai_proposal_files.length
-          : 0,
+        fileCount: files.length,
+        createCount: files.filter((file) => file.operation === "create").length,
+        modifyCount: files.filter((file) => file.operation !== "create").length,
+        lastPreflightAt: proposal.last_preflight_at,
+        lastPreflightOk: proposal.last_preflight_ok,
         latestDeploymentStatus: status,
-        ready:
-          status !== "applying" &&
-          status !== "applied",
+        ready: status !== "applying" && status !== "applied",
       };
     }),
     deployments: (runs ?? []).map((run) => {
@@ -177,6 +187,7 @@ export async function GET(
         filesCount: run.files_count,
         bridgeVersion: run.bridge_version,
         error: run.error_text,
+        result: run.result_json,
         createdAt: run.created_at,
         completedAt: run.completed_at,
         rolledBackAt: run.rolled_back_at,
