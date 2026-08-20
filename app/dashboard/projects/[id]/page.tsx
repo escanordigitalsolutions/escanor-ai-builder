@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import ProjectAIChat from "@/components/project-ai-chat";
 import ProjectConnectionPanel from "@/components/project-connection-panel";
 import ProjectUsageSummary from "@/components/project-usage-summary";
+import ProjectProposalEngine from "@/components/project-proposal-engine";
 
 type Props = {
   params: Promise<{
@@ -61,25 +62,25 @@ export default async function ProjectPage({
     : wordpressSites;
 
   return (
-    <main className="min-h-screen bg-neutral-950 p-10 text-white">
+    <main className="min-h-screen p-10 text-white">
       <div className="mx-auto max-w-6xl">
         <a
           href="/dashboard"
-          className="text-neutral-500 transition hover:text-white"
+          className="text-neutral-500 transition hover:text-neutral-100"
         >
           ← Projects
         </a>
 
         <div className="mt-8">
           <div className="flex items-center gap-3">
-            <span className="h-2 w-2 rounded-full bg-green-400" />
+            <span className="h-2 w-2 rounded-full bg-neutral-300" />
 
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm tracking-wide text-neutral-500">
               WORDPRESS PROJECT
             </p>
           </div>
 
-          <h1 className="mt-3 text-4xl font-semibold">
+          <h1 className="mt-3 text-4xl font-semibold text-neutral-100">
             {project.name}
           </h1>
 
@@ -107,6 +108,10 @@ export default async function ProjectPage({
         </div>
 
         <div className="mt-8">
+          <ProjectProposalEngine projectId={project.id} />
+        </div>
+
+        <div className="mt-8">
           <ProjectAIChat projectId={project.id} />
         </div>
       </div>
@@ -122,12 +127,12 @@ function Info({
   value?: string | null;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800 p-4">
+    <div className="rounded-xl border border-neutral-800 bg-neutral-950/35 p-4">
       <p className="text-[11px] uppercase tracking-wide text-neutral-600">
         {label}
       </p>
 
-      <p className="mt-2 truncate text-sm">
+      <p className="mt-2 truncate text-sm text-neutral-200">
         {value ?? "Unknown"}
       </p>
     </div>
