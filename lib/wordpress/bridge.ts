@@ -64,6 +64,14 @@ async function bridgeRequest(
   return response.json();
 }
 
+export async function getBridgeStatus(siteUrl: string, token: string) {
+  return bridgeRequest(siteUrl, token, "status");
+}
+
+export async function getBridgeProject(siteUrl: string, token: string) {
+  return bridgeRequest(siteUrl, token, "project");
+}
+
 export async function listProjectFiles(
   siteUrl: string,
   token: string,
@@ -95,7 +103,6 @@ export async function readProjectFiles(
     paths.map(async (path) => {
       const result = await readProjectFile(siteUrl, token, scope, path);
 
-      // Keep individual tool payloads under control for the MVP.
       if (
         result &&
         typeof result === "object" &&

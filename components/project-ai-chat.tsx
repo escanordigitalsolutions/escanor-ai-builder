@@ -35,6 +35,9 @@ export default function ProjectAIChat({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [conversationBusyId, setConversationBusyId] = useState<string | null>(
+    null
+  );
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -164,6 +167,105 @@ export default function ProjectAIChat({
     setError("");
   }
 
+  async function renameConversation(conversation: Conversation) {
+    if (conversationBusyId) {
+      return;
+    }
+
+    const title = window.prompt("Rename chat", conversation.title)?.trim();
+
+    if (!title || title === conversation.title) {
+      return;
+    }
+
+    setConversationBusyId(conversation.id);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/conversations/${conversation.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            title,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error ?? "Could not rename conversation.");
+      }
+
+      setConversations((current) =>
+        current.map((item) =>
+          item.id === conversation.id ? data.conversation : item
+        )
+      );
+    } catch (renameError) {
+      setError(
+        renameError instanceof Error
+          ? renameError.message
+          : "Could not rename conversation."
+      );
+    } finally {
+      setConversationBusyId(null);
+    }
+  }
+
+  async function deleteConversation(conversation: Conversation) {
+    if (conversationBusyId) {
+      return;
+    }
+
+    const approved = window.confirm(
+      `Delete "${conversation.title}" and its saved messages?`
+    );
+
+    if (!approved) {
+      return;
+    }
+
+    setConversationBusyId(conversation.id);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/conversations/${conversation.id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error ?? "Could not delete conversation.");
+      }
+
+      setConversations((current) =>
+        current.filter((item) => item.id !== conversation.id)
+      );
+
+      if (conversationId === conversation.id) {
+        setConversationId(null);
+        setMessages([]);
+      }
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Could not delete conversation."
+      );
+    } finally {
+      setConversationBusyId(null);
+    }
+  }
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     await submitMessage(input);
@@ -238,7 +340,7 @@ export default function ProjectAIChat({
 
   return (
     <div className="overflow-hidden rounded-xl border border-neutral-800">
-      <div className="grid min-h-[650px] md:grid-cols-[220px_1fr]">
+      <div className="grid min-h-[650px] md:grid-cols-[240px_1fr]">
         <aside className="border-b border-neutral-800 bg-neutral-950/70 md:border-b-0 md:border-r">
           <div className="flex items-center justify-between border-b border-neutral-800 p-4">
             <div>
@@ -267,21 +369,52 @@ export default function ProjectAIChat({
 
             {conversations.map((conversation) => {
               const active = conversation.id === conversationId;
+              const busy = conversationBusyId === conversation.id;
 
               return (
-                <button
+                <div
                   key={conversation.id}
-                  type="button"
-                  onClick={() => openConversation(conversation.id)}
-                  disabled={loading || historyLoading}
                   className={
                     active
-                      ? "mb-1 w-full rounded-lg bg-neutral-800 px-3 py-2.5 text-left text-sm text-white"
-                      : "mb-1 w-full rounded-lg px-3 py-2.5 text-left text-sm text-neutral-500 transition hover:bg-neutral-900 hover:text-neutral-300"
+                      ? "group mb-1 flex items-center rounded-lg bg-neutral-800"
+                      : "group mb-1 flex items-center rounded-lg hover:bg-neutral-900"
                   }
                 >
-                  <span className="block truncate">{conversation.title}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openConversation(conversation.id)}
+                    disabled={loading || historyLoading || busy}
+                    className={
+                      active
+                        ? "min-w-0 flex-1 px-3 py-2.5 text-left text-sm text-white"
+                        : "min-w-0 flex-1 px-3 py-2.5 text-left text-sm text-neutral-500 transition group-hover:text-neutral-300"
+                    }
+                  >
+                    <span className="block truncate">{conversation.title}</span>
+                  </button>
+
+                  <div className="flex shrink-0 items-center pr-1 opacity-40 transition group-hover:opacity-100">
+                    <button
+                      type="button"
+                      title="Rename chat"
+                      onClick={() => renameConversation(conversation)}
+                      disabled={busy}
+                      className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-700 hover:text-white disabled:opacity-30"
+                    >
+                      ✎
+                    </button>
+
+                    <button
+                      type="button"
+                      title="Delete chat"
+                      onClick={() => deleteConversation(conversation)}
+                      disabled={busy}
+                      className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-red-950 hover:text-red-300 disabled:opacity-30"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -319,7 +452,7 @@ export default function ProjectAIChat({
                 </p>
 
                 <p className="mt-2 text-sm text-neutral-600">
-                  Conversations are now saved automatically.
+                  Conversations are saved automatically.
                 </p>
 
                 <div className="mt-6 flex flex-wrap justify-center gap-2">
