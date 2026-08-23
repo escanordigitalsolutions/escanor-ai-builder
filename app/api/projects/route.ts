@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { encryptSecret } from "@/lib/security/encryption";
-
-function allowedHosts() {
-  return new Set(
-    (process.env.WP_BRIDGE_ALLOWED_HOSTS ?? "")
-      .split(",")
-      .map((host) => host.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
+import {
+  assertSafeBridgeOrigin,
+  UnsafeOriginError,
+} from "@/lib/security/url-guard";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -48,32 +43,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let url: URL;
+    let origin: string;
 
     try {
-      url = new URL(siteUrl);
-    } catch {
-      return NextResponse.json(
-        { success: false, error: "Invalid WordPress URL." },
-        { status: 400 }
-      );
-    }
+      origin = (await assertSafeBridgeOrigin(siteUrl)).origin;
+    } catch (originError) {
+      if (originError instanceof UnsafeOriginError) {
+        return NextResponse.json(
+          { success: false, error: originError.message },
+          { status: originError.status }
+        );
+      }
 
-    if (url.protocol !== "https:") {
-      return NextResponse.json(
-        { success: false, error: "WordPress must use HTTPS." },
-        { status: 400 }
-      );
+      throw originError;
     }
-
-    if (!allowedHosts().has(url.hostname.toLowerCase())) {
-      return NextResponse.json(
-        { success: false, error: "WordPress hostname is not allowed." },
-        { status: 403 }
-      );
-    }
-
-    const origin = url.origin;
 
     const bridgeHeaders = {
       Authorization: `Bearer ${token}`,

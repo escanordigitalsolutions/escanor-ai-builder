@@ -9,8 +9,18 @@ import {
   type ProjectScope,
 } from "@/lib/wordpress/bridge";
 
+type PreflightReportFile = {
+  ready?: boolean;
+  error?: {
+    message?: string;
+  };
+};
+
 function firstPreflightError(report: any) {
-  const files = Array.isArray(report?.files) ? report.files : [];
+  const files: PreflightReportFile[] = Array.isArray(report?.files)
+    ? report.files
+    : [];
+
   const failed = files.find((file) => file?.ready === false);
 
   if (

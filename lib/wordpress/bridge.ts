@@ -1,3 +1,5 @@
+import { assertSafeBridgeOrigin } from "@/lib/security/url-guard";
+
 export type ProjectScope = "theme" | "plugin";
 export type ProjectFileOperation = "modify" | "create";
 
@@ -13,29 +15,10 @@ export class WordPressBridgeError extends Error {
   }
 }
 
-function getAllowedHosts() {
-  return new Set(
-    (process.env.WP_BRIDGE_ALLOWED_HOSTS ?? "")
-      .split(",")
-      .map((host) => host.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
+async function getSafeOrigin(siteUrl: string) {
+  const { origin } = await assertSafeBridgeOrigin(siteUrl);
 
-function getSafeOrigin(siteUrl: string) {
-  const url = new URL(siteUrl);
-
-  if (url.protocol !== "https:") {
-    throw new Error("WordPress site must use HTTPS.");
-  }
-
-  const hostname = url.hostname.toLowerCase();
-
-  if (!getAllowedHosts().has(hostname)) {
-    throw new Error("WordPress hostname is not allowed.");
-  }
-
-  return url.origin;
+  return origin;
 }
 
 async function bridgeRequest(
@@ -49,7 +32,7 @@ async function bridgeRequest(
     timeoutMs?: number;
   }
 ) {
-  const origin = getSafeOrigin(siteUrl);
+  const origin = await getSafeOrigin(siteUrl);
   const url = new URL(`/wp-json/wp-ai-builder/v1/${endpoint}`, origin);
 
   if (options?.params) {

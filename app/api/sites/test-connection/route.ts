@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-function getAllowedHosts() {
-  return new Set(
-    (process.env.WP_BRIDGE_ALLOWED_HOSTS ?? "")
-      .split(",")
-      .map((host) => host.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
+import {
+  assertSafeBridgeOrigin,
+  UnsafeOriginError,
+} from "@/lib/security/url-guard";
 
 async function readJson(response: Response) {
   const contentType = response.headers.get("content-type") ?? "";
@@ -39,53 +35,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let parsedUrl: URL;
+    let origin: string;
 
     try {
-      parsedUrl = new URL(siteUrl);
-    } catch {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid WordPress URL.",
-        },
-        { status: 400 }
-      );
+      origin = (await assertSafeBridgeOrigin(siteUrl)).origin;
+    } catch (originError) {
+      if (originError instanceof UnsafeOriginError) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: originError.message,
+          },
+          { status: originError.status }
+        );
+      }
+
+      throw originError;
     }
-
-    if (parsedUrl.protocol !== "https:") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "WordPress site must use HTTPS.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (parsedUrl.username || parsedUrl.password) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "URLs containing credentials are not allowed.",
-        },
-        { status: 400 }
-      );
-    }
-
-    const allowedHosts = getAllowedHosts();
-
-    if (!allowedHosts.has(parsedUrl.hostname.toLowerCase())) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "This WordPress hostname is not allowed.",
-        },
-        { status: 403 }
-      );
-    }
-
-    const origin = parsedUrl.origin;
 
     const headers = {
       Authorization: `Bearer ${token}`,

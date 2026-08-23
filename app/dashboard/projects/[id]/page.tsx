@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import ProjectAIChat from "@/components/project-ai-chat";
 import ProjectConnectionPanel from "@/components/project-connection-panel";
 import ProjectUsageSummary from "@/components/project-usage-summary";
+import ProjectSiteKeys from "@/components/project-site-keys";
 import ProjectProposalEngine from "@/components/project-proposal-engine";
 import ProjectDeploymentControl from "@/components/project-deployment-control";
 
@@ -106,6 +107,10 @@ export default async function ProjectPage({
           />
 
           <ProjectUsageSummary projectId={project.id} />
+        </div>
+
+        <div className="mt-4">
+          <ProjectSiteKeys projectId={project.id} />
         </div>
 
         <div className="mt-8">
