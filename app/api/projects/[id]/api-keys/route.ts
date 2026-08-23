@@ -127,14 +127,19 @@ export async function POST(
 
   const service = createServiceClient();
 
-  const { count, error: countError } = await service
+  const { data: activeKeys, error: countError } = await service
     .from("site_api_keys")
-    .select("id", { count: "exact", head: true })
+    .select("id")
     .eq("project_id", id)
     .is("revoked_at", null);
 
   if (countError) {
-    console.error("Count site API keys error:", countError);
+    console.error("Count site API keys error:", {
+      message: countError.message,
+      code: countError.code,
+      details: countError.details,
+      hint: countError.hint,
+    });
 
     return NextResponse.json(
       { success: false, error: "Could not create the site API key." },
@@ -142,7 +147,9 @@ export async function POST(
     );
   }
 
-  if ((count ?? 0) >= MAX_ACTIVE_KEYS) {
+  const count = activeKeys?.length ?? 0;
+
+  if (count >= MAX_ACTIVE_KEYS) {
     return NextResponse.json(
       {
         success: false,
