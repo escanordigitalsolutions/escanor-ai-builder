@@ -1,6 +1,64 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+/**
+ * Per-model prices in USD per 1,000,000 tokens, supplied as JSON in the
+ * OPENAI_PRICING env var, e.g.
+ *
+ *   OPENAI_PRICING={"gpt-5.6":{"in":1.25,"out":10},"gpt-5.6-mini":{"in":0.25,"out":2}}
+ *
+ * When a model has no configured price its tokens are still counted, but the
+ * cost estimate is marked as incomplete instead of silently undercounting.
+ */
+type ModelPricing = {
+  in: number;
+  out: number;
+};
+
+function loadPricing(): Record<string, ModelPricing> {
+  const raw = process.env.OPENAI_PRICING;
+
+  if (!raw) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+
+    const pricing: Record<string, ModelPricing> = {};
+
+    for (const [model, value] of Object.entries(parsed)) {
+      if (
+        value &&
+        typeof value === "object" &&
+        typeof (value as ModelPricing).in === "number" &&
+        typeof (value as ModelPricing).out === "number"
+      ) {
+        pricing[model] = {
+          in: (value as ModelPricing).in,
+          out: (value as ModelPricing).out,
+        };
+      }
+    }
+
+    return pricing;
+  } catch {
+    return {};
+  }
+}
+
+type ModelUsage = {
+  model: string;
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -60,6 +118,9 @@ export async function GET(
         toolCalls: 0,
         lastRunAt: null,
         models: {},
+        modelBreakdown: [],
+        estimatedCostUsd: null,
+        costComplete: true,
       },
     });
   }
@@ -81,15 +142,38 @@ export async function GET(
     );
   }
 
+  const perModel = new Map<string, ModelUsage>();
+
   const totals = (runs ?? []).reduce(
     (summary, run) => {
-      summary.inputTokens += run.input_tokens ?? 0;
-      summary.outputTokens += run.output_tokens ?? 0;
-      summary.totalTokens += run.total_tokens ?? 0;
+      const input = run.input_tokens ?? 0;
+      const output = run.output_tokens ?? 0;
+      const total = run.total_tokens ?? 0;
+
+      summary.inputTokens += input;
+      summary.outputTokens += output;
+      summary.totalTokens += total;
       summary.toolCalls += run.tool_calls ?? 0;
 
       const model = run.model || "unknown";
       summary.models[model] = (summary.models[model] ?? 0) + 1;
+
+      const bucket =
+        perModel.get(model) ??
+        {
+          model,
+          runs: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          totalTokens: 0,
+        };
+
+      bucket.runs += 1;
+      bucket.inputTokens += input;
+      bucket.outputTokens += output;
+      bucket.totalTokens += total;
+
+      perModel.set(model, bucket);
 
       return summary;
     },
@@ -102,6 +186,38 @@ export async function GET(
     }
   );
 
+  const pricing = loadPricing();
+  const hasPricing = Object.keys(pricing).length > 0;
+
+  let estimatedCostUsd: number | null = hasPricing ? 0 : null;
+  let costComplete = true;
+
+  const modelBreakdown = Array.from(perModel.values()).sort(
+    (a, b) => b.totalTokens - a.totalTokens
+  );
+
+  if (hasPricing) {
+    for (const bucket of modelBreakdown) {
+      const price = pricing[bucket.model];
+
+      if (!price) {
+        // A model with real usage but no configured price — the estimate
+        // undercounts, so flag it rather than pretend it is exact.
+        costComplete = false;
+        continue;
+      }
+
+      estimatedCostUsd =
+        (estimatedCostUsd ?? 0) +
+        (bucket.inputTokens / 1_000_000) * price.in +
+        (bucket.outputTokens / 1_000_000) * price.out;
+    }
+
+    if (estimatedCostUsd !== null) {
+      estimatedCostUsd = Math.round(estimatedCostUsd * 10000) / 10000;
+    }
+  }
+
   return NextResponse.json({
     success: true,
     usage: {
@@ -113,6 +229,9 @@ export async function GET(
       toolCalls: totals.toolCalls,
       lastRunAt: runs?.[0]?.created_at ?? null,
       models: totals.models,
+      modelBreakdown,
+      estimatedCostUsd,
+      costComplete,
     },
   });
 }

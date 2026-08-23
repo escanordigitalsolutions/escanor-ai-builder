@@ -7,12 +7,14 @@ import {
   readProjectFiles,
   type ProjectScope,
 } from "@/lib/wordpress/bridge";
+import { FAST_MODEL } from "@/lib/ai/models";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6";
+// Chat + inspection are read-only and high volume — use the cheaper model.
+const MODEL = FAST_MODEL;
 
 const tools = [
   {

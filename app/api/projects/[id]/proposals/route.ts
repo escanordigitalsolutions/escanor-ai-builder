@@ -12,12 +12,14 @@ import {
   type ProjectFileOperation,
   type ProjectScope,
 } from "@/lib/wordpress/bridge";
+import { SMART_MODEL } from "@/lib/ai/models";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6";
+// Proposals write real code — keep this on the stronger model.
+const MODEL = SMART_MODEL;
 
 type ActivityItem = {
   tool: string;

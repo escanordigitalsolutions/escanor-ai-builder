@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from "react";
 
+type ModelUsage = {
+  model: string;
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
+
 type Usage = {
   conversations: number;
   runs: number;
@@ -11,6 +19,9 @@ type Usage = {
   toolCalls: number;
   lastRunAt: string | null;
   models: Record<string, number>;
+  modelBreakdown: ModelUsage[];
+  estimatedCostUsd: number | null;
+  costComplete: boolean;
 };
 
 export default function ProjectUsageSummary({
@@ -83,32 +94,81 @@ export default function ProjectUsageSummary({
           <Metric label="Chats" value={usage.conversations.toLocaleString()} />
           <Metric label="AI runs" value={usage.runs.toLocaleString()} />
           <Metric label="Tokens" value={usage.totalTokens.toLocaleString()} />
-          <Metric label="Tool calls" value={usage.toolCalls.toLocaleString()} />
+          <Metric
+            label="Est. cost"
+            value={formatCost(usage.estimatedCostUsd)}
+            hint={
+              usage.estimatedCostUsd === null
+                ? "Set OPENAI_PRICING to estimate"
+                : usage.costComplete
+                ? undefined
+                : "Partial — some models unpriced"
+            }
+          />
         </div>
       )}
 
       {!loading && usage && (
         <div className="mt-4 border-t border-neutral-800 pt-4 text-[11px] text-neutral-600">
           Input {usage.inputTokens.toLocaleString()} · Output{" "}
-          {usage.outputTokens.toLocaleString()}
+          {usage.outputTokens.toLocaleString()} · Tool calls{" "}
+          {usage.toolCalls.toLocaleString()}
           {usage.lastRunAt ? ` · Last run ${formatDate(usage.lastRunAt)}` : ""}
         </div>
       )}
 
-      {error && (
-        <p className="mt-4 text-xs text-red-400">{error}</p>
+      {!loading && usage && usage.modelBreakdown.length > 0 && (
+        <div className="mt-4 space-y-1.5">
+          {usage.modelBreakdown.map((model) => (
+            <div
+              key={model.model}
+              className="flex items-center justify-between gap-3 text-[11px]"
+            >
+              <span className="truncate font-mono text-neutral-400">
+                {model.model}
+              </span>
+              <span className="shrink-0 text-neutral-600">
+                {model.runs.toLocaleString()} runs ·{" "}
+                {model.totalTokens.toLocaleString()} tok
+              </span>
+            </div>
+          ))}
+        </div>
       )}
+
+      {error && <p className="mt-4 text-xs text-red-400">{error}</p>}
     </div>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
   return (
     <div>
       <p className="text-[11px] text-neutral-600">{label}</p>
       <p className="mt-1 text-lg font-medium text-white">{value}</p>
+      {hint && <p className="mt-0.5 text-[10px] text-neutral-600">{hint}</p>}
     </div>
   );
+}
+
+function formatCost(value: number | null) {
+  if (value === null) {
+    return "—";
+  }
+
+  if (value > 0 && value < 0.01) {
+    return "<$0.01";
+  }
+
+  return `$${value.toFixed(2)}`;
 }
 
 function formatDate(value: string) {
