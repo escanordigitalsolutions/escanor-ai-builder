@@ -49,6 +49,7 @@ require_once WPAB_DIR . 'includes/class-wpab-writer.php';
 require_once WPAB_DIR . 'includes/class-wpab-rest.php';
 require_once WPAB_DIR . 'includes/class-wpab-admin.php';
 require_once WPAB_DIR . 'includes/class-wpab-cloud.php';
+require_once WPAB_DIR . 'includes/class-wpab-editor.php';
 
 /**
  * Everything registers on plugins_loaded so the theme and companion plugin are
@@ -58,6 +59,7 @@ function wpab_bootstrap() {
 	WPAB_REST::init();
 	WPAB_Admin::init();
 	WPAB_Cloud::init();
+	WPAB_Editor::init();
 }
 add_action( 'plugins_loaded', 'wpab_bootstrap' );
 
