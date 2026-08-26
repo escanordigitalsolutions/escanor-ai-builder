@@ -8,6 +8,9 @@ import { FAST_MODEL } from "@/lib/ai/models";
 import {
   listProjectFiles,
   readProjectFiles,
+  listSiteContentTypes,
+  listSiteContent,
+  getSiteContentItem,
   type ProjectScope,
 } from "@/lib/wordpress/bridge";
 
@@ -72,6 +75,60 @@ const tools = [
       additionalProperties: false,
     },
   },
+  {
+    type: "function" as const,
+    name: "list_content_types",
+    description:
+      "List the native WordPress content types on this site (pages, posts, any custom post type, WooCommerce products when active, menus, media) with a rough item count each. Call this first when the user asks about the site's actual content rather than its code.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {},
+      required: [],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "list_content",
+    description:
+      "List recent items of one native content type. Use the exact type key from list_content_types (e.g. 'page', 'post', 'product', 'menu', 'media', or a custom post type slug). Returns id, title, status and url for each item.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          description:
+            "Content type key from list_content_types (page, post, product, menu, media, or a CPT slug).",
+        },
+      },
+      required: ["type"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
+    name: "get_content",
+    description:
+      "Read one native content item in full: its content/body, status, template, URL, and (for products) price/SKU/stock, (for menus) the menu items, (for media) the file details. Use ids returned by list_content.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          description: "Content type key (page, post, product, menu, media, or a CPT slug).",
+        },
+        id: {
+          type: "integer",
+          description: "The item id returned by list_content.",
+        },
+      },
+      required: ["type", "id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 type ActivityItem = {
@@ -108,6 +165,35 @@ function validatePaths(value: unknown): string[] {
   }
 
   return paths;
+}
+
+function validateContentType(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("A content type is required.");
+  }
+
+  const type = value.trim().slice(0, 40);
+
+  if (!/^[a-z0-9_-]+$/i.test(type)) {
+    throw new Error("Invalid content type.");
+  }
+
+  return type;
+}
+
+function validateContentId(value: unknown): number {
+  const id =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? parseInt(value, 10)
+        : NaN;
+
+  if (!Number.isInteger(id) || id < 1) {
+    throw new Error("A positive content id is required.");
+  }
+
+  return id;
 }
 
 function makeConversationTitle(message: string) {
@@ -298,8 +384,15 @@ Acting for: ${context.actor.login ?? "a WordPress administrator"}
 
 You currently have READ-ONLY access.
 
+You can inspect TWO layers of this site:
+1. Source code — the active theme and companion plugin (list_project_files / read_project_files).
+2. Native content — the site's real pages, posts, custom post types, WooCommerce products (when active), menus and media (list_content_types / list_content / get_content).
+
+Pick the layer that fits the question. "How is the header coded?" → source files. "What products / pages do I have?" or "improve this page's copy" → content tools. Use both when a question spans code and content.
+
 Workflow rules:
 - Inspect real project files before making codebase-specific claims.
+- When the user asks about actual site content, call list_content_types first, then list_content for the relevant type, then get_content for a specific item — never invent titles, ids or prices.
 - Never guess file paths. Call list_project_files first for any scope you need.
 - Do NOT perform an exhaustive scan.
 - For broad architecture questions, identify the likely entrypoints and read only the 3-8 most relevant files per scope.
@@ -467,6 +560,26 @@ Workflow rules:
               bridgeToken,
               scope,
               paths
+            );
+          } else if (call.name === "list_content_types") {
+            activity.push({ tool: call.name });
+            await writeStep("Looking at the site's content types…");
+            result = await listSiteContentTypes(site.site_url, bridgeToken);
+          } else if (call.name === "list_content") {
+            const type = validateContentType(args.type);
+            activity.push({ tool: call.name, scope: type });
+            await writeStep(`Listing ${type} content…`);
+            result = await listSiteContent(site.site_url, bridgeToken, type);
+          } else if (call.name === "get_content") {
+            const type = validateContentType(args.type);
+            const id = validateContentId(args.id);
+            activity.push({ tool: call.name, scope: type, paths: [String(id)] });
+            await writeStep(`Reading ${type} #${id}…`);
+            result = await getSiteContentItem(
+              site.site_url,
+              bridgeToken,
+              type,
+              id
             );
           } else {
             throw new Error(`Unknown tool: ${call.name}`);

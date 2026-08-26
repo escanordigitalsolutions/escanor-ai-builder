@@ -141,6 +141,86 @@ final class WPAB_REST {
 				'permission_callback' => self::permission(),
 			)
 		);
+
+		// Native content visibility (Phase 1, read-only): pages, posts, custom
+		// post types, WooCommerce products, menus, media. Lets the AI "see" the
+		// site's real content, not just theme/plugin source files.
+		register_rest_route(
+			$namespace,
+			'/content-types',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'content_types' ),
+				'permission_callback' => self::permission(),
+			)
+		);
+
+		register_rest_route(
+			$namespace,
+			'/content',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'content_list' ),
+				'permission_callback' => self::permission(),
+				'args'                => array(
+					'type'  => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+					'limit' => array(
+						'required' => false,
+						'type'     => 'integer',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			$namespace,
+			'/content-item',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'content_item' ),
+				'permission_callback' => self::permission(),
+				'args'                => array(
+					'type' => array(
+						'required' => true,
+						'type'     => 'string',
+					),
+					'id'   => array(
+						'required' => true,
+						'type'     => 'integer',
+					),
+				),
+			)
+		);
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Native content (read-only)
+	 * ------------------------------------------------------------------ */
+
+	public static function content_types( WP_REST_Request $request ) {
+		return new WP_REST_Response( WPAB_Content::types(), 200 );
+	}
+
+	public static function content_list( WP_REST_Request $request ) {
+		$limit  = (int) $request->get_param( 'limit' );
+		$result = WPAB_Content::listing(
+			(string) $request->get_param( 'type' ),
+			$limit > 0 ? $limit : 30
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function content_item( WP_REST_Request $request ) {
+		$result = WPAB_Content::get_item(
+			(string) $request->get_param( 'type' ),
+			(int) $request->get_param( 'id' )
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
 	/* ---------------------------------------------------------------------

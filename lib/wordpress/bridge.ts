@@ -119,6 +119,44 @@ export async function listProjectFiles(
   });
 }
 
+/* ---------------------------------------------------------------------------
+ * Native WordPress content (Phase 1, read-only): pages, posts, custom post
+ * types, WooCommerce products, menus and media. Lets the agent see the site's
+ * real content — not just theme/plugin source files.
+ * ------------------------------------------------------------------------ */
+
+export async function listSiteContentTypes(siteUrl: string, token: string) {
+  return bridgeRequest(siteUrl, token, "content-types");
+}
+
+export async function listSiteContent(
+  siteUrl: string,
+  token: string,
+  type: string,
+  limit = 30
+) {
+  return bridgeRequest(siteUrl, token, "content", {
+    params: {
+      type,
+      limit: String(limit),
+    },
+  });
+}
+
+export async function getSiteContentItem(
+  siteUrl: string,
+  token: string,
+  type: string,
+  id: number
+) {
+  return bridgeRequest(siteUrl, token, "content-item", {
+    params: {
+      type,
+      id: String(id),
+    },
+  });
+}
+
 export async function readProjectFile(
   siteUrl: string,
   token: string,

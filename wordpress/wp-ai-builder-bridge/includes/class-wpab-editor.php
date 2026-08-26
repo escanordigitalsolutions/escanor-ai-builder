@@ -103,6 +103,39 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Native content browser (Phase 1). Served locally from WP core — the
+		// panel shows the site's real pages/posts/products/menus/media without a
+		// cloud round-trip, so it works even if the SaaS is briefly unreachable.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/content/types',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_content_types' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/content/list',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_content_list' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/content/get',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_content_get' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Visual CSS override layer (stored locally, printed on the front end).
 		register_rest_route(
 			self::NAMESPACE,
@@ -132,6 +165,29 @@ final class WPAB_Editor {
 		$result = WPAB_Cloud::get( 'agent/steps', array( 'runId' => $run_id ), 12 );
 
 		return is_wp_error( $result ) ? new WP_REST_Response( array( 'success' => true, 'steps' => array() ), 200 ) : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_content_types( WP_REST_Request $request ) {
+		return new WP_REST_Response( WPAB_Content::types(), 200 );
+	}
+
+	public static function rest_content_list( WP_REST_Request $request ) {
+		$limit  = (int) $request->get_param( 'limit' );
+		$result = WPAB_Content::listing(
+			(string) $request->get_param( 'type' ),
+			$limit > 0 ? $limit : 30
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_content_get( WP_REST_Request $request ) {
+		$result = WPAB_Content::get_item(
+			(string) $request->get_param( 'type' ),
+			(int) $request->get_param( 'id' )
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
 	public static function rest_visual_css_get() {
@@ -298,6 +354,9 @@ final class WPAB_Editor {
 			'restCssApply'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/css-apply' ) ),
 			'restVisualCss' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/visual-css' ) ),
 			'restSteps'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/steps' ) ),
+			'restContentTypes' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/types' ) ),
+			'restContentList'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/list' ) ),
+			'restContentGet'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/get' ) ),
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
@@ -323,6 +382,7 @@ final class WPAB_Editor {
 					<div class="wpab-studio__tabs">
 						<button type="button" class="wpab-tab is-active" data-tab="chat">Chat</button>
 						<button type="button" class="wpab-tab" data-tab="build">Build</button>
+						<button type="button" class="wpab-tab" data-tab="content">Content</button>
 						<button type="button" class="wpab-tab" data-tab="visual">Inspect</button>
 						<span class="wpab-studio__spacer"></span>
 						<button type="button" id="wpab-collapse" class="wpab-studio__collapse">▾ Collapse</button>
@@ -356,6 +416,17 @@ final class WPAB_Editor {
 							<div id="wpab-proposals" class="wpab-list"></div>
 							<h3 class="wpab-col__title" style="margin-top:16px">Deployments</h3>
 							<div id="wpab-deployments" class="wpab-list"></div>
+						</div>
+
+						<div id="wpab-pane-content" class="wpab-pane" hidden>
+							<div class="wpab-pane__bar">
+								<span class="wpab-pane__hint">Your site’s native content — pages, posts, products, menus &amp; media.</span>
+								<button type="button" id="wpab-content-refresh" class="button">Refresh</button>
+							</div>
+							<div id="wpab-content-types" class="wpab-ctypes"></div>
+							<div id="wpab-content-body" class="wpab-content__body">
+								<p class="wpab-empty">Loading content…</p>
+							</div>
 						</div>
 
 						<div id="wpab-pane-visual" class="wpab-pane" hidden>
@@ -494,6 +565,30 @@ final class WPAB_Editor {
 			.wpab-v-input { width: 100%; box-sizing: border-box; font-size: 13px; }
 			.wpab-v-color { width: 100%; height: 32px; padding: 0; border: 1px solid #dcdcde; border-radius: 6px; background: #fff; }
 			.wpab-v-note { font-size: 11px; color: #8c8f94; margin-top: 10px; }
+			.wpab-ctypes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+			.wpab-ctype { background: #f0f0f1; border: 1px solid #e2e4e7; border-radius: 999px; padding: 4px 12px; font-size: 12px; color: #3c434a; cursor: pointer; }
+			.wpab-ctype:hover { background: #e8e8ea; }
+			.wpab-ctype.is-active { background: #1d2327; border-color: #1d2327; color: #fff; }
+			.wpab-ctype__count { opacity: .6; margin-left: 5px; }
+			.wpab-content__body { min-height: 60px; }
+			.wpab-crow { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 9px 12px; margin-bottom: 7px; cursor: pointer; }
+			.wpab-crow:hover { border-color: #1d2327; }
+			.wpab-crow__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+			.wpab-crow__title { color: #1d2327; font-weight: 500; word-break: break-word; }
+			.wpab-crow__meta { color: #8c8f94; font-size: 12px; margin-top: 2px; }
+			.wpab-cstatus { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; padding: 1px 7px; border-radius: 999px; border: 1px solid #dcdcde; color: #50575e; white-space: nowrap; }
+			.wpab-cstatus--publish { background: #edfaef; color: #007a1c; border-color: #b7e4c0; }
+			.wpab-cstatus--draft { background: #f6f7f7; color: #50575e; }
+			.wpab-cstatus--pending, .wpab-cstatus--future { background: #fef8ee; color: #8a6100; border-color: #f2d9a8; }
+			.wpab-cstatus--private { background: #f0eefc; color: #5a3ec8; border-color: #d6cffa; }
+			.wpab-cdetail { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 12px; margin-bottom: 10px; }
+			.wpab-cdetail__title { font-size: 14px; font-weight: 600; margin: 0 0 4px; }
+			.wpab-cdetail__row { font-size: 12px; color: #50575e; margin: 2px 0; }
+			.wpab-cdetail__row code { background: #f0f0f1; padding: 1px 5px; border-radius: 4px; }
+			.wpab-cdetail__content { margin-top: 8px; background: #f6f7f7; border: 1px solid #e2e4e7; border-radius: 6px; padding: 10px; font-family: Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 30vh; overflow-y: auto; }
+			.wpab-cdetail__actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+			.wpab-cback { background: none; border: none; color: #2271b1; cursor: pointer; font-size: 12px; padding: 0 0 8px; }
+			.wpab-cthumb { max-width: 100%; border-radius: 6px; margin-top: 8px; border: 1px solid #e2e4e7; }
 		</style>
 
 		<script>
@@ -526,6 +621,8 @@ final class WPAB_Editor {
 			var conversationId = null;
 			var busy = false;
 			var buildLoaded = false;
+			var contentLoaded = false;
+			var contentActiveType = null;
 
 			function setStatus(text, kind) {
 				statusEl.textContent = text;
@@ -585,8 +682,10 @@ final class WPAB_Editor {
 					for (var j = 0; j < tabs.length; j++) { tabs[j].classList.toggle('is-active', tabs[j] === this); }
 					$('wpab-pane-chat').hidden = (name !== 'chat');
 					$('wpab-pane-build').hidden = (name !== 'build');
+					$('wpab-pane-content').hidden = (name !== 'content');
 					$('wpab-pane-visual').hidden = (name !== 'visual');
 					if (name === 'build' && !buildLoaded) { buildLoaded = true; loadBuild(); }
+					if (name === 'content' && !contentLoaded) { contentLoaded = true; loadContentTypes(); }
 				});
 			}
 
@@ -594,7 +693,7 @@ final class WPAB_Editor {
 			function renderActivity(activity) {
 				if (!activity || !activity.length) { return ''; }
 				var parts = activity.map(function (item) {
-					var label = item.tool === 'read_project_files' ? 'read' : 'listed';
+					var label = (item.tool === 'read_project_files' || item.tool === 'get_content') ? 'read' : (item.tool === 'list_content_types' ? 'content types' : 'listed');
 					var scope = item.scope ? escapeHtml(item.scope) : '';
 					var paths = (item.paths && item.paths.length) ? ': ' + item.paths.map(escapeHtml).join(', ') : '';
 					return '<code>' + label + ' ' + scope + paths + '</code>';
@@ -749,6 +848,99 @@ final class WPAB_Editor {
 			}
 			buildForm.addEventListener('submit', function (e) { e.preventDefault(); if (busy) { return; } var p = buildInput.value.trim(); if (!p) { return; } propose(p); });
 
+			/* ---- Content browser (native WP components, read-only) ---- */
+			var ctypesEl = $('wpab-content-types');
+			var cbodyEl = $('wpab-content-body');
+			function cStatusClass(s) { return 'wpab-cstatus wpab-cstatus--' + escapeHtml(String(s || '')); }
+			function loadContentTypes() {
+				ctypesEl.innerHTML = '';
+				cbodyEl.innerHTML = '<p class="wpab-empty">Loading content…</p>';
+				api('GET', cfg.restContentTypes).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not load content.</p>'; return; }
+					var types = (out.data.types || []).filter(function (t) { return t.count > 0 || t.key === 'page' || t.key === 'post'; });
+					if (!types.length) { cbodyEl.innerHTML = '<p class="wpab-empty">No content found.</p>'; return; }
+					ctypesEl.innerHTML = '';
+					types.forEach(function (t) {
+						var b = document.createElement('button'); b.type = 'button'; b.className = 'wpab-ctype'; b.setAttribute('data-type', t.key);
+						b.innerHTML = escapeHtml(t.label) + '<span class="wpab-ctype__count">' + (t.count || 0) + '</span>';
+						b.addEventListener('click', function () { selectContentType(t.key); });
+						ctypesEl.appendChild(b);
+					});
+					selectContentType(types[0].key);
+				}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
+			}
+			function selectContentType(type) {
+				contentActiveType = type;
+				var btns = ctypesEl.querySelectorAll('.wpab-ctype');
+				for (var i = 0; i < btns.length; i++) { btns[i].classList.toggle('is-active', btns[i].getAttribute('data-type') === type); }
+				cbodyEl.innerHTML = '<p class="wpab-empty">Loading…</p>';
+				api('GET', cfg.restContentList + '?type=' + encodeURIComponent(type) + '&limit=40').then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not load items.</p>'; return; }
+					renderContentList(type, out.data.items || []);
+				}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
+			}
+			function renderContentList(type, items) {
+				if (!items.length) { cbodyEl.innerHTML = '<p class="wpab-empty">Nothing here yet.</p>'; return; }
+				cbodyEl.innerHTML = '';
+				items.forEach(function (it) {
+					var el = document.createElement('div'); el.className = 'wpab-crow';
+					var right = '';
+					if (type === 'menu') { right = '<span class="wpab-cstatus">' + (it.count || 0) + ' items</span>'; }
+					else if (type === 'media') { right = '<span class="wpab-cstatus">' + escapeHtml((it.mime || '').split('/').pop()) + '</span>'; }
+					else { right = '<span class="' + cStatusClass(it.status) + '">' + escapeHtml(it.status || '') + '</span>'; }
+					var meta = '';
+					if (type === 'media') { meta = escapeHtml(it.url || ''); }
+					else if (type === 'menu') { meta = 'Navigation menu'; }
+					else { meta = '#' + it.id + (it.sku ? ' · SKU ' + escapeHtml(it.sku) : '') + (it.price ? ' · ' + escapeHtml(it.price) : ''); }
+					el.innerHTML = '<div class="wpab-crow__top"><span class="wpab-crow__title">' + escapeHtml(it.title || '(no title)') + '</span>' + right + '</div><div class="wpab-crow__meta">' + meta + '</div>';
+					el.addEventListener('click', function () { openContentItem(type, it.id); });
+					cbodyEl.appendChild(el);
+				});
+			}
+			function openContentItem(type, id) {
+				cbodyEl.innerHTML = '<p class="wpab-empty">Loading…</p>';
+				api('GET', cfg.restContentGet + '?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id)).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false || !out.data.item) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not open item.</p>'; return; }
+					renderContentDetail(type, out.data.item);
+				}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
+			}
+			function renderContentDetail(type, item) {
+				var rows = '';
+				function row(label, val) { if (val === '' || val == null) { return ''; } return '<div class="wpab-cdetail__row">' + escapeHtml(label) + ': <code>' + escapeHtml(String(val)) + '</code></div>'; }
+				var body = '';
+				if (type === 'menu') {
+					rows += row('Items', (item.items || []).length);
+					body = (item.items || []).map(function (mi) { return '• ' + (mi.title || '') + '  →  ' + (mi.url || ''); }).join('\n');
+				} else if (type === 'media') {
+					rows += row('Type', item.mime) + row('Dimensions', (item.width && item.height) ? item.width + '×' + item.height : '') + row('Alt', item.alt) + row('URL', item.url);
+					if ((item.mime || '').indexOf('image/') === 0) { body = ''; }
+				} else {
+					rows += row('Status', item.status) + row('Type', item.type) + row('Slug', item.slug) + row('Template', item.template) + row('URL', item.url) + row('Modified', item.modified);
+					if (item.product) { rows += row('SKU', item.product.sku) + row('Price', item.product.price) + row('Stock', item.product.stock_status); }
+					body = item.content || '';
+					if (item.truncated) { body += '\n\n… (truncated, ' + item.content_chars + ' chars total)'; }
+				}
+				var thumb = (type === 'media' && (item.mime || '').indexOf('image/') === 0 && item.url) ? '<img class="wpab-cthumb" src="' + escapeHtml(item.url) + '" alt="" />' : '';
+				var contentBlock = body ? '<div class="wpab-cdetail__content">' + escapeHtml(body) + '</div>' : '';
+				cbodyEl.innerHTML =
+					'<button type="button" class="wpab-cback" id="wpab-cback">‹ Back to list</button>' +
+					'<div class="wpab-cdetail"><h3 class="wpab-cdetail__title">' + escapeHtml(item.title || '(no title)') + '</h3>' + rows + thumb + contentBlock +
+					'<div class="wpab-cdetail__actions">' +
+					(item.url ? '<a class="button" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">View</a>' : '') +
+					(item.edit_url ? '<a class="button" href="' + escapeHtml(item.edit_url) + '" target="_blank" rel="noopener">Edit in WP</a>' : '') +
+					'<button type="button" class="button" id="wpab-cask">Ask AI about this</button>' +
+					'</div></div>';
+				var back = $('wpab-cback'); if (back) { back.addEventListener('click', function () { selectContentType(contentActiveType); }); }
+				var ask = $('wpab-cask'); if (ask) { ask.addEventListener('click', function () {
+					var label = (type === 'menu' ? 'menu' : (type === 'media' ? 'media item' : type));
+					var q = 'Tell me about the ' + label + ' "' + (item.title || '') + '"' + (item.id ? ' (id ' + item.id + ')' : '') + ' and suggest improvements.';
+					for (var i = 0; i < tabs.length; i++) { tabs[i].classList.toggle('is-active', tabs[i].getAttribute('data-tab') === 'chat'); }
+					$('wpab-pane-chat').hidden = false; $('wpab-pane-build').hidden = true; $('wpab-pane-content').hidden = true; $('wpab-pane-visual').hidden = true;
+					input.value = q; input.focus();
+				}); }
+			}
+			(function () { var rb = $('wpab-content-refresh'); if (rb) { rb.addEventListener('click', function () { loadContentTypes(); }); } })();
+
 			/* ---- Inspect (visual CSS) ---- */
 			var vFrame = $('wpab-visual-frame');
 			var vSelectorEl = $('wpab-visual-selector');
@@ -885,7 +1077,7 @@ final class WPAB_Editor {
 			resetThread();
 			initVisual();
 			function genRunId() { return 'r' + Date.now() + '_' + Math.floor(Math.random() * 1e6); }
-				(function () { var box = $('wpab-suggests'); if (!box) { return; } ['Give me a quick overview of this theme', 'How is the header rendered?', 'Suggest 3 quick visual improvements', 'Where can I change the primary color?'].forEach(function (s) { var c = document.createElement('button'); c.type = 'button'; c.className = 'wpab-chip'; c.textContent = s; c.addEventListener('click', function () { input.value = s; input.focus(); }); box.appendChild(c); }); })();
+				(function () { var box = $('wpab-suggests'); if (!box) { return; } ['Give me a quick overview of this theme', 'What pages and products do I have?', 'Suggest 3 quick visual improvements', 'Where can I change the primary color?'].forEach(function (s) { var c = document.createElement('button'); c.type = 'button'; c.className = 'wpab-chip'; c.textContent = s; c.addEventListener('click', function () { input.value = s; input.focus(); }); box.appendChild(c); }); })();
 				(function () { var collapseBtn = $('wpab-collapse'); var studioPanel = document.querySelector('.wpab-studio__panel'); if (collapseBtn && studioPanel) { collapseBtn.addEventListener('click', function () { var c = studioPanel.classList.toggle('is-collapsed'); collapseBtn.textContent = c ? '▴ Expand' : '▾ Collapse'; }); } })();
 				function loadStatus() {
 				api('POST', cfg.restSession, {}).then(function (out) {
