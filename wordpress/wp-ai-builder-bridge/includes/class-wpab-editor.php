@@ -200,6 +200,7 @@ final class WPAB_Editor {
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
+			'siteUrl'       => esc_url_raw( home_url( '/' ) ),
 			'connected'     => WPAB_Cloud::has_key(),
 		);
 		?>
@@ -220,6 +221,7 @@ final class WPAB_Editor {
 				<div class="wpab-editor__tabs">
 					<button type="button" class="wpab-tab is-active" data-tab="chat">Chat</button>
 					<button type="button" class="wpab-tab" data-tab="build">Build &amp; deploy</button>
+					<button type="button" class="wpab-tab" data-tab="visual">Visual</button>
 				</div>
 
 				<div id="wpab-pane-chat" class="wpab-pane">
@@ -250,6 +252,31 @@ final class WPAB_Editor {
 						<div class="wpab-col">
 							<h3 class="wpab-col__title">Deployments</h3>
 							<div id="wpab-deployments" class="wpab-list"></div>
+						</div>
+					</div>
+				</div>
+
+				<div id="wpab-pane-visual" class="wpab-pane" hidden>
+					<div class="wpab-visual">
+						<div class="wpab-visual__main">
+							<div id="wpab-visual-status" class="wpab-visual__status">Open this tab to load the preview.</div>
+							<iframe id="wpab-visual-frame" class="wpab-visual__frame" title="Site preview"></iframe>
+						</div>
+						<div id="wpab-visual-panel" class="wpab-visual__panel" hidden>
+							<label class="wpab-v-label">Selector</label>
+							<input type="text" id="wpab-visual-selector" class="wpab-v-input" />
+							<label class="wpab-v-label">Text color</label>
+							<input type="color" id="wpab-v-color" class="wpab-v-color" />
+							<label class="wpab-v-label">Background</label>
+							<input type="color" id="wpab-v-bg" class="wpab-v-color" />
+							<label class="wpab-v-label">Font size (px)</label>
+							<input type="number" id="wpab-v-fs" class="wpab-v-input" min="8" max="140" />
+							<label class="wpab-v-label">Custom CSS for this element</label>
+							<textarea id="wpab-v-css" class="wpab-v-input" rows="3" placeholder="margin: 20px; border-radius: 8px;"></textarea>
+							<div class="wpab-v-actions">
+								<button type="button" id="wpab-v-reset" class="button">Reset preview</button>
+							</div>
+							<p class="wpab-v-note">Live preview only — nothing is written yet. Deterministic “Apply” arrives in the next update.</p>
 						</div>
 					</div>
 				</div>
@@ -321,6 +348,19 @@ final class WPAB_Editor {
 			.wpab-status--rolled_back { background: #f0f0f1; color: #50575e; border-color: #dcdcde; }
 			.wpab-status--applying { background: #fef8ee; color: #8a6100; border-color: #f2d9a8; }
 			.wpab-empty { color: #8c8f94; font-size: 13px; }
+			/* Visual */
+			.wpab-visual { display: grid; grid-template-columns: 1fr 280px; gap: 14px; margin-top: 8px; }
+			@media (max-width: 900px) { .wpab-visual { grid-template-columns: 1fr; } }
+			.wpab-visual__status { font-size: 12px; color: #50575e; margin-bottom: 8px; }
+			.wpab-visual__status.is-error { color: #d63638; }
+			.wpab-visual__frame { width: 100%; height: 70vh; border: 1px solid #dcdcde; border-radius: 8px; background: #fff; }
+			.wpab-visual__panel { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 12px; align-self: start; }
+			.wpab-v-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin: 10px 0 4px; }
+			.wpab-v-label:first-child { margin-top: 0; }
+			.wpab-v-input { width: 100%; box-sizing: border-box; font-size: 13px; }
+			.wpab-v-color { width: 100%; height: 32px; padding: 0; border: 1px solid #dcdcde; border-radius: 6px; background: #fff; }
+			.wpab-v-actions { margin-top: 12px; }
+			.wpab-v-note { font-size: 11px; color: #8c8f94; margin-top: 10px; }
 		</style>
 
 		<script>
@@ -353,6 +393,7 @@ final class WPAB_Editor {
 			var conversationId = null;
 			var busy = false;
 			var buildLoaded = false;
+			var visualLoaded = false;
 
 			function setStatus(text, kind) {
 				statusEl.textContent = text;
@@ -418,7 +459,9 @@ final class WPAB_Editor {
 					for (var j = 0; j < tabs.length; j++) { tabs[j].classList.toggle('is-active', tabs[j] === this); }
 					$('wpab-pane-chat').hidden = (name !== 'chat');
 					$('wpab-pane-build').hidden = (name !== 'build');
+					$('wpab-pane-visual').hidden = (name !== 'visual');
 					if (name === 'build' && !buildLoaded) { buildLoaded = true; loadBuild(); }
+					if (name === 'visual' && !visualLoaded) { visualLoaded = true; initVisual(); }
 				});
 			}
 
@@ -622,6 +665,123 @@ final class WPAB_Editor {
 				var p = buildInput.value.trim(); if (!p) { return; }
 				propose(p);
 			});
+
+			/* ---- Visual editor (element targeting + live CSS preview) ---- */
+			var vFrame = $('wpab-visual-frame');
+			var vSelectorEl = $('wpab-visual-selector');
+			var vPanel = $('wpab-visual-panel');
+			var vStatusEl = $('wpab-visual-status');
+			var vRules = {};
+			var vCurrentSel = null;
+
+			function vDoc() {
+				try { return vFrame.contentDocument || (vFrame.contentWindow && vFrame.contentWindow.document); }
+				catch (e) { return null; }
+			}
+			function rgbToHex(rgb) {
+				if (!rgb) { return '#000000'; }
+				var m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+				if (!m) { return '#000000'; }
+				function h(n) { n = parseInt(n, 10); var s = n.toString(16); return s.length < 2 ? '0' + s : s; }
+				return '#' + h(m[1]) + h(m[2]) + h(m[3]);
+			}
+			function vBuildSelector(el) {
+				if (!el || el.nodeType !== 1) { return ''; }
+				if (el.id) { return '#' + el.id; }
+				var parts = [], node = el, depth = 0;
+				while (node && node.nodeType === 1 && node.tagName && node.tagName.toLowerCase() !== 'html' && depth < 5) {
+					if (node.id) { parts.unshift('#' + node.id); break; }
+					var tag = node.tagName.toLowerCase();
+					var cls = [];
+					if (node.className && typeof node.className === 'string') {
+						cls = node.className.trim().split(/\s+/).filter(function (c) { return c && c.indexOf('wpab-') !== 0; }).slice(0, 2);
+					}
+					var sel = tag + (cls.length ? '.' + cls.join('.') : '');
+					var parent = node.parentNode;
+					if (parent && parent.children) {
+						var same = Array.prototype.filter.call(parent.children, function (c) { return c.tagName === node.tagName; });
+						if (same.length > 1) { sel += ':nth-of-type(' + (Array.prototype.indexOf.call(parent.children, node) + 1) + ')'; }
+					}
+					parts.unshift(sel);
+					node = node.parentNode; depth++;
+				}
+				return parts.join(' > ');
+			}
+			function vApplyPreview() {
+				var doc = vDoc(); if (!doc) { return; }
+				var style = doc.getElementById('wpab-visual-preview');
+				if (!style) { style = doc.createElement('style'); style.id = 'wpab-visual-preview'; doc.head.appendChild(style); }
+				var css = '';
+				Object.keys(vRules).forEach(function (sel) {
+					var props = vRules[sel] || {}, body = '';
+					Object.keys(props).forEach(function (p) {
+						if (p === '__raw') { return; }
+						if (props[p] !== '' && props[p] != null) { body += p + ':' + props[p] + ' !important;'; }
+					});
+					if (props.__raw) { body += props.__raw; }
+					if (body) { css += sel + '{' + body + '}\n'; }
+				});
+				style.textContent = css;
+			}
+			function vSetProp(prop, value) {
+				if (!vCurrentSel) { return; }
+				vRules[vCurrentSel] = vRules[vCurrentSel] || {};
+				vRules[vCurrentSel][prop] = value;
+				vApplyPreview();
+			}
+			function vSelect(el) {
+				var doc = vDoc(); if (!doc) { return; }
+				var prev = doc.querySelector('.wpab-sel'); if (prev) { prev.classList.remove('wpab-sel'); }
+				if (el.classList) { el.classList.add('wpab-sel'); }
+				vCurrentSel = vBuildSelector(el);
+				vSelectorEl.value = vCurrentSel;
+				try {
+					var cs = vFrame.contentWindow.getComputedStyle(el);
+					$('wpab-v-color').value = rgbToHex(cs.color);
+					$('wpab-v-bg').value = rgbToHex(cs.backgroundColor);
+					$('wpab-v-fs').value = parseInt(cs.fontSize, 10) || '';
+				} catch (e) {}
+				$('wpab-v-css').value = (vRules[vCurrentSel] && vRules[vCurrentSel].__raw) || '';
+				vPanel.hidden = false;
+			}
+			function vBind() {
+				var doc = vDoc();
+				if (!doc) {
+					vStatusEl.textContent = 'Preview cannot access the site (it may block being framed). Element targeting is unavailable here.';
+					vStatusEl.className = 'wpab-visual__status is-error';
+					return;
+				}
+				var hl = doc.getElementById('wpab-visual-hl');
+				if (!hl) {
+					hl = doc.createElement('style'); hl.id = 'wpab-visual-hl';
+					hl.textContent = '.wpab-hl{outline:2px dashed #2271b1 !important;outline-offset:-2px}.wpab-sel{outline:2px solid #2271b1 !important;outline-offset:-2px}';
+					doc.head.appendChild(hl);
+				}
+				vStatusEl.textContent = 'Click any element in the preview to target it.';
+				vStatusEl.className = 'wpab-visual__status';
+				doc.addEventListener('mouseover', function (e) { if (e.target && e.target.classList) { e.target.classList.add('wpab-hl'); } }, true);
+				doc.addEventListener('mouseout', function (e) { if (e.target && e.target.classList) { e.target.classList.remove('wpab-hl'); } }, true);
+				doc.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); vSelect(e.target); }, true);
+			}
+			function initVisual() {
+				$('wpab-v-color').addEventListener('input', function () { vSetProp('color', this.value); });
+				$('wpab-v-bg').addEventListener('input', function () { vSetProp('background-color', this.value); });
+				$('wpab-v-fs').addEventListener('input', function () { vSetProp('font-size', this.value ? this.value + 'px' : ''); });
+				$('wpab-v-css').addEventListener('input', function () {
+					if (!vCurrentSel) { return; }
+					vRules[vCurrentSel] = vRules[vCurrentSel] || {};
+					vRules[vCurrentSel].__raw = this.value;
+					vApplyPreview();
+				});
+				vSelectorEl.addEventListener('change', function () { var v = this.value.trim(); if (v) { vCurrentSel = v; } });
+				$('wpab-v-reset').addEventListener('click', function () {
+					vRules = {}; vCurrentSel = null; vApplyPreview(); vPanel.hidden = true;
+					var doc = vDoc(); if (doc) { var s = doc.querySelector('.wpab-sel'); if (s) { s.classList.remove('wpab-sel'); } }
+				});
+				vFrame.addEventListener('load', vBind);
+				vStatusEl.textContent = 'Loading preview…';
+				vFrame.src = cfg.siteUrl;
+			}
 
 			/* ---- Init ---- */
 			resetThread();
