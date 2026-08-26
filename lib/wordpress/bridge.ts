@@ -157,6 +157,35 @@ export async function getSiteContentItem(
   });
 }
 
+export type ContentUpdateFields = {
+  title?: string;
+  content?: string;
+  excerpt?: string;
+  status?: string;
+  product?: {
+    regular_price?: string;
+    sale_price?: string;
+    sku?: string;
+    stock_status?: string;
+  };
+};
+
+export async function updateSiteContent(
+  siteUrl: string,
+  token: string,
+  payload: {
+    type: string;
+    id: number;
+    fields: ContentUpdateFields;
+  }
+) {
+  return bridgeRequest(siteUrl, token, "content-update", {
+    method: "POST",
+    body: payload,
+    timeoutMs: 30000,
+  });
+}
+
 export async function readProjectFile(
   siteUrl: string,
   token: string,

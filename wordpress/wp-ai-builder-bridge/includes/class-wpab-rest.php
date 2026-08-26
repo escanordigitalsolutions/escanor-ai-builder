@@ -194,6 +194,18 @@ final class WPAB_REST {
 				),
 			)
 		);
+
+		// Content editing (Phase 3): controlled, revision-backed writes to a
+		// single page/post/product/CPT. Menus and media are not editable here.
+		register_rest_route(
+			$namespace,
+			'/content-update',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'content_update' ),
+				'permission_callback' => self::permission(),
+			)
+		);
 	}
 
 	/* ---------------------------------------------------------------------
@@ -219,6 +231,26 @@ final class WPAB_REST {
 			(string) $request->get_param( 'type' ),
 			(int) $request->get_param( 'id' )
 		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function content_update( WP_REST_Request $request ) {
+		$body = $request->get_json_params();
+
+		if ( ! is_array( $body ) ) {
+			return new WP_Error( 'wpab_content_bad_body', 'A JSON body is required.', array( 'status' => 400 ) );
+		}
+
+		$type   = isset( $body['type'] ) ? (string) $body['type'] : '';
+		$id     = isset( $body['id'] ) ? (int) $body['id'] : 0;
+		$fields = isset( $body['fields'] ) && is_array( $body['fields'] ) ? $body['fields'] : array();
+
+		if ( empty( $fields ) ) {
+			return new WP_Error( 'wpab_content_no_fields', 'No fields to update.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Content::update( $type, $id, $fields );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}

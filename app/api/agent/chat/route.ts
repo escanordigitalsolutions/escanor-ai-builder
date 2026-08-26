@@ -148,6 +148,33 @@ const tools = [
       additionalProperties: false,
     },
   },
+  {
+    type: "function" as const,
+    name: "request_content_edit",
+    description:
+      "Call this when the user wants to CHANGE the text or fields of a specific native content item — a page, post, product or custom post type (not theme/plugin code). You must know the item's type and id first (use list_content / get_content to find them). It queues a content-edit proposal the user reviews field-by-field and applies, with a WordPress revision saved automatically. Menus and media cannot be edited. Do NOT use this for code/theme changes — use request_build for those.",
+    strict: true,
+    parameters: {
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          description: "Content type key (page, post, product, or a CPT slug).",
+        },
+        id: {
+          type: "integer",
+          description: "The item id (from list_content / get_content).",
+        },
+        instruction: {
+          type: "string",
+          description:
+            "A clear description of the content change, e.g. 'Rewrite the intro paragraph to be friendlier and mention free shipping.'",
+        },
+      },
+      required: ["type", "id", "instruction"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 type ActivityItem = {
@@ -410,9 +437,11 @@ You can inspect TWO layers of this site:
 Pick the layer that fits. "How is the header coded?" → source files. "What products / pages do I have?" or "improve this page's copy" → content tools. Use both when a question spans code and content.
 
 Deciding what the user wants:
-- A QUESTION or a request for advice/explanation → just answer it (after inspecting what you need). Do not call request_build.
-- A request to actually CHANGE the site (add/edit/restyle/rework something in the theme, plugin, layout or copy) → briefly confirm what you'll do, then call request_build with one clear, self-contained instruction. The user will get a diff to review and Deploy inline; you never write or paste the code yourself.
-- If a change request is too vague to build safely, ask ONE short clarifying question instead of guessing — then build once they answer.
+- A QUESTION or a request for advice/explanation → just answer it (after inspecting what you need). Do not call any request_* tool.
+- A CODE / DESIGN change to the theme or plugin (layout, styling, template logic, new sections built in code) → briefly confirm what you'll do, then call request_build with one clear instruction. The user gets a code diff to review and Deploy inline.
+- A CONTENT change to a specific page/post/product/CPT (rewrite copy, fix wording, change a title, adjust a product's price/SKU/stock) → first make sure you have the item's type and id (use list_content / get_content), then call request_content_edit with type, id and a clear instruction. The user gets a field-by-field before/after to review and Apply, and WordPress saves a revision automatically. Menus and media cannot be edited this way.
+- Pick request_build for code, request_content_edit for content. If the user's item is ambiguous (which page?), ask ONE short clarifying question, or look it up with the content tools, before proposing.
+- You never write or paste the final code or full new content yourself — the proposal shows it.
 
 Style — conversational but tight:
 - Talk like a helpful senior WordPress developer. Warm, direct, plain language. Free-flowing, not robotic — but never padded. Usually 1-4 short sentences.
@@ -467,6 +496,11 @@ Workflow rules:
     // normalized instruction back to the editor, which runs the hardened,
     // timeout-resilient propose+poll flow inline in the same conversation.
     let buildRequest: { instruction: string } | null = null;
+    let contentEditRequest: {
+      type: string;
+      id: number;
+      instruction: string;
+    } | null = null;
 
     for (let round = 0; round < 6; round++) {
       if (response.status !== "completed") {
@@ -557,6 +591,7 @@ Workflow rules:
           toolCalls: totalToolCalls,
           activity,
           buildRequest,
+          contentEditRequest,
         });
       }
 
@@ -630,6 +665,39 @@ Workflow rules:
               queued: true,
               note: "A change proposal has been queued. It will be drafted and shown to the user inline with a diff and a Deploy button. Briefly tell the user, in one or two sentences, what change you are proposing and that they can review and deploy it below. Do NOT paste code or a diff yourself.",
             };
+          } else if (call.name === "request_content_edit") {
+            const editType = validateContentType(args.type);
+            const editId = validateContentId(args.id);
+            const editInstruction =
+              typeof args.instruction === "string"
+                ? args.instruction.trim().slice(0, 2000)
+                : "";
+
+            if (!editInstruction) {
+              throw new Error("A content-edit instruction is required.");
+            }
+
+            if (editType === "menu" || editType === "media") {
+              result = {
+                queued: false,
+                note: "Menus and media cannot be edited here. Tell the user this politely.",
+              };
+            } else {
+              if (!contentEditRequest) {
+                contentEditRequest = {
+                  type: editType,
+                  id: editId,
+                  instruction: editInstruction,
+                };
+                activity.push({ tool: call.name, scope: editType, paths: [String(editId)] });
+                await writeStep(`Preparing a content edit for ${editType} #${editId}…`);
+              }
+
+              result = {
+                queued: true,
+                note: "A content-edit proposal has been queued. It will be drafted and shown to the user inline as a field-by-field before/after with an Apply button (a WordPress revision is saved on apply). Briefly tell the user what you are changing and that they can review and apply it below. Do NOT paste the full new content yourself.",
+              };
+            }
           } else {
             throw new Error(`Unknown tool: ${call.name}`);
           }

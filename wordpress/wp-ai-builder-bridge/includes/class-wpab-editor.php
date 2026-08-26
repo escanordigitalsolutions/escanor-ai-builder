@@ -136,6 +136,28 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Content editing (Phase 3): draft a change (proxied to the SaaS model)
+		// and apply it (proxied to the SaaS writer -> bridge -> wp_update_post).
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/content/propose',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_content_edit_propose' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/content/apply',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_content_edit_apply' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Visual CSS override layer (stored locally, printed on the front end).
 		register_rest_route(
 			self::NAMESPACE,
@@ -185,6 +207,55 @@ final class WPAB_Editor {
 		$result = WPAB_Content::get_item(
 			(string) $request->get_param( 'type' ),
 			(int) $request->get_param( 'id' )
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_content_edit_propose( WP_REST_Request $request ) {
+		$params      = self::json_params( $request );
+		$type        = isset( $params['type'] ) ? trim( (string) $params['type'] ) : '';
+		$id          = isset( $params['id'] ) ? (int) $params['id'] : 0;
+		$instruction = isset( $params['instruction'] ) ? trim( (string) $params['instruction'] ) : '';
+
+		if ( '' === $type || $id < 1 || '' === $instruction ) {
+			return new WP_Error( 'wpab_editor_bad_edit', 'type, id and instruction are required.', array( 'status' => 400 ) );
+		}
+		if ( strlen( $instruction ) > 4000 ) {
+			return new WP_Error( 'wpab_editor_too_long', 'Instruction is too long.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request(
+			'agent/content-propose',
+			array(
+				'type'        => $type,
+				'id'          => $id,
+				'instruction' => $instruction,
+			),
+			55
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_content_edit_apply( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$type   = isset( $params['type'] ) ? trim( (string) $params['type'] ) : '';
+		$id     = isset( $params['id'] ) ? (int) $params['id'] : 0;
+		$fields = isset( $params['fields'] ) && is_array( $params['fields'] ) ? $params['fields'] : array();
+
+		if ( '' === $type || $id < 1 || empty( $fields ) ) {
+			return new WP_Error( 'wpab_editor_bad_edit', 'type, id and fields are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request(
+			'agent/content-apply',
+			array(
+				'type'   => $type,
+				'id'     => $id,
+				'fields' => $fields,
+			),
+			45
 		);
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
@@ -357,6 +428,8 @@ final class WPAB_Editor {
 			'restContentTypes' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/types' ) ),
 			'restContentList'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/list' ) ),
 			'restContentGet'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/get' ) ),
+			'restContentPropose' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/propose' ) ),
+			'restContentApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/apply' ) ),
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
@@ -567,6 +640,11 @@ final class WPAB_Editor {
 			.wpab-prop-mount:empty { display: none; }
 			.wpab-prop-mount { margin-top: 8px; }
 			.wpab-inline-status { margin-top: 4px; }
+			.wpab-ce-field { border: 1px solid #e2e4e7; border-radius: 6px; margin-top: 10px; overflow: hidden; }
+			.wpab-ce-fname { background: #f6f7f7; padding: 6px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #50575e; }
+			.wpab-ce-before, .wpab-ce-after { padding: 8px 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; font-family: Menlo, Consolas, monospace; }
+			.wpab-ce-before { background: #fbeaea; color: #9a2325; }
+			.wpab-ce-after { background: #eaf7ec; color: #14622a; }
 			.wpab-ctypes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 			.wpab-ctype { background: #f0f0f1; border: 1px solid #e2e4e7; border-radius: 999px; padding: 4px 12px; font-size: 12px; color: #3c434a; cursor: pointer; }
 			.wpab-ctype:hover { background: #e8e8ea; }
@@ -719,6 +797,7 @@ final class WPAB_Editor {
 			}
 			function sendChat(message) {
 				var pendingBuild = null;
+					var pendingContentEdit = null;
 					setBusy(true); metaEl.textContent = '';
 				var runId = genRunId();
 				var typing = addTyping();
@@ -743,9 +822,10 @@ final class WPAB_Editor {
 					if (d.conversation && d.conversation.id) { conversationId = d.conversation.id; }
 					addMessage('assistant', d.answer || 'Analysis completed.', d.activity);
 						if (d.buildRequest && d.buildRequest.instruction) { pendingBuild = d.buildRequest.instruction; }
+						if (d.contentEditRequest && d.contentEditRequest.id) { pendingContentEdit = d.contentEditRequest; }
 					if (d.usage) { metaEl.textContent = (d.toolCalls || 0) + ' tool calls · ' + (d.usage.totalTokens || 0).toLocaleString() + ' tokens'; }
 				}).catch(function () { polling = false; typing.remove(); addMessage('assistant', 'Error: network request failed.'); })
-				.then(function () { setBusy(false); input.focus(); if (pendingBuild) { startInlineProposal(pendingBuild); } });
+				.then(function () { setBusy(false); input.focus(); if (pendingBuild) { startInlineProposal(pendingBuild); } else if (pendingContentEdit) { startInlineContentEdit(pendingContentEdit); } });
 			}
 			form.addEventListener('submit', function (e) { e.preventDefault(); if (busy) { return; } var m = input.value.trim(); if (!m) { return; } addMessage('user', m); input.value = ''; sendChat(m); });
 			input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); } });
@@ -832,6 +912,59 @@ final class WPAB_Editor {
 					var st = wrap.querySelector('.wpab-inline-status');
 					var mount = wrap.querySelector('.wpab-prop-mount');
 					runProposal(instruction, mount, function (t) { if (st) { st.textContent = t; st.style.display = t ? '' : 'none'; } thread.scrollTop = thread.scrollHeight; });
+				}
+								/* ---- Content edit (Phase 3) ---- */
+				function ceTrunc(t, nn) { t = String(t == null ? '' : t); return t.length > nn ? t.slice(0, nn) + '…' : t; }
+				function renderContentEditCard(proposal, mount) {
+					var changesHtml = (proposal.changes || []).map(function (c) {
+						return '<div class="wpab-ce-field"><div class="wpab-ce-fname">' + escapeHtml(c.field) + '</div>' +
+							(String(c.before) !== '' ? '<div class="wpab-ce-before">' + escapeHtml(ceTrunc(c.before, 1500)) + '</div>' : '') +
+							'<div class="wpab-ce-after">' + escapeHtml(ceTrunc(c.after, 1500)) + '</div></div>';
+					}).join('');
+					mount.innerHTML = '<div class="wpab-prop"><div class="wpab-prop__head"><span class="wpab-pill wpab-pill--low">content</span><h3 class="wpab-prop__title">' + escapeHtml(proposal.summary || 'Content update') + '</h3></div>' +
+						'<p class="wpab-prop__summary">' + escapeHtml((proposal.type || '') + ' #' + proposal.id) + '</p>' + changesHtml +
+						'<div class="wpab-prop__actions"><button type="button" class="button button-primary wpab-ce-apply">Apply</button><button type="button" class="button wpab-ce-close">Dismiss</button></div><div class="wpab-deploy-slot"></div></div>';
+					var card = mount.querySelector('.wpab-prop');
+					card.querySelector('.wpab-ce-apply').addEventListener('click', function () { applyContentEdit(proposal, proposal.fields, card, false); });
+					card.querySelector('.wpab-ce-close').addEventListener('click', function () { if (!busy) { mount.innerHTML = ''; } });
+				}
+				function applyContentEdit(proposal, fields, card, isUndo) {
+					if (busy) { return; }
+					setBusy(true);
+					var slot = card.querySelector('.wpab-deploy-slot');
+					if (slot) { slot.innerHTML = '<div class="wpab-deploy">' + (isUndo ? 'Undoing…' : 'Applying & saving a revision…') + '</div>'; }
+					api('POST', cfg.restContentApply, { type: proposal.type, id: proposal.id, fields: fields }).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) { var err = (out.data && (out.data.error || out.data.message)) || 'Update failed.'; if (slot) { slot.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; } return; }
+						var r = out.data.result || {};
+						var rev = r.revision_id ? ' · revision ' + escapeHtml(String(r.revision_id)) : '';
+						var view = r.url ? ' · <a href="' + escapeHtml(r.url) + '" target="_blank" rel="noopener">View</a>' : '';
+						if (slot) {
+							slot.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">' + (isUndo ? 'Reverted ✓' : 'Applied ✓') + rev + view + '</div>';
+							if (!isUndo && proposal.before) {
+								var undoBtn = document.createElement('button'); undoBtn.type = 'button'; undoBtn.className = 'button'; undoBtn.textContent = 'Undo'; undoBtn.style.marginTop = '8px';
+								undoBtn.addEventListener('click', function () { applyContentEdit(proposal, proposal.before, card, true); });
+								slot.appendChild(undoBtn);
+							}
+						}
+						var ab = card.querySelector('.wpab-ce-apply'); if (ab) { ab.disabled = true; ab.textContent = isUndo ? 'Reverted' : 'Applied'; }
+						reloadPreview();
+					}).catch(function () { if (slot) { slot.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; } })
+					.then(function () { setBusy(false); });
+				}
+				function startInlineContentEdit(req) {
+					var wrap = document.createElement('div'); wrap.className = 'wpab-msg wpab-msg--assistant';
+					wrap.innerHTML = '<div class="wpab-msg__role">Content edit</div><div class="wpab-inline-status wpab-typing">Drafting the content change…</div><div class="wpab-prop-mount"></div>';
+					thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
+					var st = wrap.querySelector('.wpab-inline-status');
+					var mount = wrap.querySelector('.wpab-prop-mount');
+					setBusy(true);
+					api('POST', cfg.restContentPropose, { type: req.type, id: req.id, instruction: req.instruction }).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) { if (st) { st.textContent = ''; } mount.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml((out.data && (out.data.error || out.data.message)) || 'Could not draft the change.') + '</div>'; return; }
+						if (!out.data.proposal) { if (st) { st.textContent = ''; } mount.innerHTML = '<div class="wpab-deploy">' + escapeHtml(out.data.message || 'No change was needed.') + '</div>'; return; }
+						if (st) { st.textContent = ''; st.style.display = 'none'; }
+						renderContentEditCard(out.data.proposal, mount);
+					}).catch(function () { if (st) { st.textContent = ''; } mount.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed. If the change was large it may still be processing — try again.</div>'; })
+					.then(function () { setBusy(false); input.focus(); thread.scrollTop = thread.scrollHeight; });
 				}
 				function deploy(proposalId, card) {
 					if (busy) { return; }
@@ -938,9 +1071,16 @@ final class WPAB_Editor {
 						'<div class="wpab-cdetail__actions">' +
 						(item.url ? '<a class="button" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">View</a>' : '') +
 						(item.edit_url ? '<a class="button" href="' + escapeHtml(item.edit_url) + '" target="_blank" rel="noopener">Edit in WP</a>' : '') +
+						((type !== 'menu' && type !== 'media') ? '<button type="button" class="button button-primary" id="wpab-cedit">Edit with AI</button>' : '') +
 						'<button type="button" class="button" id="wpab-cask">Ask AI about this</button>' +
 						'</div></div>';
 					var back = $('wpab-cback'); if (back) { back.addEventListener('click', function () { selectContentType(contentActiveType); }); }
+					var edit = $('wpab-cedit'); if (edit) { edit.addEventListener('click', function () {
+						var q = 'Edit the ' + type + ' "' + (item.title || '') + '" (id ' + item.id + '): ';
+						for (var i = 0; i < tabs.length; i++) { tabs[i].classList.toggle('is-active', tabs[i].getAttribute('data-tab') === 'chat'); }
+						$('wpab-pane-chat').hidden = false; $('wpab-pane-build').hidden = true; $('wpab-pane-content').hidden = true; $('wpab-pane-visual').hidden = true;
+						input.value = q; input.focus();
+					}); }
 					var ask = $('wpab-cask'); if (ask) { ask.addEventListener('click', function () {
 						var label = (type === 'menu' ? 'menu' : (type === 'media' ? 'media item' : type));
 						var q = 'Tell me about the ' + label + ' "' + (item.title || '') + '"' + (item.id ? ' (id ' + item.id + ')' : '') + ' and suggest improvements.';
