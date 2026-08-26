@@ -158,6 +158,28 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Analysis: /analyze is computed locally (instant, no AI); /recommend is
+		// proxied to the SaaS model which reads the same audit.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/analyze',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_analyze' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/recommend',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_recommend' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Visual CSS override layer (stored locally, printed on the front end).
 		register_rest_route(
 			self::NAMESPACE,
@@ -234,6 +256,16 @@ final class WPAB_Editor {
 			),
 			55
 		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_analyze( WP_REST_Request $request ) {
+		return new WP_REST_Response( WPAB_Analysis::audit(), 200 );
+	}
+
+	public static function rest_recommend( WP_REST_Request $request ) {
+		$result = WPAB_Cloud::request( 'agent/recommend', array(), 55 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -430,6 +462,8 @@ final class WPAB_Editor {
 			'restContentGet'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/get' ) ),
 			'restContentPropose' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/propose' ) ),
 			'restContentApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/apply' ) ),
+			'restAnalyze'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/analyze' ) ),
+			'restRecommend' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/recommend' ) ),
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
@@ -495,6 +529,30 @@ final class WPAB_Editor {
 							</div>
 						</div>
 
+						<div id="wpab-pane-seo" class="wpab-pane" hidden>
+							<div class="wpab-pane__bar">
+								<span class="wpab-pane__hint">SEO signals across your published pages.</span>
+								<button type="button" id="wpab-seo-refresh" class="wpab-textbtn">Refresh</button>
+							</div>
+							<div id="wpab-seo-body"><p class="wpab-empty">Loading…</p></div>
+						</div>
+
+						<div id="wpab-pane-insights" class="wpab-pane" hidden>
+							<div class="wpab-pane__bar">
+								<span class="wpab-pane__hint">What is on your site right now.</span>
+								<button type="button" id="wpab-insights-refresh" class="wpab-textbtn">Refresh</button>
+							</div>
+							<div id="wpab-insights-body"><p class="wpab-empty">Loading…</p></div>
+						</div>
+
+						<div id="wpab-pane-recs" class="wpab-pane" hidden>
+							<div class="wpab-pane__bar">
+								<span class="wpab-pane__hint">AI recommendations from your site data.</span>
+								<button type="button" id="wpab-recs-run" class="wpab-textbtn">Generate</button>
+							</div>
+							<div id="wpab-recs-body"><p class="wpab-empty">Click Generate to analyze your site and get prioritized recommendations.</p></div>
+						</div>
+
 						<div id="wpab-pane-visual" class="wpab-pane" hidden>
 							<p id="wpab-visual-hint" class="wpab-empty">Click any element in the preview to target it.</p>
 							<div id="wpab-visual-panel" class="wpab-visual__panel" hidden>
@@ -552,6 +610,11 @@ final class WPAB_Editor {
 							<button type="button" class="wpab-dd__item" data-tool="visual">Inspect</button>
 							<button type="button" class="wpab-dd__item" data-tool="build">History</button>
 						</div>
+					</div>
+					<div class="wpab-anlz__group">
+						<button type="button" class="wpab-anlz" data-view="seo" title="SEO audit"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.6" y2="16.6"></line></svg><span class="wpab-anlz__label">SEO</span></button>
+						<button type="button" class="wpab-anlz" data-view="insights" title="Insights"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="21" x2="5" y2="11"></line><line x1="12" y1="21" x2="12" y2="4"></line><line x1="19" y1="21" x2="19" y2="14"></line></svg><span class="wpab-anlz__label">Insights</span></button>
+						<button type="button" class="wpab-anlz" data-view="recs" title="AI recommendations"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 21h4"></path><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3z"></path></svg><span class="wpab-anlz__label">Recs</span></button>
 					</div>
 					<button type="button" id="wpab-context" class="wpab-bar__context" hidden></button>
 					<form id="wpab-editor-form" class="wpab-bar__form" autocomplete="off">
@@ -743,6 +806,42 @@ final class WPAB_Editor {
 			.wpab-cback { background: none; border: none; color: #8bb6ff; cursor: pointer; font-size: 12px; padding: 0 0 8px; }
 			.wpab-cthumb { max-width: 100%; border-radius: 6px; margin-top: 8px; border: 1px solid #33383e; }
 			@media (max-width: 720px) { .wpab-viewport { display: none; } .wpab-studio__dockstatus { display: none; } .wpab-bar__context { max-width: 20%; } }
+			.wpab-anlz__group { display: inline-flex; gap: 6px; }
+			.wpab-anlz { display: inline-flex; align-items: center; gap: 5px; background: #2a2e33; border: 1px solid #3a3f45; color: #c9ced4; border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer; white-space: nowrap; }
+			.wpab-anlz:hover { background: #31363c; color: #fff; }
+			.wpab-anlz svg { display: block; }
+			.wpab-checks { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+			.wpab-check { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; border-radius: 8px; background: #24282d; border: 1px solid #33383e; }
+			.wpab-check__i { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex: 0 0 auto; }
+			.wpab-check.is-ok .wpab-check__i { background: rgba(46,160,67,.2); color: #86e0a6; }
+			.wpab-check.is-bad .wpab-check__i { background: rgba(207,66,66,.2); color: #ff9b9b; }
+			.wpab-check__l { color: #e7e9ec; }
+			.wpab-check__m { color: #9aa0a6; font-size: 12px; margin-left: auto; text-align: right; }
+			.wpab-issues { display: flex; flex-wrap: wrap; gap: 6px; }
+			.wpab-issue { background: rgba(210,153,34,.14); border: 1px solid rgba(210,153,34,.4); color: #f0c674; border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+			.wpab-issue--sm { background: #2a2e33; border-color: #3a3f45; color: #c9ced4; font-size: 11px; padding: 2px 8px; }
+			.wpab-stats { display: flex; flex-wrap: wrap; gap: 8px; }
+			.wpab-stat { flex: 1; min-width: 78px; background: #24282d; border: 1px solid #33383e; border-radius: 10px; padding: 10px 12px; text-align: center; }
+			.wpab-stat__n { font-size: 20px; font-weight: 700; color: #fff; }
+			.wpab-stat__l { font-size: 11px; color: #9aa0a6; text-transform: uppercase; letter-spacing: .04em; margin-top: 2px; }
+			.wpab-bar { margin-bottom: 10px; }
+			.wpab-bar__top { display: flex; justify-content: space-between; font-size: 13px; color: #e7e9ec; margin-bottom: 4px; }
+			.wpab-bar__n { color: #9aa0a6; }
+			.wpab-bar__track { height: 8px; background: #2a2e33; border-radius: 999px; overflow: hidden; }
+			.wpab-bar__track span { display: block; height: 100%; background: #6ea8fe; border-radius: 999px; }
+			.wpab-bar__sub { font-size: 11px; color: #8b9198; margin-top: 3px; }
+			.wpab-rec { border: 1px solid #33383e; border-radius: 10px; background: #24282d; padding: 10px 12px; margin-bottom: 8px; }
+			.wpab-rec__top { display: flex; align-items: center; gap: 8px; }
+			.wpab-rec__title { font-weight: 600; color: #e7e9ec; flex: 1; }
+			.wpab-rec__area { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #9aa0a6; background: #2a2e33; border: 1px solid #3a3f45; border-radius: 6px; padding: 1px 7px; }
+			.wpab-rec__detail { color: #b7bcc2; font-size: 13px; margin-top: 6px; }
+			.wpab-pri { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
+			.wpab-pri--high { background: rgba(207,66,66,.15); color: #ff9b9b; border-color: rgba(207,66,66,.4); }
+			.wpab-pri--medium { background: rgba(210,153,34,.15); color: #f0c674; border-color: rgba(210,153,34,.4); }
+			.wpab-pri--low { background: rgba(46,160,67,.15); color: #86e0a6; border-color: rgba(46,160,67,.4); }
+			.wpab-recs-summary { color: #b7bcc2; font-size: 13px; margin: 0 0 12px; }
+			.wpab-anlz-foot { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+			@media (max-width: 900px) { .wpab-anlz__label { display: none; } }
 			</style>
 
 		<script>
@@ -847,15 +946,13 @@ final class WPAB_Editor {
 			}
 
 			/* ---- Tools (dropdown-driven) + sheet ---- */
-			var TOOL_LABELS = { chat: 'Chat', content: 'Content', visual: 'Inspect', build: 'History' };
+			var TOOL_LABELS = { chat: 'Chat', content: 'Content', visual: 'Inspect', build: 'History', seo: 'SEO', insights: 'Insights', recs: 'Recommendations' };
 			var currentTool = 'chat';
 			function openSheet() { var sh = $('wpab-sheet'), dk = $('wpab-dock'); if (sh) { sh.hidden = false; } if (dk) { dk.classList.add('is-open'); } }
 			function closeSheet() { var sh = $('wpab-sheet'), dk = $('wpab-dock'); if (sh) { sh.hidden = true; } if (dk) { dk.classList.remove('is-open'); } }
+			var ALL_PANES = ['chat', 'build', 'content', 'visual', 'seo', 'insights', 'recs'];
 			function showPane(name) {
-				$('wpab-pane-chat').hidden = (name !== 'chat');
-				$('wpab-pane-build').hidden = (name !== 'build');
-				$('wpab-pane-content').hidden = (name !== 'content');
-				$('wpab-pane-visual').hidden = (name !== 'visual');
+				for (var pi = 0; pi < ALL_PANES.length; pi++) { var pel = $('wpab-pane-' + ALL_PANES[pi]); if (pel) { pel.hidden = (ALL_PANES[pi] !== name); } }
 			}
 			function updateContext() {
 				var c = $('wpab-context'); if (!c) { return; }
@@ -1329,6 +1426,101 @@ final class WPAB_Editor {
 				vStatusEl.textContent = 'Loading preview…';
 				vFrame.src = cfg.siteUrl;
 			}
+
+			/* ---- Analysis: SEO / Insights / Recommendations ---- */
+			var auditData = null, auditLoading = false, recsData = null;
+			var SPIN = '<p class="wpab-empty">Loading…</p>';
+			var ISSUE_LABELS = { missing_meta: 'Missing meta description', short_title: 'Title too short', long_title: 'Title too long', thin_content: 'Thin content (<300 words)', images_no_alt: 'Images missing alt', multi_h1: 'Multiple H1s' };
+			function loadAudit(cb) {
+				if (auditData) { cb(auditData); return; }
+				if (auditLoading) { return; }
+				auditLoading = true;
+				api('GET', cfg.restAnalyze).then(function (out) {
+					auditLoading = false;
+					if (out.ok && out.data && out.data.success !== false) { auditData = out.data; cb(auditData); } else { cb(null); }
+				}).catch(function () { auditLoading = false; cb(null); });
+			}
+			function chk(ok, label, failmsg) {
+				return '<div class="wpab-check ' + (ok ? 'is-ok' : 'is-bad') + '"><span class="wpab-check__i">' + (ok ? '\u2713' : '!') + '</span><span class="wpab-check__l">' + escapeHtml(label) + '</span>' + (ok ? '' : '<span class="wpab-check__m">' + escapeHtml(failmsg) + '</span>') + '</div>';
+			}
+			function renderSeo(audit) {
+				var body = $('wpab-seo-body'); if (!body) { return; }
+				if (!audit || !audit.seo) { body.innerHTML = '<p class="wpab-empty">Could not run the audit.</p>'; return; }
+				var s = audit.site || {}, seo = audit.seo || {};
+				var checks = '<div class="wpab-checks">' +
+					chk(!s.permalink_plain, 'Pretty permalinks', 'Using plain ?p= URLs — switch to a post-name permalink structure.') +
+					chk(!!s.https, 'HTTPS', 'The site is not served over HTTPS.') +
+					chk(!!s.search_indexable, 'Search engines allowed', 'WordPress is set to discourage search engines.') +
+					chk(!s.tagline_default && !s.tagline_empty, 'Tagline set', s.tagline_default ? 'Still the default tagline.' : 'Tagline is empty.') +
+					chk(!!seo.seo_plugin, 'SEO plugin', 'No SEO plugin detected (Yoast / Rank Math / AIOSEO).') +
+					'</div>';
+				var issues = seo.issues || {}, chips = '';
+				Object.keys(issues).forEach(function (k) { if (issues[k] > 0) { chips += '<span class="wpab-issue">' + escapeHtml(ISSUE_LABELS[k] || k) + ' \u00b7 ' + issues[k] + '</span>'; } });
+				var issuesHtml = chips ? '<h3 class="wpab-col__title">Issues found (' + (seo.checked || 0) + ' pages checked)</h3><div class="wpab-issues">' + chips + '</div>' : '<p class="wpab-empty" style="margin-top:10px">No SEO issues in the ' + (seo.checked || 0) + ' pages checked.</p>';
+				var itemsHtml = '';
+				(seo.items || []).forEach(function (it) {
+					var fl = (it.flags || []).map(function (f) { return '<span class="wpab-issue wpab-issue--sm">' + escapeHtml(ISSUE_LABELS[f] || f) + '</span>'; }).join('');
+					itemsHtml += '<div class="wpab-crow"><div class="wpab-crow__top"><span class="wpab-crow__title">' + escapeHtml(it.title || '(no title)') + '</span><span class="wpab-cstatus">' + escapeHtml(it.type) + '</span></div><div class="wpab-crow__meta">' + fl + '</div></div>';
+				});
+				if (itemsHtml) { itemsHtml = '<h3 class="wpab-col__title">Pages to improve</h3>' + itemsHtml; }
+				body.innerHTML = checks + issuesHtml + itemsHtml + '<div class="wpab-anlz-foot"><button type="button" class="wpab-btn" id="wpab-seo-torecs">Get AI recommendations \u2192</button></div>';
+				var b = $('wpab-seo-torecs'); if (b) { b.addEventListener('click', function () { openTool('recs'); }); }
+			}
+			function statTile(label, n) { return '<div class="wpab-stat"><div class="wpab-stat__n">' + (n || 0) + '</div><div class="wpab-stat__l">' + escapeHtml(label) + '</div></div>'; }
+			function renderInsights(audit) {
+				var body = $('wpab-insights-body'); if (!body) { return; }
+				if (!audit || !audit.inventory) { body.innerHTML = '<p class="wpab-empty">Could not load insights.</p>'; return; }
+				var inv = audit.inventory;
+				var max = 1; (inv.types || []).forEach(function (t) { if (t.total > max) { max = t.total; } });
+				var bars = (inv.types || []).map(function (t) {
+					var pct = Math.round((t.total / max) * 100);
+					return '<div class="wpab-bar"><div class="wpab-bar__top"><span>' + escapeHtml(t.label) + '</span><span class="wpab-bar__n">' + t.total + '</span></div><div class="wpab-bar__track"><span style="width:' + pct + '%"></span></div><div class="wpab-bar__sub">' + t.published + ' published \u00b7 ' + t.draft + ' draft</div></div>';
+				}).join('');
+				var stats = '<div class="wpab-stats">' + statTile('Media', inv.media) + statTile('Menus', inv.menus) + (inv.products ? statTile('In stock', inv.products.instock) + statTile('Out of stock', inv.products.outofstock) : '') + '</div>';
+				var recent = (inv.recent || []).map(function (r) { return '<div class="wpab-crow"><div class="wpab-crow__top"><span class="wpab-crow__title">' + escapeHtml(r.title || '(no title)') + '</span><span class="wpab-cstatus wpab-cstatus--' + escapeHtml(r.status) + '">' + escapeHtml(r.status) + '</span></div><div class="wpab-crow__meta">' + escapeHtml(r.type) + '</div></div>'; }).join('');
+				body.innerHTML = stats + '<h3 class="wpab-col__title">Content by type</h3>' + bars + (recent ? '<h3 class="wpab-col__title">Recently updated</h3>' + recent : '');
+			}
+			function renderRecs(data) {
+				var body = $('wpab-recs-body'); if (!body) { return; }
+				var recs = data.recommendations || [];
+				if (!recs.length) { body.innerHTML = '<p class="wpab-empty">' + escapeHtml(data.summary || 'The site looks good — no recommendations.') + '</p>'; return; }
+				var order = { high: 0, medium: 1, low: 2 };
+				recs.sort(function (a, b) { return (order[a.priority] == null ? 3 : order[a.priority]) - (order[b.priority] == null ? 3 : order[b.priority]); });
+				var cards = recs.map(function (r) {
+					return '<div class="wpab-rec"><div class="wpab-rec__top"><span class="wpab-pri wpab-pri--' + escapeHtml(r.priority || 'low') + '">' + escapeHtml(r.priority || 'low') + '</span><span class="wpab-rec__title">' + escapeHtml(r.title || '') + '</span><span class="wpab-rec__area">' + escapeHtml(r.area || '') + '</span></div><div class="wpab-rec__detail">' + escapeHtml(r.detail || '') + '</div></div>';
+				}).join('');
+				body.innerHTML = '<p class="wpab-recs-summary">' + escapeHtml(data.summary || '') + '</p>' + cards + '<div class="wpab-anlz-foot"><button type="button" class="wpab-btn" id="wpab-recs-copy">Copy as report</button><button type="button" class="wpab-btn" id="wpab-recs-regen">Regenerate</button></div>';
+				var cp = $('wpab-recs-copy'); if (cp) { cp.addEventListener('click', function () { copyRecs(data); }); }
+				var rg = $('wpab-recs-regen'); if (rg) { rg.addEventListener('click', function () { runRecs(); }); }
+			}
+			function copyRecs(data) {
+				var nl = String.fromCharCode(10);
+				var lines = ['Site recommendations', '', (data.summary || '')];
+				(data.recommendations || []).forEach(function (r) { lines.push('- [' + (r.priority || '') + '] ' + (r.title || '') + ' - ' + (r.detail || '')); });
+				try { navigator.clipboard.writeText(lines.join(nl)); wpToast('Report copied to clipboard.'); } catch (e) { wpToast('Copy is not available here.', 'error'); }
+			}
+			function runRecs() {
+				var body = $('wpab-recs-body'); if (body) { body.innerHTML = '<p class="wpab-typing">Analyzing your site and drafting recommendations…</p>'; }
+				setBusy(true);
+				api('POST', cfg.restRecommend, {}).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml((out.data && (out.data.error || out.data.message)) || 'Could not generate recommendations.') + '</div>'; } return; }
+					recsData = out.data; renderRecs(out.data);
+				}).catch(function () { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed. If your site is large it may take a moment — try again.</div>'; } })
+				.then(function () { setBusy(false); });
+			}
+			function seoLoad() { var b = $('wpab-seo-body'); if (b) { b.innerHTML = SPIN; } loadAudit(renderSeo); }
+			function insightsLoad() { var b = $('wpab-insights-body'); if (b) { b.innerHTML = SPIN; } loadAudit(renderInsights); }
+			(function () {
+				var g = document.querySelectorAll('.wpab-anlz');
+				for (var i = 0; i < g.length; i++) { g[i].addEventListener('click', function () {
+					var v = this.getAttribute('data-view');
+					openTool(v);
+					if (v === 'seo') { seoLoad(); } else if (v === 'insights') { insightsLoad(); }
+				}); }
+				var sr = $('wpab-seo-refresh'); if (sr) { sr.addEventListener('click', function () { auditData = null; seoLoad(); }); }
+				var ir = $('wpab-insights-refresh'); if (ir) { ir.addEventListener('click', function () { auditData = null; insightsLoad(); }); }
+				var rr = $('wpab-recs-run'); if (rr) { rr.addEventListener('click', function () { runRecs(); }); }
+			})();
 
 			/* ---- Init ---- */
 			resetThread();

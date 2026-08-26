@@ -186,6 +186,10 @@ export async function updateSiteContent(
   });
 }
 
+export async function getSiteAudit(siteUrl: string, token: string) {
+  return bridgeRequest(siteUrl, token, "analyze", { timeoutMs: 20000 });
+}
+
 export async function readProjectFile(
   siteUrl: string,
   token: string,

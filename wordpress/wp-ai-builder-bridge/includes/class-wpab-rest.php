@@ -206,6 +206,21 @@ final class WPAB_REST {
 				'permission_callback' => self::permission(),
 			)
 		);
+
+		// Read-only site audit (SEO + inventory), consumed by the recommender.
+		register_rest_route(
+			$namespace,
+			'/analyze',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'analyze' ),
+				'permission_callback' => self::permission(),
+			)
+		);
+	}
+
+	public static function analyze( WP_REST_Request $request ) {
+		return new WP_REST_Response( WPAB_Analysis::audit(), 200 );
 	}
 
 	/* ---------------------------------------------------------------------
