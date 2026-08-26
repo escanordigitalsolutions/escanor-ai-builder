@@ -304,6 +304,22 @@ final class WPAB_Cloud {
 			? sanitize_key( wp_unslash( $_GET['wpab_notice'] ) )
 			: '';
 
+		// Live-verify against the builder on render, so this page reflects the
+		// real state instead of just "a key is stored". An orphaned or revoked
+		// key shows the actual reason here rather than a false "Connected".
+		$verify_error = '';
+		$verified     = false;
+
+		if ( self::has_key() ) {
+			$session = self::session();
+
+			if ( is_wp_error( $session ) ) {
+				$verify_error = $session->get_error_message();
+			} else {
+				$verified = true;
+			}
+		}
+
 		$project = self::cached_project();
 		?>
 		<div class="wrap">
@@ -325,11 +341,29 @@ final class WPAB_Cloud {
 			</p>
 
 			<?php if ( self::has_key() ) : ?>
+				<?php if ( ! $verified ) : ?>
+					<div class="notice notice-error inline">
+						<p>
+							<strong>The site key is not verified.</strong>
+							<?php echo esc_html( $verify_error ); ?>
+						</p>
+						<p class="description">
+							Generate a fresh site key in your project dashboard
+							(project → Site keys → New key), then disconnect below and
+							paste the new one.
+						</p>
+					</div>
+				<?php endif; ?>
+
 				<table class="form-table" role="presentation">
 					<tr>
 						<th scope="row">Status</th>
 						<td>
-							<strong>Connected</strong>
+							<?php if ( $verified ) : ?>
+								<strong style="color:#00a32a">Connected &amp; verified</strong>
+							<?php else : ?>
+								<strong style="color:#d63638">Key stored, not verified</strong>
+							<?php endif; ?>
 							<code><?php echo esc_html( self::masked_key() ); ?></code>
 						</td>
 					</tr>

@@ -174,11 +174,22 @@ export async function authenticateSiteRequest(
     .eq("id", keyRow.project_id)
     .maybeSingle();
 
-  if (projectError || !project) {
+  if (projectError) {
+    console.error("Site key project lookup failed:", projectError);
+
+    return {
+      ok: false,
+      status: 500,
+      error: "Could not load the project for this site key.",
+    };
+  }
+
+  if (!project) {
     return {
       ok: false,
       status: 404,
-      error: "The project for this site API key no longer exists.",
+      error:
+        "This site key points to a project that no longer exists. Generate a new site key from the project dashboard and reconnect.",
     };
   }
 

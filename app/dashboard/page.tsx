@@ -104,6 +104,11 @@ export default async function DashboardPage() {
                   ? wordpressSites[0]
                   : wordpressSites;
 
+                // A project is "connected" only once a real handshake has
+                // stamped last_connected_at. A row with no site, or one that
+                // was never reached, is not connected.
+                const connected = Boolean(site?.last_connected_at);
+
                 return (
                   <Link
                     key={project.id}
@@ -121,10 +126,17 @@ export default async function DashboardPage() {
                         </h3>
                       </div>
 
-                      <div className="flex items-center gap-2 text-xs text-green-400">
-                        <span className="w-2 h-2 rounded-full bg-green-400" />
-                        Connected
-                      </div>
+                      {connected ? (
+                        <div className="flex items-center gap-2 text-xs text-green-400">
+                          <span className="w-2 h-2 rounded-full bg-green-400" />
+                          Connected
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-xs text-neutral-500">
+                          <span className="w-2 h-2 rounded-full bg-neutral-600" />
+                          Not connected
+                        </div>
+                      )}
                     </div>
 
                     <p className="text-neutral-500 text-sm mt-4 truncate">
