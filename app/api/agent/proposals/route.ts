@@ -267,6 +267,135 @@ function firstPreflightError(report: any) {
   return "WordPress Bridge preflight rejected the proposal.";
 }
 
+// List recent proposals (with diffs) and deployments for the wp-admin editor.
+// The editor polls this after firing a proposal so a slow generation that
+// outlived the WordPress request is still recovered here.
+export async function GET(request: NextRequest) {
+  const auth = await authenticateSiteRequest(request);
+
+  if (!auth.ok) {
+    return NextResponse.json(
+      { success: false, error: auth.error },
+      { status: auth.status }
+    );
+  }
+
+  const id = auth.context.projectId;
+  const supabase = createServiceClient();
+
+  const url = new URL(request.url);
+  const since = url.searchParams.get("since");
+  const limitRaw = Number.parseInt(url.searchParams.get("limit") ?? "6", 10);
+  const limit = Number.isFinite(limitRaw)
+    ? Math.min(Math.max(limitRaw, 1), 20)
+    : 6;
+
+  let query = supabase
+    .from("ai_proposals")
+    .select(`
+      id,
+      title,
+      summary,
+      risk,
+      status,
+      total_tokens,
+      tool_calls,
+      created_at,
+      ai_proposal_files (
+        id,
+        operation,
+        scope,
+        path,
+        change_summary,
+        original_sha256,
+        diff_json
+      )
+    `)
+    .eq("project_id", id)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (since) {
+    query = query.gte("created_at", since);
+  }
+
+  const { data: proposals, error } = await query;
+
+  if (error) {
+    console.error("Agent proposals list error:", error);
+
+    return NextResponse.json(
+      { success: false, error: "Could not load proposals." },
+      { status: 500 }
+    );
+  }
+
+  const { data: runs } = await supabase
+    .from("ai_apply_runs")
+    .select(`
+      id,
+      proposal_id,
+      snapshot_id,
+      status,
+      files_count,
+      error_text,
+      created_at,
+      completed_at,
+      rolled_back_at,
+      ai_proposals ( title )
+    `)
+    .eq("project_id", id)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  return NextResponse.json({
+    success: true,
+    proposals: (proposals ?? []).map((proposal) => {
+      const files = Array.isArray(proposal.ai_proposal_files)
+        ? proposal.ai_proposal_files
+        : [];
+
+      return {
+        id: proposal.id,
+        title: proposal.title,
+        summary: proposal.summary,
+        risk: proposal.risk,
+        status: proposal.status,
+        usage: { totalTokens: proposal.total_tokens },
+        toolCalls: proposal.tool_calls,
+        createdAt: proposal.created_at,
+        files: files.map((file) => ({
+          id: file.id,
+          operation: file.operation,
+          scope: file.scope,
+          path: file.path,
+          summary: file.change_summary,
+          originalSha256: file.original_sha256,
+          diff: Array.isArray(file.diff_json) ? file.diff_json : [],
+        })),
+      };
+    }),
+    deployments: (runs ?? []).map((run) => {
+      const prop = Array.isArray(run.ai_proposals)
+        ? run.ai_proposals[0]
+        : run.ai_proposals;
+
+      return {
+        id: run.id,
+        proposalId: run.proposal_id,
+        proposalTitle: prop?.title ?? "Proposal",
+        snapshotId: run.snapshot_id,
+        status: run.status,
+        filesCount: run.files_count,
+        error: run.error_text,
+        createdAt: run.created_at,
+        completedAt: run.completed_at,
+        rolledBackAt: run.rolled_back_at,
+      };
+    }),
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateSiteRequest(request);

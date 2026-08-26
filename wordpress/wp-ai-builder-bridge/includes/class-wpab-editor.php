@@ -2,17 +2,14 @@
 /**
  * ESCANOR AI Builder — wp-admin editor (v3A).
  *
- * A chat + build editor that lives inside wp-admin instead of the SaaS
- * dashboard. The browser talks to WordPress (cookie + wp_rest nonce,
- * manage_options); this class relays each request to the SaaS with the site key
- * via WPAB_Cloud, so the key never reaches the browser and the manage_options
- * check happens here first.
- *
  *   Chat   (E1): read-only project inspection + answers.
- *   Build  (E2): describe a change -> AI proposal with a diff -> one-click Apply
- *                (preflight + snapshot + auto-rollback happen on the SaaS/Bridge).
+ *   Build  (E2/E3): describe a change -> AI proposal with a diff -> Deploy
+ *                   (preflight + snapshot + auto-rollback on the Bridge) ->
+ *                   Rollback. Proposal generation is timeout-resilient: the
+ *                   editor recovers a slow generation by polling the SaaS.
  *
- * Depends on WPAB_Cloud (the reverse-direction client) already being loaded.
+ * The browser talks to WordPress (cookie + wp_rest nonce, manage_options); this
+ * class relays each request to the SaaS with the site key via WPAB_Cloud.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -38,50 +35,49 @@ final class WPAB_Editor {
 			return current_user_can( 'manage_options' );
 		};
 
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/chat',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_chat' ),
-				'permission_callback' => $permission,
-			)
+		$post = array(
+			'chat'    => 'rest_chat',
+			'propose' => 'rest_propose',
+			'apply'   => 'rest_apply',
+			'rollback' => 'rest_rollback',
 		);
+
+		foreach ( $post as $route => $cb ) {
+			register_rest_route(
+				self::NAMESPACE,
+				'/editor/' . $route,
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( __CLASS__, $cb ),
+					'permission_callback' => $permission,
+				)
+			);
+		}
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/editor/propose',
+			'/editor/proposals',
 			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_propose' ),
-				'permission_callback' => $permission,
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/apply',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_apply' ),
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_proposals' ),
 				'permission_callback' => $permission,
 			)
 		);
 	}
 
-	public static function rest_chat( WP_REST_Request $request ) {
+	private static function json_params( WP_REST_Request $request ): array {
 		$params = $request->get_json_params();
 
-		if ( ! is_array( $params ) ) {
-			$params = array();
-		}
+		return is_array( $params ) ? $params : array();
+	}
 
+	public static function rest_chat( WP_REST_Request $request ) {
+		$params  = self::json_params( $request );
 		$message = isset( $params['message'] ) ? trim( (string) $params['message'] ) : '';
 
 		if ( '' === $message ) {
 			return new WP_Error( 'wpab_editor_empty', 'Message is required.', array( 'status' => 400 ) );
 		}
-
 		if ( strlen( $message ) > 6000 ) {
 			return new WP_Error( 'wpab_editor_too_long', 'Message is too long.', array( 'status' => 400 ) );
 		}
@@ -89,54 +85,67 @@ final class WPAB_Editor {
 		$body = array( 'message' => $message );
 
 		$conversation_id = isset( $params['conversationId'] ) ? trim( (string) $params['conversationId'] ) : '';
-
 		if ( '' !== $conversation_id ) {
 			$body['conversationId'] = $conversation_id;
 		}
 
 		$result = WPAB_Cloud::request( 'agent/chat', $body, 60 );
 
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		return new WP_REST_Response( $result, 200 );
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
+	/**
+	 * Kick off a proposal. Generation can outlive the WordPress request on shared
+	 * hosting; when it does we return {started:true} and the editor polls
+	 * /editor/proposals to pick up the saved result. A real SaaS error (a JSON
+	 * error response) is surfaced immediately instead.
+	 */
 	public static function rest_propose( WP_REST_Request $request ) {
-		$params = $request->get_json_params();
-
-		if ( ! is_array( $params ) ) {
-			$params = array();
-		}
-
+		$params = self::json_params( $request );
 		$prompt = isset( $params['prompt'] ) ? trim( (string) $params['prompt'] ) : '';
 
 		if ( '' === $prompt ) {
 			return new WP_Error( 'wpab_editor_empty', 'Describe the change first.', array( 'status' => 400 ) );
 		}
-
 		if ( strlen( $prompt ) > 6000 ) {
 			return new WP_Error( 'wpab_editor_too_long', 'Change request is too long.', array( 'status' => 400 ) );
 		}
 
-		// Proposal generation inspects files and drafts code — allow more time.
-		$result = WPAB_Cloud::request( 'agent/proposals', array( 'prompt' => $prompt ), 120 );
+		$result = WPAB_Cloud::request( 'agent/proposals', array( 'prompt' => $prompt ), 55 );
 
 		if ( is_wp_error( $result ) ) {
-			return $result;
+			// A JSON error from the SaaS is a real problem — surface it. A
+			// transport/timeout means generation is still running; tell the
+			// editor to poll for the saved proposal.
+			if ( 'wpab_cloud_error' === $result->get_error_code() ) {
+				return $result;
+			}
+			return new WP_REST_Response( array( 'success' => true, 'started' => true ), 200 );
 		}
 
 		return new WP_REST_Response( $result, 200 );
 	}
 
-	public static function rest_apply( WP_REST_Request $request ) {
-		$params = $request->get_json_params();
+	public static function rest_proposals( WP_REST_Request $request ) {
+		$query = array();
 
-		if ( ! is_array( $params ) ) {
-			$params = array();
+		$since = (string) $request->get_param( 'since' );
+		if ( '' !== $since ) {
+			$query['since'] = $since;
 		}
 
+		$limit = (int) $request->get_param( 'limit' );
+		if ( $limit > 0 ) {
+			$query['limit'] = $limit;
+		}
+
+		$result = WPAB_Cloud::get( 'agent/proposals', $query, 20 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_apply( WP_REST_Request $request ) {
+		$params      = self::json_params( $request );
 		$proposal_id = isset( $params['proposalId'] ) ? trim( (string) $params['proposalId'] ) : '';
 
 		if ( '' === $proposal_id ) {
@@ -145,11 +154,20 @@ final class WPAB_Editor {
 
 		$result = WPAB_Cloud::request( 'agent/apply', array( 'proposalId' => $proposal_id ), 90 );
 
-		if ( is_wp_error( $result ) ) {
-			return $result;
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_rollback( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$run_id = isset( $params['runId'] ) ? trim( (string) $params['runId'] ) : '';
+
+		if ( '' === $run_id ) {
+			return new WP_Error( 'wpab_editor_no_run', 'runId is required.', array( 'status' => 400 ) );
 		}
 
-		return new WP_REST_Response( $result, 200 );
+		$result = WPAB_Cloud::request( 'agent/rollback', array( 'runId' => $run_id ), 60 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
 	/* ---------------------------------------------------------------------
@@ -173,21 +191,23 @@ final class WPAB_Editor {
 		}
 
 		$config = array(
-			'restSession' => esc_url_raw( rest_url( self::NAMESPACE . '/cloud/session' ) ),
-			'restChat'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat' ) ),
-			'restPropose' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/propose' ) ),
-			'restApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/apply' ) ),
-			'nonce'       => wp_create_nonce( 'wp_rest' ),
-			'cloudPage'   => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
-			'snapPage'    => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
-			'connected'   => WPAB_Cloud::has_key(),
+			'restSession'   => esc_url_raw( rest_url( self::NAMESPACE . '/cloud/session' ) ),
+			'restChat'      => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat' ) ),
+			'restPropose'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/propose' ) ),
+			'restProposals' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/proposals' ) ),
+			'restApply'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/apply' ) ),
+			'restRollback'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/rollback' ) ),
+			'nonce'         => wp_create_nonce( 'wp_rest' ),
+			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
+			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
+			'connected'     => WPAB_Cloud::has_key(),
 		);
 		?>
 		<div class="wrap">
 			<h1>AI Builder — Editor</h1>
 			<p class="description">
 				Chat with the AI about this site's theme and companion plugin, or
-				describe a change and review a diff before applying it. Every apply is
+				describe a change, review a diff, and deploy it. Every apply is
 				snapshotted and rolls back automatically if the site breaks.
 			</p>
 
@@ -199,18 +219,16 @@ final class WPAB_Editor {
 
 				<div class="wpab-editor__tabs">
 					<button type="button" class="wpab-tab is-active" data-tab="chat">Chat</button>
-					<button type="button" class="wpab-tab" data-tab="build">Build</button>
+					<button type="button" class="wpab-tab" data-tab="build">Build &amp; deploy</button>
 				</div>
 
 				<div id="wpab-pane-chat" class="wpab-pane">
 					<div id="wpab-editor-thread" class="wpab-editor__thread" aria-live="polite"></div>
-
 					<form id="wpab-editor-form" class="wpab-editor__form" autocomplete="off">
 						<textarea id="wpab-editor-input" class="wpab-editor__input" rows="2"
 							placeholder="e.g. Where is the header markup rendered in this theme?"></textarea>
 						<button type="submit" id="wpab-editor-send" class="button button-primary">Send</button>
 					</form>
-
 					<p id="wpab-editor-meta" class="wpab-editor__meta"></p>
 				</div>
 
@@ -221,13 +239,25 @@ final class WPAB_Editor {
 						<button type="submit" id="wpab-build-send" class="button button-primary">Propose change</button>
 					</form>
 					<p id="wpab-build-meta" class="wpab-editor__meta"></p>
-					<div id="wpab-build-result" class="wpab-build-result"></div>
+
+					<div id="wpab-current"></div>
+
+					<div class="wpab-cols">
+						<div class="wpab-col">
+							<h3 class="wpab-col__title">Recent proposals</h3>
+							<div id="wpab-proposals" class="wpab-list"></div>
+						</div>
+						<div class="wpab-col">
+							<h3 class="wpab-col__title">Deployments</h3>
+							<div id="wpab-deployments" class="wpab-list"></div>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
 
 		<style>
-			.wpab-editor { max-width: 900px; margin-top: 16px; }
+			.wpab-editor { max-width: 940px; margin-top: 16px; }
 			.wpab-editor__bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 			.wpab-editor__status { flex: 1; padding: 10px 12px; border: 1px solid #dcdcde; border-radius: 8px; background: #fff; font-size: 13px; }
 			.wpab-editor__status.is-error { border-color: #d63638; color: #d63638; }
@@ -256,8 +286,7 @@ final class WPAB_Editor {
 			.wpab-editor__meta { color: #8c8f94; font-size: 12px; margin-top: 8px; min-height: 16px; }
 			.wpab-typing { color: #8c8f94; font-size: 13px; }
 			/* Build */
-			.wpab-build-result { margin-top: 8px; }
-			.wpab-prop { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 14px; }
+			.wpab-prop { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 14px; margin-top: 10px; }
 			.wpab-prop__head { display: flex; align-items: center; gap: 10px; }
 			.wpab-prop__title { font-size: 15px; font-weight: 600; margin: 0; color: #1d2327; }
 			.wpab-prop__summary { color: #50575e; font-size: 13px; margin: 6px 0 10px; }
@@ -269,7 +298,7 @@ final class WPAB_Editor {
 			.wpab-file__head { background: #f6f7f7; padding: 7px 10px; font-size: 12px; color: #50575e; display: flex; gap: 8px; align-items: center; }
 			.wpab-file__op { text-transform: uppercase; font-size: 10px; letter-spacing: .05em; padding: 1px 6px; border-radius: 4px; background: #e2e4e7; color: #3c434a; }
 			.wpab-file__path { font-family: Menlo, Consolas, monospace; color: #1d2327; }
-			.wpab-diff { margin: 0; padding: 8px 0; overflow-x: auto; font-family: Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; background: #fff; }
+			.wpab-diff { margin: 0; padding: 8px 0; overflow-x: auto; font-family: Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; background: #fff; max-height: 320px; }
 			.wpab-diff__line { padding: 0 10px; white-space: pre-wrap; word-break: break-word; }
 			.wpab-diff__line--add { background: #eaf7ec; color: #14622a; }
 			.wpab-diff__line--del { background: #fbeaea; color: #9a2325; }
@@ -278,6 +307,20 @@ final class WPAB_Editor {
 			.wpab-deploy { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
 			.wpab-deploy--ok { background: #edfaef; border: 1px solid #b7e4c0; color: #007a1c; }
 			.wpab-deploy--err { background: #fcf0f1; border: 1px solid #f0b9ba; color: #b32d2e; }
+			.wpab-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
+			@media (max-width: 782px) { .wpab-cols { grid-template-columns: 1fr; } }
+			.wpab-col__title { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin: 0 0 8px; }
+			.wpab-list { display: flex; flex-direction: column; gap: 8px; }
+			.wpab-item { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 10px 12px; font-size: 13px; }
+			.wpab-item__row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+			.wpab-item__title { color: #1d2327; font-weight: 500; }
+			.wpab-item__meta { color: #8c8f94; font-size: 12px; margin-top: 2px; }
+			.wpab-status { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid; }
+			.wpab-status--applied { background: #edfaef; color: #007a1c; border-color: #b7e4c0; }
+			.wpab-status--failed { background: #fcf0f1; color: #b32d2e; border-color: #f0b9ba; }
+			.wpab-status--rolled_back { background: #f0f0f1; color: #50575e; border-color: #dcdcde; }
+			.wpab-status--applying { background: #fef8ee; color: #8a6100; border-color: #f2d9a8; }
+			.wpab-empty { color: #8c8f94; font-size: 13px; }
 		</style>
 
 		<script>
@@ -287,39 +330,53 @@ final class WPAB_Editor {
 		self::print_app_script();
 	}
 
-	/**
-	 * Vanilla JS app — no bundler, no external dependencies.
-	 */
 	private static function print_app_script(): void {
 		?>
 		<script>
 		(function () {
 			var cfg = window.WPAB_EDITOR || {};
-			var thread = document.getElementById('wpab-editor-thread');
-			var form = document.getElementById('wpab-editor-form');
-			var input = document.getElementById('wpab-editor-input');
-			var sendBtn = document.getElementById('wpab-editor-send');
-			var newBtn = document.getElementById('wpab-editor-new');
-			var statusEl = document.getElementById('wpab-editor-status');
-			var metaEl = document.getElementById('wpab-editor-meta');
-			var buildForm = document.getElementById('wpab-build-form');
-			var buildInput = document.getElementById('wpab-build-input');
-			var buildBtn = document.getElementById('wpab-build-send');
-			var buildMeta = document.getElementById('wpab-build-meta');
-			var buildResult = document.getElementById('wpab-build-result');
+			var $ = function (id) { return document.getElementById(id); };
+			var thread = $('wpab-editor-thread');
+			var form = $('wpab-editor-form');
+			var input = $('wpab-editor-input');
+			var sendBtn = $('wpab-editor-send');
+			var newBtn = $('wpab-editor-new');
+			var statusEl = $('wpab-editor-status');
+			var metaEl = $('wpab-editor-meta');
+			var buildForm = $('wpab-build-form');
+			var buildInput = $('wpab-build-input');
+			var buildBtn = $('wpab-build-send');
+			var buildMeta = $('wpab-build-meta');
+			var currentEl = $('wpab-current');
+			var proposalsEl = $('wpab-proposals');
+			var deploymentsEl = $('wpab-deployments');
 			var conversationId = null;
 			var busy = false;
+			var buildLoaded = false;
 
 			function setStatus(text, kind) {
 				statusEl.textContent = text;
 				statusEl.className = 'wpab-editor__status' + (kind ? ' is-' + kind : '');
 			}
-
-			function escapeHtml(value) {
-				return String(value == null ? '' : value)
-					.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+			function escapeHtml(v) {
+				return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+			}
+			function nowIso() { return new Date().toISOString(); }
+			function setBusy(state) {
+				busy = state;
+				sendBtn.disabled = state; input.disabled = state;
+				buildBtn.disabled = state; buildInput.disabled = state;
+			}
+			function api(method, url, payload) {
+				var opts = { method: method, headers: { 'X-WP-Nonce': cfg.nonce } };
+				if (method !== 'GET') { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(payload || {}); }
+				return fetch(url, opts).then(function (res) {
+					return res.json().then(function (data) { return { ok: res.ok, data: data }; },
+						function () { return { ok: res.ok, data: null }; });
+				});
 			}
 
+			/* ---- markdown (chat) ---- */
 			function renderInline(s) {
 				s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
 				s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -327,7 +384,6 @@ final class WPAB_Editor {
 				s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 				return s;
 			}
-
 			function renderMarkdown(text) {
 				var lines = escapeHtml(text).split('\n');
 				var html = '', inCode = false, inList = false, codeBuf = '';
@@ -359,12 +415,11 @@ final class WPAB_Editor {
 				tabs[t].addEventListener('click', function () {
 					if (busy) { return; }
 					var name = this.getAttribute('data-tab');
-					for (var j = 0; j < tabs.length; j++) {
-						tabs[j].classList.toggle('is-active', tabs[j] === this);
-					}
-					document.getElementById('wpab-pane-chat').hidden = (name !== 'chat');
-					document.getElementById('wpab-pane-build').hidden = (name !== 'build');
-				}.bind(tabs[t]));
+					for (var j = 0; j < tabs.length; j++) { tabs[j].classList.toggle('is-active', tabs[j] === this); }
+					$('wpab-pane-chat').hidden = (name !== 'chat');
+					$('wpab-pane-build').hidden = (name !== 'build');
+					if (name === 'build' && !buildLoaded) { buildLoaded = true; loadBuild(); }
+				});
 			}
 
 			/* ---- Chat ---- */
@@ -378,7 +433,6 @@ final class WPAB_Editor {
 				});
 				return '<div class="wpab-msg__activity">Inspected ' + parts.join(' ') + '</div>';
 			}
-
 			function addMessage(role, body, activity) {
 				var empty = thread.querySelector('.wpab-editor__empty');
 				if (empty) { empty.remove(); }
@@ -386,69 +440,27 @@ final class WPAB_Editor {
 				wrap.className = 'wpab-msg wpab-msg--' + role;
 				var bodyHtml = role === 'assistant' ? renderMarkdown(body) : escapeHtml(body);
 				wrap.innerHTML = '<div class="wpab-msg__role">' + (role === 'user' ? 'You' : 'AI') + '</div>' +
-					'<div class="wpab-msg__body">' + bodyHtml + '</div>' +
-					(role === 'assistant' ? renderActivity(activity) : '');
-				thread.appendChild(wrap);
-				thread.scrollTop = thread.scrollHeight;
-				return wrap;
+					'<div class="wpab-msg__body">' + bodyHtml + '</div>' + (role === 'assistant' ? renderActivity(activity) : '');
+				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight; return wrap;
 			}
-
-			function addTyping(where) {
-				var wrap = document.createElement('div');
-				wrap.className = 'wpab-msg wpab-msg--assistant';
+			function addTyping() {
+				var wrap = document.createElement('div'); wrap.className = 'wpab-msg wpab-msg--assistant';
 				wrap.innerHTML = '<div class="wpab-msg__role">AI</div><div class="wpab-typing">Thinking…</div>';
-				where.appendChild(wrap);
-				where.scrollTop = where.scrollHeight;
-				return wrap;
+				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight; return wrap;
 			}
-
 			function resetThread() {
-				conversationId = null;
-				metaEl.textContent = '';
+				conversationId = null; metaEl.textContent = '';
 				thread.innerHTML = '<p class="wpab-editor__empty">Ask a question to inspect this site’s theme or companion plugin.</p>';
 			}
-
-			function api(url, payload) {
-				return fetch(url, {
-					method: 'POST',
-					headers: { 'X-WP-Nonce': cfg.nonce, 'Content-Type': 'application/json' },
-					body: JSON.stringify(payload || {})
-				}).then(function (res) {
-					return res.json().then(function (data) { return { ok: res.ok, data: data }; });
-				});
-			}
-
-			function setBusy(state) {
-				busy = state;
-				sendBtn.disabled = state; input.disabled = state;
-				buildBtn.disabled = state; buildInput.disabled = state;
-			}
-
-			function loadStatus() {
-				api(cfg.restSession, {}).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) {
-						var msg = (out.data && (out.data.error || out.data.message)) || 'Not connected to the AI Builder cloud.';
-						setStatus(msg + ' Connect the site key first.', 'error');
-						var link = document.createElement('a');
-						link.href = cfg.cloudPage; link.textContent = ' Open Cloud connection →';
-						statusEl.appendChild(link);
-						return;
-					}
-					var d = out.data, project = d.project || {}, site = d.site || {};
-					setStatus('Connected · Project: ' + (project.name || '—') + ' · Theme: ' + (site.themeName || '—') + ' · Plugin: ' + (site.pluginName || 'None'), 'ok');
-				}).catch(function () { setStatus('Could not reach WordPress REST API.', 'error'); });
-			}
-
 			function sendChat(message) {
 				setBusy(true); metaEl.textContent = '';
-				var typing = addTyping(thread);
+				var typing = addTyping();
 				var payload = { message: message };
 				if (conversationId) { payload.conversationId = conversationId; }
-				api(cfg.restChat, payload).then(function (out) {
+				api('POST', cfg.restChat, payload).then(function (out) {
 					typing.remove();
 					if (!out.ok || !out.data || out.data.success === false) {
-						addMessage('assistant', 'Error: ' + ((out.data && (out.data.error || out.data.message)) || 'Request failed.'));
-						return;
+						addMessage('assistant', 'Error: ' + ((out.data && (out.data.error || out.data.message)) || 'Request failed.')); return;
 					}
 					var d = out.data;
 					if (d.conversation && d.conversation.id) { conversationId = d.conversation.id; }
@@ -457,25 +469,21 @@ final class WPAB_Editor {
 				}).catch(function () { typing.remove(); addMessage('assistant', 'Error: network request failed.'); })
 				.then(function () { setBusy(false); input.focus(); });
 			}
-
 			form.addEventListener('submit', function (e) {
-				e.preventDefault();
-				if (busy) { return; }
-				var message = input.value.trim();
-				if (!message) { return; }
-				addMessage('user', message); input.value = ''; sendChat(message);
+				e.preventDefault(); if (busy) { return; }
+				var m = input.value.trim(); if (!m) { return; }
+				addMessage('user', m); input.value = ''; sendChat(m);
 			});
 			input.addEventListener('keydown', function (e) {
 				if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); }
 			});
 			newBtn.addEventListener('click', function () { if (!busy) { resetThread(); input.focus(); } });
 
-			/* ---- Build (propose / diff / apply) ---- */
+			/* ---- Build ---- */
 			function riskPill(risk) {
 				var r = (risk === 'high' || risk === 'medium') ? risk : 'low';
 				return '<span class="wpab-pill wpab-pill--' + r + '">' + r + ' risk</span>';
 			}
-
 			function renderDiff(diff) {
 				if (!diff || !diff.length) { return '<pre class="wpab-diff"><div class="wpab-diff__line wpab-diff__line--ctx">(no diff)</div></pre>'; }
 				var out = '';
@@ -490,91 +498,150 @@ final class WPAB_Editor {
 				}
 				return '<pre class="wpab-diff">' + out + '</pre>';
 			}
-
 			function renderProposal(p) {
 				var filesHtml = (p.files || []).map(function (f) {
-					return '<div class="wpab-file">' +
-						'<div class="wpab-file__head"><span class="wpab-file__op">' + escapeHtml(f.operation || 'modify') + '</span>' +
-						'<span class="wpab-file__path">' + escapeHtml((f.scope || '') + '/' + (f.path || '')) + '</span></div>' +
-						renderDiff(f.diff) + '</div>';
+					return '<div class="wpab-file"><div class="wpab-file__head"><span class="wpab-file__op">' +
+						escapeHtml(f.operation || 'modify') + '</span><span class="wpab-file__path">' +
+						escapeHtml((f.scope || '') + '/' + (f.path || '')) + '</span></div>' + renderDiff(f.diff) + '</div>';
 				}).join('');
-
-				buildResult.innerHTML =
+				var applied = (p.status === 'discarded');
+				currentEl.innerHTML =
 					'<div class="wpab-prop">' +
 						'<div class="wpab-prop__head">' + riskPill(p.risk) + '<h3 class="wpab-prop__title">' + escapeHtml(p.title || 'Proposed change') + '</h3></div>' +
-						'<p class="wpab-prop__summary">' + escapeHtml(p.summary || '') + '</p>' +
-						filesHtml +
+						'<p class="wpab-prop__summary">' + escapeHtml(p.summary || '') + '</p>' + filesHtml +
 						'<div class="wpab-prop__actions">' +
-							'<button type="button" class="button button-primary" id="wpab-apply-btn">Apply change</button>' +
-							'<button type="button" class="button" id="wpab-discard-btn">Discard</button>' +
-						'</div>' +
-						'<div id="wpab-deploy" ></div>' +
-					'</div>';
+							'<button type="button" class="button button-primary" id="wpab-apply-btn">Deploy</button>' +
+							'<button type="button" class="button" id="wpab-close-btn">Close</button>' +
+						'</div><div id="wpab-deploy"></div></div>';
+				$('wpab-apply-btn').addEventListener('click', function () { deploy(p.id); });
+				$('wpab-close-btn').addEventListener('click', function () { if (!busy) { currentEl.innerHTML = ''; } });
+				currentEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+			}
 
-				document.getElementById('wpab-apply-btn').addEventListener('click', function () { applyProposal(p.id); });
-				document.getElementById('wpab-discard-btn').addEventListener('click', function () { if (!busy) { buildResult.innerHTML = ''; buildMeta.textContent = ''; } });
+			function loadBuild() {
+				api('GET', cfg.restProposals + '?limit=6').then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) { return; }
+					renderProposalsList(out.data.proposals || []);
+					renderDeploymentsList(out.data.deployments || []);
+				});
+			}
+			function renderProposalsList(list) {
+				if (!list.length) { proposalsEl.innerHTML = '<p class="wpab-empty">No proposals yet.</p>'; return; }
+				proposalsEl.innerHTML = '';
+				list.forEach(function (p) {
+					var el = document.createElement('div'); el.className = 'wpab-item';
+					el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(p.title || 'Proposal') + '</span>' +
+						riskPill(p.risk) + '</div><div class="wpab-item__meta">' + (p.files ? p.files.length : 0) + ' file(s) · ' + escapeHtml(p.status || 'draft') + '</div>';
+					el.style.cursor = 'pointer';
+					el.addEventListener('click', function () { renderProposal(p); });
+					proposalsEl.appendChild(el);
+				});
+			}
+			function renderDeploymentsList(list) {
+				if (!list.length) { deploymentsEl.innerHTML = '<p class="wpab-empty">No deployments yet.</p>'; return; }
+				deploymentsEl.innerHTML = '';
+				list.forEach(function (d) {
+					var el = document.createElement('div'); el.className = 'wpab-item';
+					var canRoll = (d.status === 'applied' && d.snapshotId);
+					var btn = canRoll ? '<button type="button" class="button" data-run="' + escapeHtml(d.id) + '">Rollback</button>' : '';
+					el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(d.proposalTitle || 'Deployment') + '</span>' +
+						'<span class="wpab-status wpab-status--' + escapeHtml(d.status || '') + '">' + escapeHtml(d.status || '') + '</span></div>' +
+						'<div class="wpab-item__row"><span class="wpab-item__meta">' + (d.filesCount || 0) + ' file(s)' + (d.snapshotId ? ' · ' + escapeHtml(d.snapshotId) : '') + '</span>' + btn + '</div>';
+					if (canRoll) { el.querySelector('button').addEventListener('click', function () { rollback(d.id); }); }
+					deploymentsEl.appendChild(el);
+				});
 			}
 
 			function propose(promptText) {
-				setBusy(true);
-				buildResult.innerHTML = '';
-				buildMeta.textContent = 'Inspecting the project and drafting a change… this can take a moment.';
-				api(cfg.restPropose, { prompt: promptText }).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) {
+				setBusy(true); currentEl.innerHTML = '';
+				buildMeta.textContent = 'Inspecting the project and drafting a change… this can take up to a minute.';
+				var since = nowIso();
+				api('POST', cfg.restPropose, { prompt: promptText }).then(function (out) {
+					if (out.ok && out.data && out.data.proposal) {
 						buildMeta.textContent = '';
-						buildResult.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml((out.data && (out.data.error || out.data.message)) || 'Could not create a proposal.') + '</div>';
-						return;
+						renderProposal(out.data.proposal); loadBuild(); setBusy(false); return;
 					}
-					var p = out.data.proposal || {};
-					var u = p.usage || {};
-					buildMeta.textContent = (p.toolCalls || 0) + ' tool calls · ' + ((u.totalTokens || 0)).toLocaleString() + ' tokens';
-					renderProposal(p);
-				}).catch(function () {
-					buildMeta.textContent = '';
-					buildResult.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>';
-				}).then(function () { setBusy(false); });
+					if (out.data && out.data.success === false && out.data.error && !out.data.started) {
+						buildMeta.textContent = '';
+						currentEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(out.data.error) + '</div>';
+						setBusy(false); return;
+					}
+					pollForProposal(since, 0);
+				}).catch(function () { pollForProposal(since, 0); });
 			}
-
-			function applyProposal(proposalId) {
+			function pollForProposal(since, attempt) {
+				if (attempt > 40) {
+					buildMeta.textContent = '';
+					currentEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Generation is taking longer than expected. Check "Recent proposals" below in a moment, or try again.</div>';
+					loadBuild(); setBusy(false); return;
+				}
+				setTimeout(function () {
+					api('GET', cfg.restProposals + '?limit=3&since=' + encodeURIComponent(since)).then(function (out) {
+						var list = (out.data && out.data.proposals) || [];
+						if (list.length) {
+							buildMeta.textContent = '';
+							renderProposal(list[0]); loadBuild(); setBusy(false);
+						} else {
+							pollForProposal(since, attempt + 1);
+						}
+					}).catch(function () { pollForProposal(since, attempt + 1); });
+				}, 4000);
+			}
+			function deploy(proposalId) {
 				if (busy) { return; }
 				setBusy(true);
-				var deploy = document.getElementById('wpab-deploy');
-				if (deploy) { deploy.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
-				api(cfg.restApply, { proposalId: proposalId }).then(function (out) {
+				var deployEl = $('wpab-deploy');
+				if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
+				api('POST', cfg.restApply, { proposalId: proposalId }).then(function (out) {
 					if (!out.ok || !out.data || out.data.success === false) {
-						var err = (out.data && (out.data.error || out.data.message)) || 'Apply failed.';
-						if (deploy) { deploy.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; }
+						var err = (out.data && (out.data.error || out.data.message)) || 'Deploy failed.';
+						if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; }
 						return;
 					}
 					var d = out.data.deployment || {};
 					var snap = d.snapshotId ? ' · snapshot ' + escapeHtml(String(d.snapshotId)) : '';
-					if (deploy) {
-						deploy.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Deployed ✓ · ' + (d.filesCount || 0) + ' file(s)' + snap +
-							'. Roll back anytime from <a href="' + cfg.snapPage + '">Snapshots</a>.</div>';
-					}
-					var applyBtn = document.getElementById('wpab-apply-btn');
-					if (applyBtn) { applyBtn.disabled = true; applyBtn.textContent = 'Applied'; }
+					if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Deployed ✓ · ' + (d.filesCount || 0) + ' file(s)' + snap + '.</div>'; }
+					var b = $('wpab-apply-btn'); if (b) { b.disabled = true; b.textContent = 'Deployed'; }
 				}).catch(function () {
-					if (deploy) { deploy.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; }
-				}).then(function () { setBusy(false); });
+					if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; }
+				}).then(function () { setBusy(false); loadBuild(); });
 			}
-
-			buildForm.addEventListener('submit', function (e) {
-				e.preventDefault();
+			function rollback(runId) {
 				if (busy) { return; }
-				var p = buildInput.value.trim();
-				if (!p) { return; }
+				if (!window.confirm('Roll back this deployment? The snapshot will be restored.')) { return; }
+				setBusy(true);
+				api('POST', cfg.restRollback, { runId: runId }).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) {
+						window.alert((out.data && (out.data.error || out.data.message)) || 'Rollback failed.');
+					}
+				}).catch(function () { window.alert('Network request failed.'); })
+				.then(function () { setBusy(false); loadBuild(); });
+			}
+			buildForm.addEventListener('submit', function (e) {
+				e.preventDefault(); if (busy) { return; }
+				var p = buildInput.value.trim(); if (!p) { return; }
 				propose(p);
 			});
 
 			/* ---- Init ---- */
 			resetThread();
+			function loadStatus() {
+				api('POST', cfg.restSession, {}).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) {
+						var msg = (out.data && (out.data.error || out.data.message)) || 'Not connected to the AI Builder cloud.';
+						setStatus(msg + ' Connect the site key first.', 'error');
+						var link = document.createElement('a'); link.href = cfg.cloudPage; link.textContent = ' Open Cloud connection →';
+						statusEl.appendChild(link); return;
+					}
+					var d = out.data, project = d.project || {}, site = d.site || {};
+					setStatus('Connected · Project: ' + (project.name || '—') + ' · Theme: ' + (site.themeName || '—') + ' · Plugin: ' + (site.pluginName || 'None'), 'ok');
+				}).catch(function () { setStatus('Could not reach WordPress REST API.', 'error'); });
+			}
 			if (cfg.connected) {
 				loadStatus();
 			} else {
 				setStatus('This site is not connected to the AI Builder cloud yet.', 'error');
-				var link = document.createElement('a');
-				link.href = cfg.cloudPage; link.textContent = ' Open Cloud connection →';
+				var link = document.createElement('a'); link.href = cfg.cloudPage; link.textContent = ' Open Cloud connection →';
 				statusEl.appendChild(link);
 			}
 		})();

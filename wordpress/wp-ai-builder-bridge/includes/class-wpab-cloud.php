@@ -110,7 +110,7 @@ final class WPAB_Cloud {
 	 *
 	 * @return array|WP_Error Decoded JSON body on success.
 	 */
-	public static function request( string $endpoint, array $body = array(), int $timeout = 20 ) {
+	public static function request( string $endpoint, array $body = array(), int $timeout = 20, bool $blocking = true ) {
 		$key = self::get_key();
 
 		if ( '' === $key ) {
@@ -137,6 +137,7 @@ final class WPAB_Cloud {
 			$url,
 			array(
 				'timeout'     => $timeout,
+				'blocking'    => $blocking,
 				'redirection' => 0,
 				'sslverify'   => true,
 				'headers'     => array(
@@ -154,6 +155,90 @@ final class WPAB_Cloud {
 					'X-WPAB-Bridge-Version' => self::header_value( WPAB_VERSION ),
 				),
 				'body'        => wp_json_encode( $body ),
+			)
+		);
+
+		if ( ! $blocking ) {
+			// Fire-and-forget: the SaaS keeps running to completion and saves its
+			// result, which the editor recovers by polling. No response body here.
+			return array( 'started' => true );
+		}
+
+		if ( is_wp_error( $response ) ) {
+			return $response;
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$raw  = (string) wp_remote_retrieve_body( $response );
+		$data = json_decode( $raw, true );
+
+		if ( ! is_array( $data ) ) {
+			return new WP_Error(
+				'wpab_cloud_bad_response',
+				'The AI Builder did not return JSON.',
+				array( 'status' => 502 )
+			);
+		}
+
+		if ( $code < 200 || $code >= 300 ) {
+			return new WP_Error(
+				'wpab_cloud_error',
+				isset( $data['error'] ) ? (string) $data['error'] : 'AI Builder request failed.',
+				array( 'status' => $code )
+			);
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Authenticated GET to the SaaS (for polling lists). Same key + actor headers.
+	 *
+	 * @return array|WP_Error Decoded JSON body on success.
+	 */
+	public static function get( string $endpoint, array $query = array(), int $timeout = 20 ) {
+		$key = self::get_key();
+
+		if ( '' === $key ) {
+			return new WP_Error(
+				'wpab_cloud_not_connected',
+				'This site is not connected to the AI Builder cloud yet.',
+				array( 'status' => 409 )
+			);
+		}
+
+		$url = self::builder_url() . '/api/' . ltrim( $endpoint, '/' );
+
+		if ( ! empty( $query ) ) {
+			$url = add_query_arg( $query, $url );
+		}
+
+		if ( 0 !== strpos( $url, 'https://' ) ) {
+			return new WP_Error(
+				'wpab_cloud_insecure',
+				'The AI Builder endpoint must use HTTPS.',
+				array( 'status' => 400 )
+			);
+		}
+
+		$user = wp_get_current_user();
+
+		$response = wp_remote_get(
+			$url,
+			array(
+				'timeout'     => $timeout,
+				'redirection' => 0,
+				'sslverify'   => true,
+				'headers'     => array(
+					'Authorization'         => 'Bearer ' . self::header_value( $key ),
+					'Accept'                => 'application/json',
+					'X-WPAB-Actor-Id'       => self::header_value( (string) $user->ID ),
+					'X-WPAB-Actor-Login'    => self::header_value( (string) $user->user_login ),
+					'X-WPAB-Actor-Email'    => self::header_value( (string) $user->user_email ),
+					'X-WPAB-Actor-Name'     => self::header_value( (string) $user->display_name ),
+					'X-WPAB-Site-Url'       => self::header_value( home_url( '/' ) ),
+					'X-WPAB-Bridge-Version' => self::header_value( WPAB_VERSION ),
+				),
 			)
 		);
 
