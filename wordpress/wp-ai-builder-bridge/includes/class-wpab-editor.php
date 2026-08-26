@@ -22,9 +22,36 @@ final class WPAB_Editor {
 	private const PAGE_SLUG = 'wp-ai-builder-editor';
 	private const NAMESPACE = 'wp-ai-builder/v1';
 
+	private const VISUAL_CSS_OPTION = 'wpab_visual_css';
+
 	public static function init(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_page' ), 30 );
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
+		// Print the Visual editor's overrides on the front end, late so they win
+		// over the theme regardless of whether the theme loads style.css.
+		add_action( 'wp_head', array( __CLASS__, 'print_front_css' ), 999 );
+	}
+
+	/**
+	 * Output the stored Visual CSS on the front end. This is a site-local
+	 * override layer (like core's Additional CSS), managed entirely by the
+	 * plugin — so it applies to any theme and is instantly reversible.
+	 */
+	public static function print_front_css(): void {
+		if ( is_admin() ) {
+			return;
+		}
+
+		$css = (string) get_option( self::VISUAL_CSS_OPTION, '' );
+
+		if ( '' === trim( $css ) ) {
+			return;
+		}
+
+		// Neutralise any attempt to break out of the style element.
+		$css = str_ireplace( '</style', '', $css );
+
+		echo "\n<style id=\"wpab-visual-css\">\n" . $css . "\n</style>\n"; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	}
 
 	/* ---------------------------------------------------------------------
@@ -65,6 +92,49 @@ final class WPAB_Editor {
 				'permission_callback' => $permission,
 			)
 		);
+
+		// Visual CSS override layer (stored locally, printed on the front end).
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/visual-css',
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( __CLASS__, 'rest_visual_css_get' ),
+					'permission_callback' => $permission,
+				),
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( __CLASS__, 'rest_visual_css_set' ),
+					'permission_callback' => $permission,
+				),
+			)
+		);
+	}
+
+	public static function rest_visual_css_get() {
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'css'     => (string) get_option( self::VISUAL_CSS_OPTION, '' ),
+			),
+			200
+		);
+	}
+
+	public static function rest_visual_css_set( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$css    = isset( $params['css'] ) ? (string) $params['css'] : '';
+
+		if ( strlen( $css ) > 80000 ) {
+			return new WP_Error( 'wpab_visual_css_too_long', 'Visual CSS is too large.', array( 'status' => 400 ) );
+		}
+
+		$css = str_ireplace( '</style', '', $css );
+
+		update_option( self::VISUAL_CSS_OPTION, $css, true );
+
+		return new WP_REST_Response( array( 'success' => true, 'css' => $css ), 200 );
 	}
 
 	private static function json_params( WP_REST_Request $request ): array {
@@ -204,6 +274,7 @@ final class WPAB_Editor {
 			'restApply'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/apply' ) ),
 			'restRollback'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/rollback' ) ),
 			'restCssApply'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/css-apply' ) ),
+			'restVisualCss' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/visual-css' ) ),
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
@@ -272,14 +343,36 @@ final class WPAB_Editor {
 								<input type="color" id="wpab-v-bg" class="wpab-v-color" />
 								<label class="wpab-v-label">Font size (px)</label>
 								<input type="number" id="wpab-v-fs" class="wpab-v-input" min="8" max="140" />
+								<label class="wpab-v-label">Font weight</label>
+								<select id="wpab-v-fw" class="wpab-v-input">
+									<option value="">—</option>
+									<option value="400">Normal (400)</option>
+									<option value="500">Medium (500)</option>
+									<option value="600">Semibold (600)</option>
+									<option value="700">Bold (700)</option>
+								</select>
+								<label class="wpab-v-label">Text align</label>
+								<select id="wpab-v-ta" class="wpab-v-input">
+									<option value="">—</option>
+									<option value="left">Left</option>
+									<option value="center">Center</option>
+									<option value="right">Right</option>
+								</select>
+								<label class="wpab-v-label">Padding (px)</label>
+								<input type="number" id="wpab-v-pad" class="wpab-v-input" min="0" max="200" />
+								<label class="wpab-v-label">Border radius (px)</label>
+								<input type="number" id="wpab-v-radius" class="wpab-v-input" min="0" max="200" />
 								<label class="wpab-v-label">Custom CSS for this element</label>
-								<textarea id="wpab-v-css" class="wpab-v-input" rows="3" placeholder="margin: 20px; border-radius: 8px;"></textarea>
+								<textarea id="wpab-v-css" class="wpab-v-input" rows="3" placeholder="border: 1px solid #ccc; letter-spacing: 1px;"></textarea>
 								<div class="wpab-v-actions">
 									<button type="button" id="wpab-v-apply" class="button button-primary">Apply changes</button>
 									<button type="button" id="wpab-v-reset" class="button">Reset</button>
 								</div>
 								<div id="wpab-v-result"></div>
-								<p class="wpab-v-note">Apply writes to the theme stylesheet in a managed block, with a rollback snapshot.</p>
+								<p class="wpab-v-note">
+									Apply saves the CSS as a site override that loads on every page (works on any theme) and is instantly reversible.
+									<a href="#" id="wpab-v-clear">Clear all applied CSS</a>
+								</p>
 							</div>
 						</div>
 					</div>
@@ -616,6 +709,7 @@ final class WPAB_Editor {
 			var vStatusEl = $('wpab-visual-status');
 			var vRules = {};
 			var vCurrentSel = null;
+				var vBaseCss = '';
 
 			function reloadPreview() { try { vFrame.src = cfg.siteUrl; } catch (e) {} }
 			function vDoc() { try { return vFrame.contentDocument || (vFrame.contentWindow && vFrame.contentWindow.document); } catch (e) { return null; } }
@@ -670,7 +764,12 @@ final class WPAB_Editor {
 				vCurrentSel = vBuildSelector(el);
 				vSelectorEl.value = vCurrentSel;
 				try { var cs = vFrame.contentWindow.getComputedStyle(el); $('wpab-v-color').value = rgbToHex(cs.color); $('wpab-v-bg').value = rgbToHex(cs.backgroundColor); $('wpab-v-fs').value = parseInt(cs.fontSize, 10) || ''; } catch (e) {}
-				$('wpab-v-css').value = (vRules[vCurrentSel] && vRules[vCurrentSel].__raw) || '';
+				var r = vRules[vCurrentSel] || {};
+					$('wpab-v-fw').value = r['font-weight'] || '';
+					$('wpab-v-ta').value = r['text-align'] || '';
+					$('wpab-v-pad').value = r['padding'] ? parseInt(r['padding'], 10) : '';
+					$('wpab-v-radius').value = r['border-radius'] ? parseInt(r['border-radius'], 10) : '';
+					$('wpab-v-css').value = r.__raw || '';
 				if (vHint) { vHint.hidden = true; }
 				vPanel.hidden = false;
 			}
@@ -693,18 +792,29 @@ final class WPAB_Editor {
 				if (!css) { if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Nothing to apply yet — pick an element and change a style.</div>'; } return; }
 				setBusy(true);
 				if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
-				api('POST', cfg.restCssApply, { css: css }).then(function (out) {
+				api('POST', cfg.restVisualCss, { css: (vBaseCss ? vBaseCss.trim() + '\n' : '') + css }).then(function (out) {
 					if (!out.ok || !out.data || out.data.success === false) { var err = (out.data && (out.data.error || out.data.message)) || 'Apply failed.'; if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; } return; }
 					var d = out.data.deployment || {};
 					var snap = d.snapshotId ? ' · snapshot ' + escapeHtml(String(d.snapshotId)) : '';
-					if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Applied ✓' + snap + '. Reloading preview…</div>'; }
+					vBaseCss = (out.data && typeof out.data.css === 'string') ? out.data.css : vBaseCss;
+						if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Applied ✓ · reloading preview…</div>'; }
 					vRules = {}; vCurrentSel = null; vPanel.hidden = true; if (vHint) { vHint.hidden = false; }
 					setTimeout(reloadPreview, 800);
 					buildLoaded = false;
 				}).catch(function () { if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; } })
 				.then(function () { setBusy(false); });
 			}
-			function initVisual() {
+			function clearVisual() {
+					if (busy) { return; }
+					if (!window.confirm('Clear all applied visual CSS on this site?')) { return; }
+					setBusy(true);
+					api('POST', cfg.restVisualCss, { css: '' }).then(function () {
+						vBaseCss = ''; vRules = {}; vCurrentSel = null; vApplyPreview(); vPanel.hidden = true; if (vHint) { vHint.hidden = false; }
+						var re = $('wpab-v-result'); if (re) { re.innerHTML = '<div class="wpab-deploy">Cleared. Reloading…</div>'; }
+						setTimeout(reloadPreview, 400);
+					}).catch(function () {}).then(function () { setBusy(false); });
+				}
+				function initVisual() {
 				$('wpab-v-color').addEventListener('input', function () { vSetProp('color', this.value); });
 				$('wpab-v-bg').addEventListener('input', function () { vSetProp('background-color', this.value); });
 				$('wpab-v-fs').addEventListener('input', function () { vSetProp('font-size', this.value ? this.value + 'px' : ''); });
@@ -712,6 +822,12 @@ final class WPAB_Editor {
 				vSelectorEl.addEventListener('change', function () { var v = this.value.trim(); if (v) { vCurrentSel = v; } });
 				$('wpab-v-reset').addEventListener('click', function () { vRules = {}; vCurrentSel = null; vApplyPreview(); vPanel.hidden = true; if (vHint) { vHint.hidden = false; } var doc = vDoc(); if (doc) { var s = doc.querySelector('.wpab-sel'); if (s) { s.classList.remove('wpab-sel'); } } });
 				$('wpab-v-apply').addEventListener('click', applyVisual);
+					$('wpab-v-fw').addEventListener('change', function () { vSetProp('font-weight', this.value); });
+					$('wpab-v-ta').addEventListener('change', function () { vSetProp('text-align', this.value); });
+					$('wpab-v-pad').addEventListener('input', function () { vSetProp('padding', this.value !== '' ? this.value + 'px' : ''); });
+					$('wpab-v-radius').addEventListener('input', function () { vSetProp('border-radius', this.value !== '' ? this.value + 'px' : ''); });
+					var clearLink = $('wpab-v-clear'); if (clearLink) { clearLink.addEventListener('click', function (e) { e.preventDefault(); clearVisual(); }); }
+					api('GET', cfg.restVisualCss).then(function (out) { if (out.data && typeof out.data.css === 'string') { vBaseCss = out.data.css; } });
 				vFrame.addEventListener('load', vBind);
 				vStatusEl.textContent = 'Loading preview…';
 				vFrame.src = cfg.siteUrl;
