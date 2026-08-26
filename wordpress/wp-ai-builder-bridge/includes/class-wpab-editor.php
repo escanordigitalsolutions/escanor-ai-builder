@@ -180,6 +180,16 @@ final class WPAB_Editor {
 			)
 		);
 
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/understand',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_understand' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Visual CSS override layer (stored locally, printed on the front end).
 		register_rest_route(
 			self::NAMESPACE,
@@ -266,6 +276,12 @@ final class WPAB_Editor {
 
 	public static function rest_recommend( WP_REST_Request $request ) {
 		$result = WPAB_Cloud::request( 'agent/recommend', array(), 55 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_understand( WP_REST_Request $request ) {
+		$result = WPAB_Cloud::request( 'agent/understand', array(), 55 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -464,6 +480,7 @@ final class WPAB_Editor {
 			'restContentApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/apply' ) ),
 			'restAnalyze'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/analyze' ) ),
 			'restRecommend' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/recommend' ) ),
+			'restUnderstand' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/understand' ) ),
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
@@ -541,6 +558,13 @@ final class WPAB_Editor {
 							<div class="wpab-pane__bar">
 								<span class="wpab-pane__hint">What is on your site right now.</span>
 								<button type="button" id="wpab-insights-refresh" class="wpab-textbtn">Refresh</button>
+							</div>
+							<div class="wpab-understand">
+								<div class="wpab-understand__head">
+									<span class="wpab-understand__title">AI read of this site</span>
+									<button type="button" id="wpab-understand-run" class="wpab-btn">Scan site</button>
+								</div>
+								<div id="wpab-understand-body" class="wpab-understand__body"><p class="wpab-empty">Click \u201cScan site\u201d for an AI biography \u2014 what this site is, who it is for, the problem it solves, its objective, standpoint and economic outlook.</p></div>
 							</div>
 							<div id="wpab-insights-body"><p class="wpab-empty">Loading…</p></div>
 						</div>
@@ -842,6 +866,20 @@ final class WPAB_Editor {
 			.wpab-recs-summary { color: #b7bcc2; font-size: 13px; margin: 0 0 12px; }
 			.wpab-anlz-foot { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
 			@media (max-width: 900px) { .wpab-anlz__label { display: none; } }
+			.wpab-understand { border: 1px solid #33383e; border-radius: 10px; background: #24282d; padding: 12px; margin-bottom: 14px; }
+			.wpab-understand__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+			.wpab-understand__title { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #9aa0a6; }
+			.wpab-bio { color: #e7e9ec; font-size: 14px; line-height: 1.6; margin: 0 0 12px; }
+			.wpab-ufs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+			.wpab-uf { background: #1f2226; border: 1px solid #33383e; border-radius: 8px; padding: 8px 10px; }
+			.wpab-uf__l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #8b9198; margin-bottom: 3px; }
+			.wpab-uf__v { font-size: 13px; color: #d5d9de; line-height: 1.45; }
+			.wpab-ucols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+			.wpab-uchips { display: flex; flex-wrap: wrap; gap: 6px; }
+			.wpab-uchip { font-size: 12px; padding: 3px 9px; border-radius: 8px; border: 1px solid; }
+			.wpab-uchip.is-good { background: rgba(46,160,67,.14); color: #86e0a6; border-color: rgba(46,160,67,.4); }
+			.wpab-uchip.is-warn { background: rgba(210,153,34,.14); color: #f0c674; border-color: rgba(210,153,34,.4); }
+			@media (max-width: 640px) { .wpab-ufs, .wpab-ucols { grid-template-columns: 1fr; } }
 			</style>
 
 		<script>
@@ -1508,6 +1546,31 @@ final class WPAB_Editor {
 				}).catch(function () { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed. If your site is large it may take a moment — try again.</div>'; } })
 				.then(function () { setBusy(false); });
 			}
+			function renderUnderstanding(u) {
+				var body = $('wpab-understand-body'); if (!body || !u) { return; }
+				function field(label, val) { return val ? '<div class="wpab-uf"><div class="wpab-uf__l">' + escapeHtml(label) + '</div><div class="wpab-uf__v">' + escapeHtml(val) + '</div></div>' : ''; }
+				function chips(arr, cls) { return (arr || []).map(function (x) { return '<span class="wpab-uchip ' + cls + '">' + escapeHtml(x) + '</span>'; }).join(''); }
+				var html = '<p class="wpab-bio">' + escapeHtml(u.biography || '') + '</p>';
+				html += '<div class="wpab-ufs">' + field('Identity', u.identity) + field('Audience', u.audience) + field('Objective', u.objective) + field('Problem it solves', u.problem_solved) + field('Standpoint', u.positioning) + field('Economic outlook', u.economic_outlook) + '</div>';
+				if ((u.strengths && u.strengths.length) || (u.risks && u.risks.length)) {
+					html += '<div class="wpab-ucols">';
+					if (u.strengths && u.strengths.length) { html += '<div><div class="wpab-col__title">Strengths</div><div class="wpab-uchips">' + chips(u.strengths, 'is-good') + '</div></div>'; }
+					if (u.risks && u.risks.length) { html += '<div><div class="wpab-col__title">Risks</div><div class="wpab-uchips">' + chips(u.risks, 'is-warn') + '</div></div>'; }
+					html += '</div>';
+				}
+				html += '<div class="wpab-anlz-foot"><button type="button" class="wpab-btn" id="wpab-understand-regen">Rescan</button></div>';
+				body.innerHTML = html;
+				var rg = $('wpab-understand-regen'); if (rg) { rg.addEventListener('click', function () { runUnderstand(); }); }
+			}
+			function runUnderstand() {
+				var body = $('wpab-understand-body'); if (body) { body.innerHTML = '<p class="wpab-typing">Scanning your site and forming an understanding…</p>'; }
+				setBusy(true);
+				api('POST', cfg.restUnderstand, {}).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml((out.data && (out.data.error || out.data.message)) || 'Could not scan the site.') + '</div>'; } return; }
+					renderUnderstanding(out.data.understanding || {});
+				}).catch(function () { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed. Try again.</div>'; } })
+				.then(function () { setBusy(false); });
+			}
 			function seoLoad() { var b = $('wpab-seo-body'); if (b) { b.innerHTML = SPIN; } loadAudit(renderSeo); }
 			function insightsLoad() { var b = $('wpab-insights-body'); if (b) { b.innerHTML = SPIN; } loadAudit(renderInsights); }
 			(function () {
@@ -1520,6 +1583,7 @@ final class WPAB_Editor {
 				var sr = $('wpab-seo-refresh'); if (sr) { sr.addEventListener('click', function () { auditData = null; seoLoad(); }); }
 				var ir = $('wpab-insights-refresh'); if (ir) { ir.addEventListener('click', function () { auditData = null; insightsLoad(); }); }
 				var rr = $('wpab-recs-run'); if (rr) { rr.addEventListener('click', function () { runRecs(); }); }
+				var ub = $('wpab-understand-run'); if (ub) { ub.addEventListener('click', function () { runUnderstand(); }); }
 			})();
 
 			/* ---- Init ---- */

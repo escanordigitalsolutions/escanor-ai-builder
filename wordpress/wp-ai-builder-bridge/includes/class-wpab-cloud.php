@@ -173,10 +173,13 @@ final class WPAB_Cloud {
 		$data = json_decode( $raw, true );
 
 		if ( ! is_array( $data ) ) {
+			$msg = ( 404 === $code )
+				? 'That AI Builder endpoint was not found (HTTP 404). Deploy the latest app version to Vercel, then try again.'
+				: 'The AI Builder did not return JSON (HTTP ' . $code . ').';
 			return new WP_Error(
 				'wpab_cloud_bad_response',
-				'The AI Builder did not return JSON.',
-				array( 'status' => 502 )
+				$msg,
+				array( 'status' => $code > 0 ? $code : 502 )
 			);
 		}
 
@@ -251,10 +254,13 @@ final class WPAB_Cloud {
 		$data = json_decode( $raw, true );
 
 		if ( ! is_array( $data ) ) {
+			$msg = ( 404 === $code )
+				? 'That AI Builder endpoint was not found (HTTP 404). Deploy the latest app version to Vercel, then try again.'
+				: 'The AI Builder did not return JSON (HTTP ' . $code . ').';
 			return new WP_Error(
 				'wpab_cloud_bad_response',
-				'The AI Builder did not return JSON.',
-				array( 'status' => 502 )
+				$msg,
+				array( 'status' => $code > 0 ? $code : 502 )
 			);
 		}
 
