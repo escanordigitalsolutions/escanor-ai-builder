@@ -1,15 +1,16 @@
 <?php
 /**
- * ESCANOR AI Builder — wp-admin editor (v3A).
+ * ESCANOR AI Builder — wp-admin "Studio" editor (v3A).
  *
- *   Chat   (E1): read-only project inspection + answers.
- *   Build  (E2/E3): describe a change -> AI proposal with a diff -> Deploy
- *                   (preflight + snapshot + auto-rollback on the Bridge) ->
- *                   Rollback. Proposal generation is timeout-resilient: the
- *                   editor recovers a slow generation by polling the SaaS.
+ * A full-screen editor (Base44-style): a large live preview of the site on the
+ * left, and a side panel with Chat, Build & deploy, and Inspect (visual CSS)
+ * on the right. Everything talks to the SaaS through WPAB_Cloud (site key);
+ * the manage_options check happens in WordPress first.
  *
- * The browser talks to WordPress (cookie + wp_rest nonce, manage_options); this
- * class relays each request to the SaaS with the site key via WPAB_Cloud.
+ *   Chat    — read-only project inspection + answers.
+ *   Build   — describe a change -> AI proposal + diff -> Deploy -> Rollback.
+ *   Inspect — click an element in the preview, tweak its CSS live, Apply
+ *             deterministically (no AI) with snapshot + rollback.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -95,12 +96,6 @@ final class WPAB_Editor {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
-	/**
-	 * Kick off a proposal. Generation can outlive the WordPress request on shared
-	 * hosting; when it does we return {started:true} and the editor polls
-	 * /editor/proposals to pick up the saved result. A real SaaS error (a JSON
-	 * error response) is surfaced immediately instead.
-	 */
 	public static function rest_propose( WP_REST_Request $request ) {
 		$params = self::json_params( $request );
 		$prompt = isset( $params['prompt'] ) ? trim( (string) $params['prompt'] ) : '';
@@ -115,9 +110,6 @@ final class WPAB_Editor {
 		$result = WPAB_Cloud::request( 'agent/proposals', array( 'prompt' => $prompt ), 55 );
 
 		if ( is_wp_error( $result ) ) {
-			// A JSON error from the SaaS is a real problem — surface it. A
-			// transport/timeout means generation is still running; tell the
-			// editor to poll for the saved proposal.
 			if ( 'wpab_cloud_error' === $result->get_error_code() ) {
 				return $result;
 			}
@@ -185,13 +177,13 @@ final class WPAB_Editor {
 	}
 
 	/* ---------------------------------------------------------------------
-	 * Admin page
+	 * Studio page (full screen)
 	 * ------------------------------------------------------------------ */
 
 	public static function register_page(): void {
 		add_submenu_page(
 			'wp-ai-builder',
-			'AI Builder — Editor',
+			'AI Builder — Studio',
 			'AI Editor',
 			'manage_options',
 			self::PAGE_SLUG,
@@ -215,85 +207,80 @@ final class WPAB_Editor {
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
+			'exitUrl'       => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
 			'siteUrl'       => esc_url_raw( home_url( '/' ) ),
 			'connected'     => WPAB_Cloud::has_key(),
 		);
 		?>
-		<div class="wrap">
-			<h1>AI Builder — Editor</h1>
-			<p class="description">
-				Chat with the AI about this site's theme and companion plugin, or
-				describe a change, review a diff, and deploy it. Every apply is
-				snapshotted and rolls back automatically if the site breaks.
-			</p>
+		<div class="wpab-studio" id="wpab-studio">
+			<div class="wpab-studio__top">
+				<span class="wpab-studio__brand">AI Studio</span>
+				<span id="wpab-editor-status" class="wpab-studio__status">Connecting…</span>
+				<a class="wpab-studio__exit" href="<?php echo esc_url( $config['exitUrl'] ); ?>">Exit ✕</a>
+			</div>
 
-			<div id="wpab-editor-root" class="wpab-editor">
-				<div class="wpab-editor__bar">
-					<div id="wpab-editor-status" class="wpab-editor__status">Connecting…</div>
-					<button type="button" id="wpab-editor-new" class="button wpab-editor__new">New chat</button>
+			<div class="wpab-studio__body">
+				<div class="wpab-studio__preview">
+					<div id="wpab-visual-status" class="wpab-studio__previewbar">Loading preview…</div>
+					<iframe id="wpab-visual-frame" class="wpab-studio__frame" title="Site preview"></iframe>
 				</div>
 
-				<div class="wpab-editor__tabs">
-					<button type="button" class="wpab-tab is-active" data-tab="chat">Chat</button>
-					<button type="button" class="wpab-tab" data-tab="build">Build &amp; deploy</button>
-					<button type="button" class="wpab-tab" data-tab="visual">Visual</button>
-				</div>
+				<div class="wpab-studio__panel">
+					<div class="wpab-studio__tabs">
+						<button type="button" class="wpab-tab is-active" data-tab="chat">Chat</button>
+						<button type="button" class="wpab-tab" data-tab="build">Build</button>
+						<button type="button" class="wpab-tab" data-tab="visual">Inspect</button>
+					</div>
 
-				<div id="wpab-pane-chat" class="wpab-pane">
-					<div id="wpab-editor-thread" class="wpab-editor__thread" aria-live="polite"></div>
-					<form id="wpab-editor-form" class="wpab-editor__form" autocomplete="off">
-						<textarea id="wpab-editor-input" class="wpab-editor__input" rows="2"
-							placeholder="e.g. Where is the header markup rendered in this theme?"></textarea>
-						<button type="submit" id="wpab-editor-send" class="button button-primary">Send</button>
-					</form>
-					<p id="wpab-editor-meta" class="wpab-editor__meta"></p>
-				</div>
+					<div class="wpab-studio__content">
+						<div id="wpab-pane-chat" class="wpab-pane">
+							<div class="wpab-pane__bar">
+								<span class="wpab-pane__hint">Ask about the theme or plugin.</span>
+								<button type="button" id="wpab-editor-new" class="button">New chat</button>
+							</div>
+							<div id="wpab-editor-thread" class="wpab-editor__thread" aria-live="polite"></div>
+							<form id="wpab-editor-form" class="wpab-editor__form" autocomplete="off">
+								<textarea id="wpab-editor-input" class="wpab-editor__input" rows="2"
+									placeholder="e.g. Where is the header rendered?"></textarea>
+								<button type="submit" id="wpab-editor-send" class="button button-primary">Send</button>
+							</form>
+							<p id="wpab-editor-meta" class="wpab-editor__meta"></p>
+						</div>
 
-				<div id="wpab-pane-build" class="wpab-pane" hidden>
-					<form id="wpab-build-form" class="wpab-editor__form" autocomplete="off">
-						<textarea id="wpab-build-input" class="wpab-editor__input" rows="3"
-							placeholder="Describe a change, e.g. Add a newsletter signup section to the footer."></textarea>
-						<button type="submit" id="wpab-build-send" class="button button-primary">Propose change</button>
-					</form>
-					<p id="wpab-build-meta" class="wpab-editor__meta"></p>
-
-					<div id="wpab-current"></div>
-
-					<div class="wpab-cols">
-						<div class="wpab-col">
+						<div id="wpab-pane-build" class="wpab-pane" hidden>
+							<form id="wpab-build-form" class="wpab-editor__form" autocomplete="off">
+								<textarea id="wpab-build-input" class="wpab-editor__input" rows="3"
+									placeholder="Describe a change, e.g. Add a newsletter section to the footer."></textarea>
+								<button type="submit" id="wpab-build-send" class="button button-primary">Propose</button>
+							</form>
+							<p id="wpab-build-meta" class="wpab-editor__meta"></p>
+							<div id="wpab-current"></div>
 							<h3 class="wpab-col__title">Recent proposals</h3>
 							<div id="wpab-proposals" class="wpab-list"></div>
-						</div>
-						<div class="wpab-col">
-							<h3 class="wpab-col__title">Deployments</h3>
+							<h3 class="wpab-col__title" style="margin-top:16px">Deployments</h3>
 							<div id="wpab-deployments" class="wpab-list"></div>
 						</div>
-					</div>
-				</div>
 
-				<div id="wpab-pane-visual" class="wpab-pane" hidden>
-					<div class="wpab-visual">
-						<div class="wpab-visual__main">
-							<div id="wpab-visual-status" class="wpab-visual__status">Open this tab to load the preview.</div>
-							<iframe id="wpab-visual-frame" class="wpab-visual__frame" title="Site preview"></iframe>
-						</div>
-						<div id="wpab-visual-panel" class="wpab-visual__panel" hidden>
-							<label class="wpab-v-label">Selector</label>
-							<input type="text" id="wpab-visual-selector" class="wpab-v-input" />
-							<label class="wpab-v-label">Text color</label>
-							<input type="color" id="wpab-v-color" class="wpab-v-color" />
-							<label class="wpab-v-label">Background</label>
-							<input type="color" id="wpab-v-bg" class="wpab-v-color" />
-							<label class="wpab-v-label">Font size (px)</label>
-							<input type="number" id="wpab-v-fs" class="wpab-v-input" min="8" max="140" />
-							<label class="wpab-v-label">Custom CSS for this element</label>
-							<textarea id="wpab-v-css" class="wpab-v-input" rows="3" placeholder="margin: 20px; border-radius: 8px;"></textarea>
-							<div class="wpab-v-actions">
-								<button type="button" id="wpab-v-apply" class="button button-primary">Apply changes</button>
-								<button type="button" id="wpab-v-reset" class="button">Reset preview</button>
+						<div id="wpab-pane-visual" class="wpab-pane" hidden>
+							<p id="wpab-visual-hint" class="wpab-empty">Click any element in the preview to target it.</p>
+							<div id="wpab-visual-panel" class="wpab-visual__panel" hidden>
+								<label class="wpab-v-label">Selector</label>
+								<input type="text" id="wpab-visual-selector" class="wpab-v-input" />
+								<label class="wpab-v-label">Text color</label>
+								<input type="color" id="wpab-v-color" class="wpab-v-color" />
+								<label class="wpab-v-label">Background</label>
+								<input type="color" id="wpab-v-bg" class="wpab-v-color" />
+								<label class="wpab-v-label">Font size (px)</label>
+								<input type="number" id="wpab-v-fs" class="wpab-v-input" min="8" max="140" />
+								<label class="wpab-v-label">Custom CSS for this element</label>
+								<textarea id="wpab-v-css" class="wpab-v-input" rows="3" placeholder="margin: 20px; border-radius: 8px;"></textarea>
+								<div class="wpab-v-actions">
+									<button type="button" id="wpab-v-apply" class="button button-primary">Apply changes</button>
+									<button type="button" id="wpab-v-reset" class="button">Reset</button>
+								</div>
+								<div id="wpab-v-result"></div>
+								<p class="wpab-v-note">Apply writes to the theme stylesheet in a managed block, with a rollback snapshot.</p>
 							</div>
-							<div id="wpab-v-result"></div>
-							<p class="wpab-v-note">Apply writes your CSS to the theme stylesheet in a managed block, with a snapshot you can roll back from Deployments.</p>
 						</div>
 					</div>
 				</div>
@@ -301,17 +288,30 @@ final class WPAB_Editor {
 		</div>
 
 		<style>
-			.wpab-editor { max-width: 940px; margin-top: 16px; }
-			.wpab-editor__bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-			.wpab-editor__status { flex: 1; padding: 10px 12px; border: 1px solid #dcdcde; border-radius: 8px; background: #fff; font-size: 13px; }
-			.wpab-editor__status.is-error { border-color: #d63638; color: #d63638; }
-			.wpab-editor__status.is-ok { border-color: #00a32a; }
-			.wpab-editor__new { flex: 0 0 auto; }
-			.wpab-editor__tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+			#wpcontent, #wpbody, #wpbody-content { padding: 0 !important; margin: 0 !important; }
+			.wpab-studio { position: fixed; inset: 0; z-index: 100000; background: #f5f6f7; display: flex; flex-direction: column; font-size: 14px; color: #1d2327; }
+			.wpab-studio__top { height: 52px; flex: 0 0 auto; background: #1d2327; color: #fff; display: flex; align-items: center; gap: 14px; padding: 0 16px; }
+			.wpab-studio__brand { font-weight: 600; }
+			.wpab-studio__status { flex: 1; font-size: 12px; color: #c3c4c7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			.wpab-studio__status.is-ok { color: #68de7c; }
+			.wpab-studio__status.is-error { color: #ff9a9a; }
+			.wpab-studio__exit { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 5px 12px; font-size: 13px; }
+			.wpab-studio__exit:hover { background: rgba(255,255,255,.1); color: #fff; }
+			.wpab-studio__body { flex: 1; display: flex; min-height: 0; }
+			.wpab-studio__preview { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 12px; }
+			.wpab-studio__previewbar { font-size: 12px; color: #50575e; margin-bottom: 8px; }
+			.wpab-studio__previewbar.is-error { color: #d63638; }
+			.wpab-studio__frame { flex: 1; width: 100%; border: 1px solid #dcdcde; border-radius: 10px; background: #fff; }
+			.wpab-studio__panel { width: 400px; flex: 0 0 400px; background: #fff; border-left: 1px solid #dcdcde; display: flex; flex-direction: column; min-height: 0; }
+			.wpab-studio__tabs { display: flex; gap: 6px; padding: 12px 12px 0; }
+			.wpab-studio__content { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+			@media (max-width: 900px) { .wpab-studio__body { flex-direction: column; } .wpab-studio__panel { width: auto; flex: 1 1 45%; border-left: none; border-top: 1px solid #dcdcde; } }
 			.wpab-tab { background: none; border: 1px solid #dcdcde; border-radius: 999px; padding: 4px 14px; cursor: pointer; font-size: 13px; color: #50575e; }
 			.wpab-tab.is-active { background: #1d2327; border-color: #1d2327; color: #fff; }
-			.wpab-editor__thread { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; min-height: 220px; max-height: 52vh; overflow-y: auto; padding: 12px; }
-			.wpab-editor__empty { color: #8c8f94; font-size: 13px; }
+			.wpab-pane__bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+			.wpab-pane__hint { font-size: 12px; color: #8c8f94; }
+			.wpab-editor__thread { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; min-height: 180px; max-height: 46vh; overflow-y: auto; padding: 12px; }
+			.wpab-editor__empty, .wpab-empty { color: #8c8f94; font-size: 13px; }
 			.wpab-msg { margin: 0 0 14px; display: flex; flex-direction: column; }
 			.wpab-msg__role { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin-bottom: 3px; }
 			.wpab-msg__body { font-size: 14px; line-height: 1.55; color: #1d2327; }
@@ -329,10 +329,9 @@ final class WPAB_Editor {
 			.wpab-editor__input { flex: 1; font-size: 14px; }
 			.wpab-editor__meta { color: #8c8f94; font-size: 12px; margin-top: 8px; min-height: 16px; }
 			.wpab-typing { color: #8c8f94; font-size: 13px; }
-			/* Build */
-			.wpab-prop { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 14px; margin-top: 10px; }
+			.wpab-prop { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 12px; margin-top: 10px; }
 			.wpab-prop__head { display: flex; align-items: center; gap: 10px; }
-			.wpab-prop__title { font-size: 15px; font-weight: 600; margin: 0; color: #1d2327; }
+			.wpab-prop__title { font-size: 14px; font-weight: 600; margin: 0; }
 			.wpab-prop__summary { color: #50575e; font-size: 13px; margin: 6px 0 10px; }
 			.wpab-pill { font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid; }
 			.wpab-pill--low { background: #edfaef; color: #007a1c; border-color: #b7e4c0; }
@@ -341,19 +340,17 @@ final class WPAB_Editor {
 			.wpab-file { border: 1px solid #e2e4e7; border-radius: 6px; margin-top: 10px; overflow: hidden; }
 			.wpab-file__head { background: #f6f7f7; padding: 7px 10px; font-size: 12px; color: #50575e; display: flex; gap: 8px; align-items: center; }
 			.wpab-file__op { text-transform: uppercase; font-size: 10px; letter-spacing: .05em; padding: 1px 6px; border-radius: 4px; background: #e2e4e7; color: #3c434a; }
-			.wpab-file__path { font-family: Menlo, Consolas, monospace; color: #1d2327; }
-			.wpab-diff { margin: 0; padding: 8px 0; overflow-x: auto; font-family: Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; background: #fff; max-height: 320px; }
+			.wpab-file__path { font-family: Menlo, Consolas, monospace; color: #1d2327; word-break: break-all; }
+			.wpab-diff { margin: 0; padding: 8px 0; overflow-x: auto; font-family: Menlo, Consolas, monospace; font-size: 12px; line-height: 1.5; background: #fff; max-height: 260px; }
 			.wpab-diff__line { padding: 0 10px; white-space: pre-wrap; word-break: break-word; }
 			.wpab-diff__line--add { background: #eaf7ec; color: #14622a; }
 			.wpab-diff__line--del { background: #fbeaea; color: #9a2325; }
 			.wpab-diff__line--ctx { color: #50575e; }
-			.wpab-prop__actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+			.wpab-prop__actions, .wpab-v-actions { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
 			.wpab-deploy { margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 13px; }
 			.wpab-deploy--ok { background: #edfaef; border: 1px solid #b7e4c0; color: #007a1c; }
 			.wpab-deploy--err { background: #fcf0f1; border: 1px solid #f0b9ba; color: #b32d2e; }
-			.wpab-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px; }
-			@media (max-width: 782px) { .wpab-cols { grid-template-columns: 1fr; } }
-			.wpab-col__title { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin: 0 0 8px; }
+			.wpab-col__title { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin: 16px 0 8px; }
 			.wpab-list { display: flex; flex-direction: column; gap: 8px; }
 			.wpab-item { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 10px 12px; font-size: 13px; }
 			.wpab-item__row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -364,19 +361,10 @@ final class WPAB_Editor {
 			.wpab-status--failed { background: #fcf0f1; color: #b32d2e; border-color: #f0b9ba; }
 			.wpab-status--rolled_back { background: #f0f0f1; color: #50575e; border-color: #dcdcde; }
 			.wpab-status--applying { background: #fef8ee; color: #8a6100; border-color: #f2d9a8; }
-			.wpab-empty { color: #8c8f94; font-size: 13px; }
-			/* Visual */
-			.wpab-visual { display: grid; grid-template-columns: 1fr 280px; gap: 14px; margin-top: 8px; }
-			@media (max-width: 900px) { .wpab-visual { grid-template-columns: 1fr; } }
-			.wpab-visual__status { font-size: 12px; color: #50575e; margin-bottom: 8px; }
-			.wpab-visual__status.is-error { color: #d63638; }
-			.wpab-visual__frame { width: 100%; height: 70vh; border: 1px solid #dcdcde; border-radius: 8px; background: #fff; }
-			.wpab-visual__panel { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; padding: 12px; align-self: start; }
 			.wpab-v-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin: 10px 0 4px; }
 			.wpab-v-label:first-child { margin-top: 0; }
 			.wpab-v-input { width: 100%; box-sizing: border-box; font-size: 13px; }
 			.wpab-v-color { width: 100%; height: 32px; padding: 0; border: 1px solid #dcdcde; border-radius: 6px; background: #fff; }
-			.wpab-v-actions { margin-top: 12px; }
 			.wpab-v-note { font-size: 11px; color: #8c8f94; margin-top: 10px; }
 		</style>
 
@@ -410,15 +398,12 @@ final class WPAB_Editor {
 			var conversationId = null;
 			var busy = false;
 			var buildLoaded = false;
-			var visualLoaded = false;
 
 			function setStatus(text, kind) {
 				statusEl.textContent = text;
-				statusEl.className = 'wpab-editor__status' + (kind ? ' is-' + kind : '');
+				statusEl.className = 'wpab-studio__status' + (kind ? ' is-' + kind : '');
 			}
-			function escapeHtml(v) {
-				return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-			}
+			function escapeHtml(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 			function nowIso() { return new Date().toISOString(); }
 			function setBusy(state) {
 				busy = state;
@@ -429,12 +414,9 @@ final class WPAB_Editor {
 				var opts = { method: method, headers: { 'X-WP-Nonce': cfg.nonce } };
 				if (method !== 'GET') { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(payload || {}); }
 				return fetch(url, opts).then(function (res) {
-					return res.json().then(function (data) { return { ok: res.ok, data: data }; },
-						function () { return { ok: res.ok, data: null }; });
+					return res.json().then(function (data) { return { ok: res.ok, data: data }; }, function () { return { ok: res.ok, data: null }; });
 				});
 			}
-
-			/* ---- markdown (chat) ---- */
 			function renderInline(s) {
 				s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
 				s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -467,18 +449,16 @@ final class WPAB_Editor {
 				return html;
 			}
 
-			/* ---- Tabs ---- */
+			/* ---- Tabs (right panel only; preview stays visible) ---- */
 			var tabs = document.querySelectorAll('.wpab-tab');
 			for (var t = 0; t < tabs.length; t++) {
 				tabs[t].addEventListener('click', function () {
-					if (busy) { return; }
 					var name = this.getAttribute('data-tab');
 					for (var j = 0; j < tabs.length; j++) { tabs[j].classList.toggle('is-active', tabs[j] === this); }
 					$('wpab-pane-chat').hidden = (name !== 'chat');
 					$('wpab-pane-build').hidden = (name !== 'build');
 					$('wpab-pane-visual').hidden = (name !== 'visual');
 					if (name === 'build' && !buildLoaded) { buildLoaded = true; loadBuild(); }
-					if (name === 'visual' && !visualLoaded) { visualLoaded = true; initVisual(); }
 				});
 			}
 
@@ -499,8 +479,7 @@ final class WPAB_Editor {
 				var wrap = document.createElement('div');
 				wrap.className = 'wpab-msg wpab-msg--' + role;
 				var bodyHtml = role === 'assistant' ? renderMarkdown(body) : escapeHtml(body);
-				wrap.innerHTML = '<div class="wpab-msg__role">' + (role === 'user' ? 'You' : 'AI') + '</div>' +
-					'<div class="wpab-msg__body">' + bodyHtml + '</div>' + (role === 'assistant' ? renderActivity(activity) : '');
+				wrap.innerHTML = '<div class="wpab-msg__role">' + (role === 'user' ? 'You' : 'AI') + '</div><div class="wpab-msg__body">' + bodyHtml + '</div>' + (role === 'assistant' ? renderActivity(activity) : '');
 				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight; return wrap;
 			}
 			function addTyping() {
@@ -519,9 +498,7 @@ final class WPAB_Editor {
 				if (conversationId) { payload.conversationId = conversationId; }
 				api('POST', cfg.restChat, payload).then(function (out) {
 					typing.remove();
-					if (!out.ok || !out.data || out.data.success === false) {
-						addMessage('assistant', 'Error: ' + ((out.data && (out.data.error || out.data.message)) || 'Request failed.')); return;
-					}
+					if (!out.ok || !out.data || out.data.success === false) { addMessage('assistant', 'Error: ' + ((out.data && (out.data.error || out.data.message)) || 'Request failed.')); return; }
 					var d = out.data;
 					if (d.conversation && d.conversation.id) { conversationId = d.conversation.id; }
 					addMessage('assistant', d.answer || 'Analysis completed.', d.activity);
@@ -529,21 +506,12 @@ final class WPAB_Editor {
 				}).catch(function () { typing.remove(); addMessage('assistant', 'Error: network request failed.'); })
 				.then(function () { setBusy(false); input.focus(); });
 			}
-			form.addEventListener('submit', function (e) {
-				e.preventDefault(); if (busy) { return; }
-				var m = input.value.trim(); if (!m) { return; }
-				addMessage('user', m); input.value = ''; sendChat(m);
-			});
-			input.addEventListener('keydown', function (e) {
-				if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); }
-			});
+			form.addEventListener('submit', function (e) { e.preventDefault(); if (busy) { return; } var m = input.value.trim(); if (!m) { return; } addMessage('user', m); input.value = ''; sendChat(m); });
+			input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); } });
 			newBtn.addEventListener('click', function () { if (!busy) { resetThread(); input.focus(); } });
 
 			/* ---- Build ---- */
-			function riskPill(risk) {
-				var r = (risk === 'high' || risk === 'medium') ? risk : 'low';
-				return '<span class="wpab-pill wpab-pill--' + r + '">' + r + ' risk</span>';
-			}
+			function riskPill(risk) { var r = (risk === 'high' || risk === 'medium') ? risk : 'low'; return '<span class="wpab-pill wpab-pill--' + r + '">' + r + ' risk</span>'; }
 			function renderDiff(diff) {
 				if (!diff || !diff.length) { return '<pre class="wpab-diff"><div class="wpab-diff__line wpab-diff__line--ctx">(no diff)</div></pre>'; }
 				var out = '';
@@ -552,32 +520,18 @@ final class WPAB_Editor {
 					var cls = part.type === 'added' ? 'add' : (part.type === 'removed' ? 'del' : 'ctx');
 					var prefix = part.type === 'added' ? '+' : (part.type === 'removed' ? '-' : ' ');
 					var lines = String(part.value == null ? '' : part.value).replace(/\n$/, '').split('\n');
-					for (var k = 0; k < lines.length; k++) {
-						out += '<div class="wpab-diff__line wpab-diff__line--' + cls + '">' + escapeHtml(prefix + lines[k]) + '</div>';
-					}
+					for (var k = 0; k < lines.length; k++) { out += '<div class="wpab-diff__line wpab-diff__line--' + cls + '">' + escapeHtml(prefix + lines[k]) + '</div>'; }
 				}
 				return '<pre class="wpab-diff">' + out + '</pre>';
 			}
 			function renderProposal(p) {
 				var filesHtml = (p.files || []).map(function (f) {
-					return '<div class="wpab-file"><div class="wpab-file__head"><span class="wpab-file__op">' +
-						escapeHtml(f.operation || 'modify') + '</span><span class="wpab-file__path">' +
-						escapeHtml((f.scope || '') + '/' + (f.path || '')) + '</span></div>' + renderDiff(f.diff) + '</div>';
+					return '<div class="wpab-file"><div class="wpab-file__head"><span class="wpab-file__op">' + escapeHtml(f.operation || 'modify') + '</span><span class="wpab-file__path">' + escapeHtml((f.scope || '') + '/' + (f.path || '')) + '</span></div>' + renderDiff(f.diff) + '</div>';
 				}).join('');
-				var applied = (p.status === 'discarded');
-				currentEl.innerHTML =
-					'<div class="wpab-prop">' +
-						'<div class="wpab-prop__head">' + riskPill(p.risk) + '<h3 class="wpab-prop__title">' + escapeHtml(p.title || 'Proposed change') + '</h3></div>' +
-						'<p class="wpab-prop__summary">' + escapeHtml(p.summary || '') + '</p>' + filesHtml +
-						'<div class="wpab-prop__actions">' +
-							'<button type="button" class="button button-primary" id="wpab-apply-btn">Deploy</button>' +
-							'<button type="button" class="button" id="wpab-close-btn">Close</button>' +
-						'</div><div id="wpab-deploy"></div></div>';
+				currentEl.innerHTML = '<div class="wpab-prop"><div class="wpab-prop__head">' + riskPill(p.risk) + '<h3 class="wpab-prop__title">' + escapeHtml(p.title || 'Proposed change') + '</h3></div><p class="wpab-prop__summary">' + escapeHtml(p.summary || '') + '</p>' + filesHtml + '<div class="wpab-prop__actions"><button type="button" class="button button-primary" id="wpab-apply-btn">Deploy</button><button type="button" class="button" id="wpab-close-btn">Close</button></div><div id="wpab-deploy"></div></div>';
 				$('wpab-apply-btn').addEventListener('click', function () { deploy(p.id); });
 				$('wpab-close-btn').addEventListener('click', function () { if (!busy) { currentEl.innerHTML = ''; } });
-				currentEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 			}
-
 			function loadBuild() {
 				api('GET', cfg.restProposals + '?limit=6').then(function (out) {
 					if (!out.ok || !out.data || out.data.success === false) { return; }
@@ -589,10 +543,8 @@ final class WPAB_Editor {
 				if (!list.length) { proposalsEl.innerHTML = '<p class="wpab-empty">No proposals yet.</p>'; return; }
 				proposalsEl.innerHTML = '';
 				list.forEach(function (p) {
-					var el = document.createElement('div'); el.className = 'wpab-item';
-					el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(p.title || 'Proposal') + '</span>' +
-						riskPill(p.risk) + '</div><div class="wpab-item__meta">' + (p.files ? p.files.length : 0) + ' file(s) · ' + escapeHtml(p.status || 'draft') + '</div>';
-					el.style.cursor = 'pointer';
+					var el = document.createElement('div'); el.className = 'wpab-item'; el.style.cursor = 'pointer';
+					el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(p.title || 'Proposal') + '</span>' + riskPill(p.risk) + '</div><div class="wpab-item__meta">' + (p.files ? p.files.length : 0) + ' file(s) · ' + escapeHtml(p.status || 'draft') + '</div>';
 					el.addEventListener('click', function () { renderProposal(p); });
 					proposalsEl.appendChild(el);
 				});
@@ -604,46 +556,28 @@ final class WPAB_Editor {
 					var el = document.createElement('div'); el.className = 'wpab-item';
 					var canRoll = (d.status === 'applied' && d.snapshotId);
 					var btn = canRoll ? '<button type="button" class="button" data-run="' + escapeHtml(d.id) + '">Rollback</button>' : '';
-					el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(d.proposalTitle || 'Deployment') + '</span>' +
-						'<span class="wpab-status wpab-status--' + escapeHtml(d.status || '') + '">' + escapeHtml(d.status || '') + '</span></div>' +
-						'<div class="wpab-item__row"><span class="wpab-item__meta">' + (d.filesCount || 0) + ' file(s)' + (d.snapshotId ? ' · ' + escapeHtml(d.snapshotId) : '') + '</span>' + btn + '</div>';
+					el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(d.proposalTitle || 'Deployment') + '</span><span class="wpab-status wpab-status--' + escapeHtml(d.status || '') + '">' + escapeHtml(d.status || '') + '</span></div><div class="wpab-item__row"><span class="wpab-item__meta">' + (d.filesCount || 0) + ' file(s)' + (d.snapshotId ? ' · ' + escapeHtml(d.snapshotId) : '') + '</span>' + btn + '</div>';
 					if (canRoll) { el.querySelector('button').addEventListener('click', function () { rollback(d.id); }); }
 					deploymentsEl.appendChild(el);
 				});
 			}
-
 			function propose(promptText) {
 				setBusy(true); currentEl.innerHTML = '';
 				buildMeta.textContent = 'Inspecting the project and drafting a change… this can take up to a minute.';
 				var since = nowIso();
 				api('POST', cfg.restPropose, { prompt: promptText }).then(function (out) {
-					if (out.ok && out.data && out.data.proposal) {
-						buildMeta.textContent = '';
-						renderProposal(out.data.proposal); loadBuild(); setBusy(false); return;
-					}
-					if (out.data && out.data.success === false && out.data.error && !out.data.started) {
-						buildMeta.textContent = '';
-						currentEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(out.data.error) + '</div>';
-						setBusy(false); return;
-					}
+					if (out.ok && out.data && out.data.proposal) { buildMeta.textContent = ''; renderProposal(out.data.proposal); loadBuild(); setBusy(false); return; }
+					if (out.data && out.data.success === false && out.data.error && !out.data.started) { buildMeta.textContent = ''; currentEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(out.data.error) + '</div>'; setBusy(false); return; }
 					pollForProposal(since, 0);
 				}).catch(function () { pollForProposal(since, 0); });
 			}
 			function pollForProposal(since, attempt) {
-				if (attempt > 40) {
-					buildMeta.textContent = '';
-					currentEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Generation is taking longer than expected. Check "Recent proposals" below in a moment, or try again.</div>';
-					loadBuild(); setBusy(false); return;
-				}
+				if (attempt > 40) { buildMeta.textContent = ''; currentEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Generation is taking longer than expected. Check "Recent proposals" in a moment, or try again.</div>'; loadBuild(); setBusy(false); return; }
 				setTimeout(function () {
 					api('GET', cfg.restProposals + '?limit=3&since=' + encodeURIComponent(since)).then(function (out) {
 						var list = (out.data && out.data.proposals) || [];
-						if (list.length) {
-							buildMeta.textContent = '';
-							renderProposal(list[0]); loadBuild(); setBusy(false);
-						} else {
-							pollForProposal(since, attempt + 1);
-						}
+						if (list.length) { buildMeta.textContent = ''; renderProposal(list[0]); loadBuild(); setBusy(false); }
+						else { pollForProposal(since, attempt + 1); }
 					}).catch(function () { pollForProposal(since, attempt + 1); });
 				}, 4000);
 			}
@@ -653,48 +587,38 @@ final class WPAB_Editor {
 				var deployEl = $('wpab-deploy');
 				if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
 				api('POST', cfg.restApply, { proposalId: proposalId }).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) {
-						var err = (out.data && (out.data.error || out.data.message)) || 'Deploy failed.';
-						if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; }
-						return;
-					}
+					if (!out.ok || !out.data || out.data.success === false) { var err = (out.data && (out.data.error || out.data.message)) || 'Deploy failed.'; if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; } return; }
 					var d = out.data.deployment || {};
 					var snap = d.snapshotId ? ' · snapshot ' + escapeHtml(String(d.snapshotId)) : '';
 					if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Deployed ✓ · ' + (d.filesCount || 0) + ' file(s)' + snap + '.</div>'; }
 					var b = $('wpab-apply-btn'); if (b) { b.disabled = true; b.textContent = 'Deployed'; }
-				}).catch(function () {
-					if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; }
-				}).then(function () { setBusy(false); loadBuild(); });
+					reloadPreview();
+				}).catch(function () { if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; } })
+				.then(function () { setBusy(false); loadBuild(); });
 			}
 			function rollback(runId) {
 				if (busy) { return; }
 				if (!window.confirm('Roll back this deployment? The snapshot will be restored.')) { return; }
 				setBusy(true);
 				api('POST', cfg.restRollback, { runId: runId }).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) {
-						window.alert((out.data && (out.data.error || out.data.message)) || 'Rollback failed.');
-					}
+					if (!out.ok || !out.data || out.data.success === false) { window.alert((out.data && (out.data.error || out.data.message)) || 'Rollback failed.'); }
+					else { reloadPreview(); }
 				}).catch(function () { window.alert('Network request failed.'); })
 				.then(function () { setBusy(false); loadBuild(); });
 			}
-			buildForm.addEventListener('submit', function (e) {
-				e.preventDefault(); if (busy) { return; }
-				var p = buildInput.value.trim(); if (!p) { return; }
-				propose(p);
-			});
+			buildForm.addEventListener('submit', function (e) { e.preventDefault(); if (busy) { return; } var p = buildInput.value.trim(); if (!p) { return; } propose(p); });
 
-			/* ---- Visual editor (element targeting + live CSS preview) ---- */
+			/* ---- Inspect (visual CSS) ---- */
 			var vFrame = $('wpab-visual-frame');
 			var vSelectorEl = $('wpab-visual-selector');
 			var vPanel = $('wpab-visual-panel');
+			var vHint = $('wpab-visual-hint');
 			var vStatusEl = $('wpab-visual-status');
 			var vRules = {};
 			var vCurrentSel = null;
 
-			function vDoc() {
-				try { return vFrame.contentDocument || (vFrame.contentWindow && vFrame.contentWindow.document); }
-				catch (e) { return null; }
-			}
+			function reloadPreview() { try { vFrame.src = cfg.siteUrl; } catch (e) {} }
+			function vDoc() { try { return vFrame.contentDocument || (vFrame.contentWindow && vFrame.contentWindow.document); } catch (e) { return null; } }
 			function rgbToHex(rgb) {
 				if (!rgb) { return '#000000'; }
 				var m = rgb.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
@@ -710,9 +634,7 @@ final class WPAB_Editor {
 					if (node.id) { parts.unshift('#' + node.id); break; }
 					var tag = node.tagName.toLowerCase();
 					var cls = [];
-					if (node.className && typeof node.className === 'string') {
-						cls = node.className.trim().split(/\s+/).filter(function (c) { return c && c.indexOf('wpab-') !== 0; }).slice(0, 2);
-					}
+					if (node.className && typeof node.className === 'string') { cls = node.className.trim().split(/\s+/).filter(function (c) { return c && c.indexOf('wpab-') !== 0; }).slice(0, 2); }
 					var sel = tag + (cls.length ? '.' + cls.join('.') : '');
 					var parent = node.parentNode;
 					if (parent && parent.children) {
@@ -728,10 +650,7 @@ final class WPAB_Editor {
 				var css = '';
 				Object.keys(vRules).forEach(function (sel) {
 					var props = vRules[sel] || {}, body = '';
-					Object.keys(props).forEach(function (p) {
-						if (p === '__raw') { return; }
-						if (props[p] !== '' && props[p] != null) { body += p + ':' + props[p] + ' !important;'; }
-					});
+					Object.keys(props).forEach(function (p) { if (p === '__raw') { return; } if (props[p] !== '' && props[p] != null) { body += p + ':' + props[p] + ' !important;'; } });
 					if (props.__raw) { body += props.__raw; }
 					if (body) { css += sel + '{' + body + '}\n'; }
 				});
@@ -743,86 +662,55 @@ final class WPAB_Editor {
 				if (!style) { style = doc.createElement('style'); style.id = 'wpab-visual-preview'; doc.head.appendChild(style); }
 				style.textContent = vBuildCss();
 			}
-			function applyVisual() {
-				if (busy) { return; }
-				var css = vBuildCss().trim();
-				var resultEl = $('wpab-v-result');
-				if (!css) {
-					if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Nothing to apply yet — pick an element and change a style.</div>'; }
-					return;
-				}
-				setBusy(true);
-				if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
-				api('POST', cfg.restCssApply, { css: css }).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) {
-						var err = (out.data && (out.data.error || out.data.message)) || 'Apply failed.';
-						if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; }
-						return;
-					}
-					var d = out.data.deployment || {};
-					var snap = d.snapshotId ? ' · snapshot ' + escapeHtml(String(d.snapshotId)) : '';
-					if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Applied ✓' + snap + '. Reloading preview…</div>'; }
-					vRules = {}; vCurrentSel = null; vPanel.hidden = true;
-					setTimeout(function () { vFrame.src = cfg.siteUrl; }, 800);
-				}).catch(function () {
-					if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; }
-				}).then(function () { setBusy(false); });
-			}
-			function vSetProp(prop, value) {
-				if (!vCurrentSel) { return; }
-				vRules[vCurrentSel] = vRules[vCurrentSel] || {};
-				vRules[vCurrentSel][prop] = value;
-				vApplyPreview();
-			}
+			function vSetProp(prop, value) { if (!vCurrentSel) { return; } vRules[vCurrentSel] = vRules[vCurrentSel] || {}; vRules[vCurrentSel][prop] = value; vApplyPreview(); }
 			function vSelect(el) {
 				var doc = vDoc(); if (!doc) { return; }
 				var prev = doc.querySelector('.wpab-sel'); if (prev) { prev.classList.remove('wpab-sel'); }
 				if (el.classList) { el.classList.add('wpab-sel'); }
 				vCurrentSel = vBuildSelector(el);
 				vSelectorEl.value = vCurrentSel;
-				try {
-					var cs = vFrame.contentWindow.getComputedStyle(el);
-					$('wpab-v-color').value = rgbToHex(cs.color);
-					$('wpab-v-bg').value = rgbToHex(cs.backgroundColor);
-					$('wpab-v-fs').value = parseInt(cs.fontSize, 10) || '';
-				} catch (e) {}
+				try { var cs = vFrame.contentWindow.getComputedStyle(el); $('wpab-v-color').value = rgbToHex(cs.color); $('wpab-v-bg').value = rgbToHex(cs.backgroundColor); $('wpab-v-fs').value = parseInt(cs.fontSize, 10) || ''; } catch (e) {}
 				$('wpab-v-css').value = (vRules[vCurrentSel] && vRules[vCurrentSel].__raw) || '';
+				if (vHint) { vHint.hidden = true; }
 				vPanel.hidden = false;
 			}
 			function vBind() {
 				var doc = vDoc();
-				if (!doc) {
-					vStatusEl.textContent = 'Preview cannot access the site (it may block being framed). Element targeting is unavailable here.';
-					vStatusEl.className = 'wpab-visual__status is-error';
-					return;
-				}
+				if (!doc) { vStatusEl.textContent = 'Preview cannot access the site (it may block being framed). Element targeting is unavailable.'; vStatusEl.className = 'wpab-studio__previewbar is-error'; return; }
 				var hl = doc.getElementById('wpab-visual-hl');
-				if (!hl) {
-					hl = doc.createElement('style'); hl.id = 'wpab-visual-hl';
-					hl.textContent = '.wpab-hl{outline:2px dashed #2271b1 !important;outline-offset:-2px}.wpab-sel{outline:2px solid #2271b1 !important;outline-offset:-2px}';
-					doc.head.appendChild(hl);
-				}
+				if (!hl) { hl = doc.createElement('style'); hl.id = 'wpab-visual-hl'; hl.textContent = '.wpab-hl{outline:2px dashed #2271b1 !important;outline-offset:-2px}.wpab-sel{outline:2px solid #2271b1 !important;outline-offset:-2px}'; doc.head.appendChild(hl); }
 				vStatusEl.textContent = 'Click any element in the preview to target it.';
-				vStatusEl.className = 'wpab-visual__status';
+				vStatusEl.className = 'wpab-studio__previewbar';
+				vApplyPreview();
 				doc.addEventListener('mouseover', function (e) { if (e.target && e.target.classList) { e.target.classList.add('wpab-hl'); } }, true);
 				doc.addEventListener('mouseout', function (e) { if (e.target && e.target.classList) { e.target.classList.remove('wpab-hl'); } }, true);
 				doc.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); vSelect(e.target); }, true);
+			}
+			function applyVisual() {
+				if (busy) { return; }
+				var css = vBuildCss().trim();
+				var resultEl = $('wpab-v-result');
+				if (!css) { if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Nothing to apply yet — pick an element and change a style.</div>'; } return; }
+				setBusy(true);
+				if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
+				api('POST', cfg.restCssApply, { css: css }).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) { var err = (out.data && (out.data.error || out.data.message)) || 'Apply failed.'; if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; } return; }
+					var d = out.data.deployment || {};
+					var snap = d.snapshotId ? ' · snapshot ' + escapeHtml(String(d.snapshotId)) : '';
+					if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Applied ✓' + snap + '. Reloading preview…</div>'; }
+					vRules = {}; vCurrentSel = null; vPanel.hidden = true; if (vHint) { vHint.hidden = false; }
+					setTimeout(reloadPreview, 800);
+					buildLoaded = false;
+				}).catch(function () { if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; } })
+				.then(function () { setBusy(false); });
 			}
 			function initVisual() {
 				$('wpab-v-color').addEventListener('input', function () { vSetProp('color', this.value); });
 				$('wpab-v-bg').addEventListener('input', function () { vSetProp('background-color', this.value); });
 				$('wpab-v-fs').addEventListener('input', function () { vSetProp('font-size', this.value ? this.value + 'px' : ''); });
-				$('wpab-v-css').addEventListener('input', function () {
-					if (!vCurrentSel) { return; }
-					vRules[vCurrentSel] = vRules[vCurrentSel] || {};
-					vRules[vCurrentSel].__raw = this.value;
-					vApplyPreview();
-				});
+				$('wpab-v-css').addEventListener('input', function () { if (!vCurrentSel) { return; } vRules[vCurrentSel] = vRules[vCurrentSel] || {}; vRules[vCurrentSel].__raw = this.value; vApplyPreview(); });
 				vSelectorEl.addEventListener('change', function () { var v = this.value.trim(); if (v) { vCurrentSel = v; } });
-				$('wpab-v-reset').addEventListener('click', function () {
-					vRules = {}; vCurrentSel = null; vApplyPreview(); vPanel.hidden = true;
-					var doc = vDoc(); if (doc) { var s = doc.querySelector('.wpab-sel'); if (s) { s.classList.remove('wpab-sel'); } }
-				});
+				$('wpab-v-reset').addEventListener('click', function () { vRules = {}; vCurrentSel = null; vApplyPreview(); vPanel.hidden = true; if (vHint) { vHint.hidden = false; } var doc = vDoc(); if (doc) { var s = doc.querySelector('.wpab-sel'); if (s) { s.classList.remove('wpab-sel'); } } });
 				$('wpab-v-apply').addEventListener('click', applyVisual);
 				vFrame.addEventListener('load', vBind);
 				vStatusEl.textContent = 'Loading preview…';
@@ -831,25 +719,20 @@ final class WPAB_Editor {
 
 			/* ---- Init ---- */
 			resetThread();
+			initVisual();
 			function loadStatus() {
 				api('POST', cfg.restSession, {}).then(function (out) {
 					if (!out.ok || !out.data || out.data.success === false) {
 						var msg = (out.data && (out.data.error || out.data.message)) || 'Not connected to the AI Builder cloud.';
-						setStatus(msg + ' Connect the site key first.', 'error');
-						var link = document.createElement('a'); link.href = cfg.cloudPage; link.textContent = ' Open Cloud connection →';
-						statusEl.appendChild(link); return;
+						setStatus(msg + ' Open Cloud connection to connect the site key.', 'error');
+						return;
 					}
 					var d = out.data, project = d.project || {}, site = d.site || {};
-					setStatus('Connected · Project: ' + (project.name || '—') + ' · Theme: ' + (site.themeName || '—') + ' · Plugin: ' + (site.pluginName || 'None'), 'ok');
+					setStatus('Connected · ' + (project.name || '—') + ' · Theme: ' + (site.themeName || '—') + ' · Plugin: ' + (site.pluginName || 'None'), 'ok');
 				}).catch(function () { setStatus('Could not reach WordPress REST API.', 'error'); });
 			}
-			if (cfg.connected) {
-				loadStatus();
-			} else {
-				setStatus('This site is not connected to the AI Builder cloud yet.', 'error');
-				var link = document.createElement('a'); link.href = cfg.cloudPage; link.textContent = ' Open Cloud connection →';
-				statusEl.appendChild(link);
-			}
+			if (cfg.connected) { loadStatus(); }
+			else { setStatus('This site is not connected to the AI Builder cloud yet. Open Cloud connection.', 'error'); }
 		})();
 		</script>
 		<?php
