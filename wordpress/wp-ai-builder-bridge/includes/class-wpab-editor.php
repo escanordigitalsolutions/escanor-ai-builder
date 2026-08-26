@@ -125,7 +125,10 @@ final class WPAB_Editor {
 			</p>
 
 			<div id="wpab-editor-root" class="wpab-editor">
-				<div id="wpab-editor-status" class="wpab-editor__status">Connecting…</div>
+				<div class="wpab-editor__bar">
+					<div id="wpab-editor-status" class="wpab-editor__status">Connecting…</div>
+					<button type="button" id="wpab-editor-new" class="button wpab-editor__new">New chat</button>
+				</div>
 
 				<div id="wpab-editor-thread" class="wpab-editor__thread" aria-live="polite"></div>
 
@@ -147,12 +150,14 @@ final class WPAB_Editor {
 
 		<style>
 			.wpab-editor { max-width: 860px; margin-top: 16px; }
+			.wpab-editor__bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 			.wpab-editor__status {
-				padding: 10px 12px; border: 1px solid #dcdcde; border-radius: 8px;
-				background: #fff; font-size: 13px; margin-bottom: 12px;
+				flex: 1; padding: 10px 12px; border: 1px solid #dcdcde; border-radius: 8px;
+				background: #fff; font-size: 13px;
 			}
 			.wpab-editor__status.is-error { border-color: #d63638; color: #d63638; }
 			.wpab-editor__status.is-ok { border-color: #00a32a; }
+			.wpab-editor__new { flex: 0 0 auto; }
 			.wpab-editor__thread {
 				border: 1px solid #dcdcde; border-radius: 8px; background: #fff;
 				min-height: 220px; max-height: 52vh; overflow-y: auto; padding: 12px;
@@ -160,9 +165,17 @@ final class WPAB_Editor {
 			.wpab-editor__empty { color: #8c8f94; font-size: 13px; }
 			.wpab-msg { margin: 0 0 14px; display: flex; flex-direction: column; }
 			.wpab-msg__role { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin-bottom: 3px; }
-			.wpab-msg__body { white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
-			.wpab-msg--user .wpab-msg__body { color: #1d2327; font-weight: 500; }
-			.wpab-msg--assistant .wpab-msg__body { color: #1d2327; }
+			.wpab-msg__body { font-size: 14px; line-height: 1.55; color: #1d2327; }
+			.wpab-msg__body p { margin: 0 0 8px; }
+			.wpab-msg__body p:last-child { margin-bottom: 0; }
+			.wpab-msg__body ul { margin: 4px 0 8px; padding-left: 20px; }
+			.wpab-msg__body li { margin: 2px 0; }
+			.wpab-msg__body h4, .wpab-msg__body h5, .wpab-msg__body h6 { margin: 10px 0 4px; font-size: 13px; }
+			.wpab-msg__body code { background: #f0f0f1; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+			.wpab-msg__body pre { background: #f6f7f7; border: 1px solid #e2e4e7; border-radius: 6px; padding: 10px; overflow-x: auto; margin: 6px 0 10px; }
+			.wpab-msg__body pre code { background: none; padding: 0; }
+			.wpab-msg__body a { color: #2271b1; }
+			.wpab-msg--user .wpab-msg__body { font-weight: 500; white-space: pre-wrap; }
 			.wpab-msg__activity { margin-top: 6px; font-size: 12px; color: #646970; }
 			.wpab-msg__activity code { background: #f0f0f1; padding: 1px 5px; border-radius: 4px; }
 			.wpab-editor__form { display: flex; gap: 8px; margin-top: 12px; align-items: flex-start; }
@@ -191,6 +204,7 @@ final class WPAB_Editor {
 			var form = document.getElementById('wpab-editor-form');
 			var input = document.getElementById('wpab-editor-input');
 			var sendBtn = document.getElementById('wpab-editor-send');
+			var newBtn = document.getElementById('wpab-editor-new');
 			var statusEl = document.getElementById('wpab-editor-status');
 			var metaEl = document.getElementById('wpab-editor-meta');
 			var conversationId = null;
@@ -206,6 +220,43 @@ final class WPAB_Editor {
 					.replace(/&/g, '&amp;')
 					.replace(/</g, '&lt;')
 					.replace(/>/g, '&gt;');
+			}
+
+			// Inline markdown on an ALREADY-escaped string.
+			function renderInline(s) {
+				s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+				s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+				s = s.replace(/(^|[^*])\*([^*]+)\*(?!\*)/g, '$1<em>$2</em>');
+				s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+					'<a href="$2" target="_blank" rel="noopener">$1</a>');
+				return s;
+			}
+
+			// Minimal, safe markdown: escape first, then build HTML from markers.
+			function renderMarkdown(text) {
+				var lines = escapeHtml(text).split('\n');
+				var html = '';
+				var inCode = false, inList = false, codeBuf = '';
+				function closeList() { if (inList) { html += '</ul>'; inList = false; } }
+				for (var i = 0; i < lines.length; i++) {
+					var line = lines[i];
+					if (/^```/.test(line.trim())) {
+						if (!inCode) { inCode = true; codeBuf = ''; closeList(); }
+						else { inCode = false; html += '<pre><code>' + codeBuf + '</code></pre>'; }
+						continue;
+					}
+					if (inCode) { codeBuf += (codeBuf ? '\n' : '') + line; continue; }
+					var h = line.match(/^(#{1,4})\s+(.*)$/);
+					if (h) { closeList(); html += '<h4>' + renderInline(h[2]) + '</h4>'; continue; }
+					var li = line.match(/^\s*[-*]\s+(.*)$/);
+					if (li) { if (!inList) { html += '<ul>'; inList = true; } html += '<li>' + renderInline(li[1]) + '</li>'; continue; }
+					if (line.trim() === '') { closeList(); continue; }
+					closeList();
+					html += '<p>' + renderInline(line) + '</p>';
+				}
+				if (inCode) { html += '<pre><code>' + codeBuf + '</code></pre>'; }
+				closeList();
+				return html;
 			}
 
 			function renderActivity(activity) {
@@ -229,9 +280,12 @@ final class WPAB_Editor {
 
 				var wrap = document.createElement('div');
 				wrap.className = 'wpab-msg wpab-msg--' + role;
+				var bodyHtml = role === 'assistant'
+					? renderMarkdown(body)
+					: escapeHtml(body);
 				wrap.innerHTML =
 					'<div class="wpab-msg__role">' + (role === 'user' ? 'You' : 'AI') + '</div>' +
-					'<div class="wpab-msg__body">' + escapeHtml(body) + '</div>' +
+					'<div class="wpab-msg__body">' + bodyHtml + '</div>' +
 					(role === 'assistant' ? renderActivity(activity) : '');
 				thread.appendChild(wrap);
 				thread.scrollTop = thread.scrollHeight;
@@ -247,6 +301,13 @@ final class WPAB_Editor {
 				thread.appendChild(wrap);
 				thread.scrollTop = thread.scrollHeight;
 				return wrap;
+			}
+
+			function resetThread() {
+				conversationId = null;
+				metaEl.textContent = '';
+				thread.innerHTML = '<p class="wpab-editor__empty">Ask a question to inspect this site’s theme or companion plugin.</p>';
+				input.focus();
 			}
 
 			function loadStatus() {
@@ -348,7 +409,12 @@ final class WPAB_Editor {
 				}
 			});
 
-			thread.innerHTML = '<p class="wpab-editor__empty">Ask a question to inspect this site’s theme or companion plugin.</p>';
+			newBtn.addEventListener('click', function () {
+				if (busy) { return; }
+				resetThread();
+			});
+
+			resetThread();
 
 			if (cfg.connected) {
 				loadStatus();
