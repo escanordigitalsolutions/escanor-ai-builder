@@ -3,7 +3,7 @@
  * Plugin Name:       WP AI Builder Bridge
  * Plugin URI:        https://builder.escanor.lt
  * Description:       Secure bridge between this WordPress site and the ESCANOR AI Builder. Project inspection, controlled writes with SHA-256 verification, snapshots, health checks and one-click rollback.
- * Version:           0.7.0
+ * Version:           0.7.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            ESCANOR Digital Solutions
@@ -34,7 +34,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAB_VERSION', '0.7.0' );
+define( 'WPAB_VERSION', '0.7.1' );
 define( 'WPAB_FILE', __FILE__ );
 define( 'WPAB_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAB_URL', plugin_dir_url( __FILE__ ) );
@@ -49,6 +49,7 @@ require_once WPAB_DIR . 'includes/class-wpab-writer.php';
 require_once WPAB_DIR . 'includes/class-wpab-rest.php';
 require_once WPAB_DIR . 'includes/class-wpab-admin.php';
 require_once WPAB_DIR . 'includes/class-wpab-cloud.php';
+require_once WPAB_DIR . 'includes/class-wpab-editor.php';
 
 /**
  * Everything registers on plugins_loaded so the theme and companion plugin are
@@ -58,6 +59,7 @@ function wpab_bootstrap() {
 	WPAB_REST::init();
 	WPAB_Admin::init();
 	WPAB_Cloud::init();
+	WPAB_Editor::init();
 }
 add_action( 'plugins_loaded', 'wpab_bootstrap' );
 
