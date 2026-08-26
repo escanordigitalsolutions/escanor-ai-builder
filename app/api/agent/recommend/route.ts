@@ -21,6 +21,7 @@ const MODEL = SMART_MODEL;
 const submitTool = {
   type: "function" as const,
   name: "submit_recommendations",
+  strict: true,
   description:
     "Return a short, prioritized list of concrete recommendations for this WordPress site, based only on the audit provided.",
   parameters: {

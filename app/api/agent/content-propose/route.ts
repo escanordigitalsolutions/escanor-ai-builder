@@ -27,6 +27,7 @@ const EDITABLE_STATUSES = ["draft", "publish", "pending", "private"];
 const submitTool = {
   type: "function" as const,
   name: "submit_edit",
+  strict: false,
   description:
     "Return the new values for ONLY the fields that should change. Omit any field that should stay the same. Preserve the existing HTML structure of content unless asked to change it.",
   parameters: {

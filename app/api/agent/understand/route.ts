@@ -26,6 +26,7 @@ const MODEL = SMART_MODEL;
 const submitTool = {
   type: "function" as const,
   name: "submit_understanding",
+  strict: true,
   description:
     "Return a concise, human-like understanding of this website based only on the data provided.",
   parameters: {
