@@ -36,10 +36,11 @@ final class WPAB_Editor {
 		};
 
 		$post = array(
-			'chat'    => 'rest_chat',
-			'propose' => 'rest_propose',
-			'apply'   => 'rest_apply',
-			'rollback' => 'rest_rollback',
+			'chat'      => 'rest_chat',
+			'propose'   => 'rest_propose',
+			'apply'     => 'rest_apply',
+			'rollback'  => 'rest_rollback',
+			'css-apply' => 'rest_css_apply',
 		);
 
 		foreach ( $post as $route => $cb ) {
@@ -170,6 +171,19 @@ final class WPAB_Editor {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
+	public static function rest_css_apply( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$css    = isset( $params['css'] ) ? (string) $params['css'] : '';
+
+		if ( '' === trim( $css ) ) {
+			return new WP_Error( 'wpab_editor_no_css', 'No CSS to apply.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/css-apply', array( 'css' => $css ), 90 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
 	/* ---------------------------------------------------------------------
 	 * Admin page
 	 * ------------------------------------------------------------------ */
@@ -197,6 +211,7 @@ final class WPAB_Editor {
 			'restProposals' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/proposals' ) ),
 			'restApply'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/apply' ) ),
 			'restRollback'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/rollback' ) ),
+			'restCssApply'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/css-apply' ) ),
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
@@ -274,9 +289,11 @@ final class WPAB_Editor {
 							<label class="wpab-v-label">Custom CSS for this element</label>
 							<textarea id="wpab-v-css" class="wpab-v-input" rows="3" placeholder="margin: 20px; border-radius: 8px;"></textarea>
 							<div class="wpab-v-actions">
+								<button type="button" id="wpab-v-apply" class="button button-primary">Apply changes</button>
 								<button type="button" id="wpab-v-reset" class="button">Reset preview</button>
 							</div>
-							<p class="wpab-v-note">Live preview only — nothing is written yet. Deterministic “Apply” arrives in the next update.</p>
+							<div id="wpab-v-result"></div>
+							<p class="wpab-v-note">Apply writes your CSS to the theme stylesheet in a managed block, with a snapshot you can roll back from Deployments.</p>
 						</div>
 					</div>
 				</div>
@@ -707,10 +724,7 @@ final class WPAB_Editor {
 				}
 				return parts.join(' > ');
 			}
-			function vApplyPreview() {
-				var doc = vDoc(); if (!doc) { return; }
-				var style = doc.getElementById('wpab-visual-preview');
-				if (!style) { style = doc.createElement('style'); style.id = 'wpab-visual-preview'; doc.head.appendChild(style); }
+			function vBuildCss() {
 				var css = '';
 				Object.keys(vRules).forEach(function (sel) {
 					var props = vRules[sel] || {}, body = '';
@@ -721,7 +735,38 @@ final class WPAB_Editor {
 					if (props.__raw) { body += props.__raw; }
 					if (body) { css += sel + '{' + body + '}\n'; }
 				});
-				style.textContent = css;
+				return css;
+			}
+			function vApplyPreview() {
+				var doc = vDoc(); if (!doc) { return; }
+				var style = doc.getElementById('wpab-visual-preview');
+				if (!style) { style = doc.createElement('style'); style.id = 'wpab-visual-preview'; doc.head.appendChild(style); }
+				style.textContent = vBuildCss();
+			}
+			function applyVisual() {
+				if (busy) { return; }
+				var css = vBuildCss().trim();
+				var resultEl = $('wpab-v-result');
+				if (!css) {
+					if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Nothing to apply yet — pick an element and change a style.</div>'; }
+					return;
+				}
+				setBusy(true);
+				if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
+				api('POST', cfg.restCssApply, { css: css }).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false) {
+						var err = (out.data && (out.data.error || out.data.message)) || 'Apply failed.';
+						if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; }
+						return;
+					}
+					var d = out.data.deployment || {};
+					var snap = d.snapshotId ? ' · snapshot ' + escapeHtml(String(d.snapshotId)) : '';
+					if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Applied ✓' + snap + '. Reloading preview…</div>'; }
+					vRules = {}; vCurrentSel = null; vPanel.hidden = true;
+					setTimeout(function () { vFrame.src = cfg.siteUrl; }, 800);
+				}).catch(function () {
+					if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; }
+				}).then(function () { setBusy(false); });
 			}
 			function vSetProp(prop, value) {
 				if (!vCurrentSel) { return; }
@@ -778,6 +823,7 @@ final class WPAB_Editor {
 					vRules = {}; vCurrentSel = null; vApplyPreview(); vPanel.hidden = true;
 					var doc = vDoc(); if (doc) { var s = doc.querySelector('.wpab-sel'); if (s) { s.classList.remove('wpab-sel'); } }
 				});
+				$('wpab-v-apply').addEventListener('click', applyVisual);
 				vFrame.addEventListener('load', vBind);
 				vStatusEl.textContent = 'Loading preview…';
 				vFrame.src = cfg.siteUrl;
