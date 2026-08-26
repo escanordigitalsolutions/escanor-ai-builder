@@ -93,6 +93,16 @@ final class WPAB_Editor {
 			)
 		);
 
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/steps',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_steps' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Visual CSS override layer (stored locally, printed on the front end).
 		register_rest_route(
 			self::NAMESPACE,
@@ -110,6 +120,18 @@ final class WPAB_Editor {
 				),
 			)
 		);
+	}
+
+	public static function rest_steps( WP_REST_Request $request ) {
+		$run_id = trim( (string) $request->get_param( 'runId' ) );
+
+		if ( '' === $run_id ) {
+			return new WP_REST_Response( array( 'success' => true, 'steps' => array() ), 200 );
+		}
+
+		$result = WPAB_Cloud::get( 'agent/steps', array( 'runId' => $run_id ), 12 );
+
+		return is_wp_error( $result ) ? new WP_REST_Response( array( 'success' => true, 'steps' => array() ), 200 ) : new WP_REST_Response( $result, 200 );
 	}
 
 	public static function rest_visual_css_get() {
@@ -275,6 +297,7 @@ final class WPAB_Editor {
 			'restRollback'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/rollback' ) ),
 			'restCssApply'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/css-apply' ) ),
 			'restVisualCss' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/visual-css' ) ),
+			'restSteps'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/steps' ) ),
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
@@ -301,6 +324,8 @@ final class WPAB_Editor {
 						<button type="button" class="wpab-tab is-active" data-tab="chat">Chat</button>
 						<button type="button" class="wpab-tab" data-tab="build">Build</button>
 						<button type="button" class="wpab-tab" data-tab="visual">Inspect</button>
+						<span class="wpab-studio__spacer"></span>
+						<button type="button" id="wpab-collapse" class="wpab-studio__collapse">▾ Collapse</button>
 					</div>
 
 					<div class="wpab-studio__content">
@@ -309,6 +334,7 @@ final class WPAB_Editor {
 								<span class="wpab-pane__hint">Ask about the theme or plugin.</span>
 								<button type="button" id="wpab-editor-new" class="button">New chat</button>
 							</div>
+							<div id="wpab-suggests" class="wpab-suggests"></div>
 							<div id="wpab-editor-thread" class="wpab-editor__thread" aria-live="polite"></div>
 							<form id="wpab-editor-form" class="wpab-editor__form" autocomplete="off">
 								<textarea id="wpab-editor-input" class="wpab-editor__input" rows="2"
@@ -390,20 +416,29 @@ final class WPAB_Editor {
 			.wpab-studio__status.is-error { color: #ff9a9a; }
 			.wpab-studio__exit { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 5px 12px; font-size: 13px; }
 			.wpab-studio__exit:hover { background: rgba(255,255,255,.1); color: #fff; }
-			.wpab-studio__body { flex: 1; display: flex; min-height: 0; }
-			.wpab-studio__preview { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 12px; }
+			.wpab-studio__body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+			.wpab-studio__preview { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px; }
 			.wpab-studio__previewbar { font-size: 12px; color: #50575e; margin-bottom: 8px; }
 			.wpab-studio__previewbar.is-error { color: #d63638; }
 			.wpab-studio__frame { flex: 1; width: 100%; border: 1px solid #dcdcde; border-radius: 10px; background: #fff; }
-			.wpab-studio__panel { width: 400px; flex: 0 0 400px; background: #fff; border-left: 1px solid #dcdcde; display: flex; flex-direction: column; min-height: 0; }
-			.wpab-studio__tabs { display: flex; gap: 6px; padding: 12px 12px 0; }
-			.wpab-studio__content { flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
-			@media (max-width: 900px) { .wpab-studio__body { flex-direction: column; } .wpab-studio__panel { width: auto; flex: 1 1 45%; border-left: none; border-top: 1px solid #dcdcde; } }
+			.wpab-studio__panel { flex: 0 0 30vh; height: 30vh; background: #fff; border-top: 1px solid #dcdcde; display: flex; flex-direction: column; min-height: 0; transition: flex-basis .15s ease, height .15s ease; }
+			.wpab-studio__panel.is-collapsed { flex-basis: 46px; height: 46px; }
+			.wpab-studio__panel.is-collapsed .wpab-studio__content { display: none; }
+			.wpab-studio__tabs { display: flex; gap: 6px; padding: 10px 12px; align-items: center; }
+			.wpab-studio__spacer { flex: 1; }
+			.wpab-studio__collapse { background: none; border: 1px solid #dcdcde; border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; color: #50575e; }
+			.wpab-studio__content { flex: 1; overflow-y: auto; padding: 0 12px 12px; min-height: 0; }
+			.wpab-suggests { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+			.wpab-chip { background: #f0f0f1; border: 1px solid #e2e4e7; border-radius: 999px; padding: 4px 11px; font-size: 12px; color: #3c434a; cursor: pointer; }
+			.wpab-chip:hover { background: #e8e8ea; }
+			.wpab-steps { margin-top: 4px; }
+			.wpab-step { font-size: 12px; color: #50575e; padding: 2px 0; }
+			.wpab-step::before { content: "→ "; color: #8c8f94; }
 			.wpab-tab { background: none; border: 1px solid #dcdcde; border-radius: 999px; padding: 4px 14px; cursor: pointer; font-size: 13px; color: #50575e; }
 			.wpab-tab.is-active { background: #1d2327; border-color: #1d2327; color: #fff; }
 			.wpab-pane__bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 			.wpab-pane__hint { font-size: 12px; color: #8c8f94; }
-			.wpab-editor__thread { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; min-height: 180px; max-height: 46vh; overflow-y: auto; padding: 12px; }
+			.wpab-editor__thread { border: 1px solid #dcdcde; border-radius: 8px; background: #fff; min-height: 90px; max-height: 22vh; overflow-y: auto; padding: 12px; }
 			.wpab-editor__empty, .wpab-empty { color: #8c8f94; font-size: 13px; }
 			.wpab-msg { margin: 0 0 14px; display: flex; flex-direction: column; }
 			.wpab-msg__role { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #8c8f94; margin-bottom: 3px; }
@@ -577,7 +612,7 @@ final class WPAB_Editor {
 			}
 			function addTyping() {
 				var wrap = document.createElement('div'); wrap.className = 'wpab-msg wpab-msg--assistant';
-				wrap.innerHTML = '<div class="wpab-msg__role">AI</div><div class="wpab-typing">Thinking…</div>';
+				wrap.innerHTML = '<div class="wpab-msg__role">AI</div><div class="wpab-typing">Working…</div><div class="wpab-steps"></div>';
 				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight; return wrap;
 			}
 			function resetThread() {
@@ -586,17 +621,30 @@ final class WPAB_Editor {
 			}
 			function sendChat(message) {
 				setBusy(true); metaEl.textContent = '';
+				var runId = genRunId();
 				var typing = addTyping();
-				var payload = { message: message };
+				var stepsBox = typing.querySelector('.wpab-steps');
+				var polling = true;
+				function pollSteps() {
+					if (!polling) { return; }
+					api('GET', cfg.restSteps + '?runId=' + encodeURIComponent(runId)).then(function (o) {
+						if (!polling) { return; }
+						var st = (o.data && o.data.steps) || [];
+						if (st.length && stepsBox) { stepsBox.innerHTML = st.map(function (s) { return '<div class="wpab-step">' + escapeHtml(s.label) + '</div>'; }).join(''); }
+						if (polling) { setTimeout(pollSteps, 1300); }
+					}).catch(function () { if (polling) { setTimeout(pollSteps, 1500); } });
+				}
+				setTimeout(pollSteps, 700);
+				var payload = { message: message, runId: runId };
 				if (conversationId) { payload.conversationId = conversationId; }
 				api('POST', cfg.restChat, payload).then(function (out) {
-					typing.remove();
+					polling = false; typing.remove();
 					if (!out.ok || !out.data || out.data.success === false) { addMessage('assistant', 'Error: ' + ((out.data && (out.data.error || out.data.message)) || 'Request failed.')); return; }
 					var d = out.data;
 					if (d.conversation && d.conversation.id) { conversationId = d.conversation.id; }
 					addMessage('assistant', d.answer || 'Analysis completed.', d.activity);
 					if (d.usage) { metaEl.textContent = (d.toolCalls || 0) + ' tool calls · ' + (d.usage.totalTokens || 0).toLocaleString() + ' tokens'; }
-				}).catch(function () { typing.remove(); addMessage('assistant', 'Error: network request failed.'); })
+				}).catch(function () { polling = false; typing.remove(); addMessage('assistant', 'Error: network request failed.'); })
 				.then(function () { setBusy(false); input.focus(); });
 			}
 			form.addEventListener('submit', function (e) { e.preventDefault(); if (busy) { return; } var m = input.value.trim(); if (!m) { return; } addMessage('user', m); input.value = ''; sendChat(m); });
@@ -836,7 +884,10 @@ final class WPAB_Editor {
 			/* ---- Init ---- */
 			resetThread();
 			initVisual();
-			function loadStatus() {
+			function genRunId() { return 'r' + Date.now() + '_' + Math.floor(Math.random() * 1e6); }
+				(function () { var box = $('wpab-suggests'); if (!box) { return; } ['Give me a quick overview of this theme', 'How is the header rendered?', 'Suggest 3 quick visual improvements', 'Where can I change the primary color?'].forEach(function (s) { var c = document.createElement('button'); c.type = 'button'; c.className = 'wpab-chip'; c.textContent = s; c.addEventListener('click', function () { input.value = s; input.focus(); }); box.appendChild(c); }); })();
+				(function () { var collapseBtn = $('wpab-collapse'); var studioPanel = document.querySelector('.wpab-studio__panel'); if (collapseBtn && studioPanel) { collapseBtn.addEventListener('click', function () { var c = studioPanel.classList.toggle('is-collapsed'); collapseBtn.textContent = c ? '▴ Expand' : '▾ Collapse'; }); } })();
+				function loadStatus() {
 				api('POST', cfg.restSession, {}).then(function (out) {
 					if (!out.ok || !out.data || out.data.success === false) {
 						var msg = (out.data && (out.data.error || out.data.message)) || 'Not connected to the AI Builder cloud.';

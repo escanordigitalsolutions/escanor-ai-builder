@@ -171,6 +171,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Live progress steps: the editor polls /api/agent/steps?runId=... while
+    // this request runs, to show what the AI is doing. Best-effort only.
+    const runId =
+      typeof body.runId === "string" && body.runId.trim()
+        ? body.runId.trim().slice(0, 80)
+        : null;
+
+    let stepSeq = 0;
+    const writeStep = async (label: string) => {
+      if (!runId) {
+        return;
+      }
+      try {
+        await supabase.from("ai_live_steps").insert({
+          project_id: context.projectId,
+          run_id: runId,
+          seq: stepSeq++,
+          label: label.slice(0, 200),
+        });
+      } catch {
+        // Progress markers must never fail the request.
+      }
+    };
+
     const { data: project, error: projectError } = await supabase
       .from("projects")
       .select(`
@@ -288,6 +312,7 @@ Workflow rules:
 - Separate presentation/theme responsibility from business/plugin responsibility.
 - Prefer WordPress best practices.
 - Be concise but mention the exact files you inspected.
+- You are a capable WordPress developer's assistant: explain clearly, and when relevant end with 1-3 short, concrete improvement ideas the user could apply in the Build tab (e.g. "Make the header sticky", "Improve mobile spacing on the hero"). Keep each idea to one line.
 `;
 
     const conversationInput = [
@@ -306,6 +331,8 @@ Workflow rules:
       outputTokens: 0,
       totalTokens: 0,
     };
+
+    await writeStep("Understanding your request…");
 
     let response = await openai.responses.create({
       model: MODEL,
@@ -428,11 +455,13 @@ Workflow rules:
           if (call.name === "list_project_files") {
             const scope = validateScope(args.scope);
             activity.push({ tool: call.name, scope });
+            await writeStep(`Listing ${scope} files…`);
             result = await listProjectFiles(site.site_url, bridgeToken, scope);
           } else if (call.name === "read_project_files") {
             const scope = validateScope(args.scope);
             const paths = validatePaths(args.paths);
             activity.push({ tool: call.name, scope, paths });
+            await writeStep(`Reading ${scope}: ${paths.slice(0, 4).join(", ")}`);
             result = await readProjectFiles(
               site.site_url,
               bridgeToken,
