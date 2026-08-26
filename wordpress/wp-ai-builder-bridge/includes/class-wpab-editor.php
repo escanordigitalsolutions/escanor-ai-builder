@@ -439,12 +439,6 @@ final class WPAB_Editor {
 		);
 		?>
 		<div class="wpab-studio" id="wpab-studio">
-			<div class="wpab-studio__top">
-				<span class="wpab-studio__brand">AI Studio</span>
-				<span id="wpab-editor-status" class="wpab-studio__status">Connecting…</span>
-				<a class="wpab-studio__exit" href="<?php echo esc_url( $config['exitUrl'] ); ?>">Exit ✕</a>
-			</div>
-
 			<div class="wpab-studio__body">
 				<div class="wpab-studio__preview">
 					<div id="wpab-visual-status" class="wpab-studio__previewbar">Loading preview…</div>
@@ -458,7 +452,9 @@ final class WPAB_Editor {
 						<button type="button" class="wpab-tab" data-tab="visual">Inspect</button>
 						<button type="button" class="wpab-tab" data-tab="build">History</button>
 						<span class="wpab-studio__spacer"></span>
+						<span id="wpab-editor-status" class="wpab-studio__dockstatus"></span>
 						<button type="button" id="wpab-collapse" class="wpab-studio__collapse">▾ Collapse</button>
+						<a class="wpab-studio__exit" href="<?php echo esc_url( $config['exitUrl'] ); ?>">Exit ✕</a>
 					</div>
 
 					<div class="wpab-studio__content">
@@ -557,14 +553,18 @@ final class WPAB_Editor {
 			.wpab-studio__status { flex: 1; font-size: 12px; color: #c3c4c7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 			.wpab-studio__status.is-ok { color: #68de7c; }
 			.wpab-studio__status.is-error { color: #ff9a9a; }
-			.wpab-studio__exit { color: #fff; text-decoration: none; border: 1px solid rgba(255,255,255,.3); border-radius: 6px; padding: 5px 12px; font-size: 13px; }
-			.wpab-studio__exit:hover { background: rgba(255,255,255,.1); color: #fff; }
+			.wpab-studio__exit { color: #50575e; text-decoration: none; border: 1px solid #cfd3d8; border-radius: 6px; padding: 4px 12px; font-size: 12px; background: #fff; }
+			.wpab-studio__exit:hover { background: #fcecec; border-color: #e6a8a8; color: #b32d2e; }
+			.wpab-studio__dockstatus { font-size: 12px; color: #8c8f94; margin-right: 4px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			.wpab-studio__dockstatus:empty { display: none; }
+			.wpab-studio__dockstatus.is-ok { display: none; }
+			.wpab-studio__dockstatus.is-error { color: #b32d2e; }
 			.wpab-studio__body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 			.wpab-studio__preview { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 12px; }
 			.wpab-studio__previewbar { font-size: 12px; color: #50575e; margin-bottom: 8px; }
 			.wpab-studio__previewbar.is-error { color: #d63638; }
 			.wpab-studio__frame { flex: 1; width: 100%; border: 1px solid #dcdcde; border-radius: 10px; background: #fff; }
-			.wpab-studio__panel { flex: 0 0 30vh; height: 30vh; background: #fff; border-top: 1px solid #dcdcde; display: flex; flex-direction: column; min-height: 0; transition: flex-basis .15s ease, height .15s ease; }
+			.wpab-studio__panel { flex: 0 0 30vh; height: 30vh; background: #e7e9ec; border-top: 1px solid #c9cdd2; display: flex; flex-direction: column; min-height: 0; transition: flex-basis .15s ease, height .15s ease; }
 			.wpab-studio__panel.is-collapsed { flex-basis: 46px; height: 46px; }
 			.wpab-studio__panel.is-collapsed .wpab-studio__content { display: none; }
 			.wpab-studio__tabs { display: flex; gap: 6px; padding: 10px 12px; align-items: center; }
@@ -703,7 +703,8 @@ final class WPAB_Editor {
 
 			function setStatus(text, kind) {
 				statusEl.textContent = text;
-				statusEl.className = 'wpab-studio__status' + (kind ? ' is-' + kind : '');
+				if (!statusEl) { return; }
+					statusEl.className = 'wpab-studio__dockstatus' + (kind ? ' is-' + kind : '');
 			}
 			function escapeHtml(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 			function nowIso() { return new Date().toISOString(); }
@@ -1238,7 +1239,7 @@ final class WPAB_Editor {
 						return;
 					}
 					var d = out.data, project = d.project || {}, site = d.site || {};
-					setStatus('Connected · ' + (project.name || '—') + ' · Theme: ' + (site.themeName || '—') + ' · Plugin: ' + (site.pluginName || 'None'), 'ok');
+					setStatus('', 'ok');
 				}).catch(function () { setStatus('Could not reach WordPress REST API.', 'error'); });
 			}
 			if (cfg.connected) { loadStatus(); }
