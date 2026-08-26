@@ -64,11 +64,11 @@ export default async function ProjectPage({
     : wordpressSites;
 
   return (
-    <main className="min-h-screen p-10 text-white">
+    <main className="min-h-screen bg-[#f5f6f7] p-8 text-neutral-900">
       <div className="mx-auto max-w-6xl">
         <a
           href="/dashboard"
-          className="text-neutral-500 transition hover:text-neutral-100"
+          className="text-neutral-500 transition hover:text-neutral-900"
         >
           ← Projects
         </a>
@@ -77,16 +77,16 @@ export default async function ProjectPage({
           <div className="flex items-center gap-3">
             <span className="h-2 w-2 rounded-full bg-neutral-300" />
 
-            <p className="text-sm tracking-wide text-neutral-500">
+            <p className="text-[11px] uppercase tracking-wide text-neutral-400">
               WORDPRESS PROJECT
             </p>
           </div>
 
-          <h1 className="mt-3 text-4xl font-semibold text-neutral-100">
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-neutral-900">
             {project.name}
           </h1>
 
-          <p className="mt-2 text-neutral-400">
+          <p className="mt-2 text-neutral-500">
             {site?.site_url}
           </p>
         </div>
@@ -137,12 +137,12 @@ function Info({
   value?: string | null;
 }) {
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-950/35 p-4">
-      <p className="text-[11px] uppercase tracking-wide text-neutral-600">
+    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+      <p className="text-[11px] uppercase tracking-wide text-neutral-400">
         {label}
       </p>
 
-      <p className="mt-2 truncate text-sm text-neutral-200">
+      <p className="mt-2 truncate text-sm text-neutral-900">
         {value ?? "Unknown"}
       </p>
     </div>

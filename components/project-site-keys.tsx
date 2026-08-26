@@ -130,14 +130,14 @@ export default function ProjectSiteKeys({
   }
 
   return (
-    <div className="rounded-xl border border-neutral-800 p-5">
+    <div className="rounded-xl border border-neutral-200 bg-white p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-600">
+          <p className="text-[11px] uppercase tracking-wide text-neutral-400">
             Site keys
           </p>
 
-          <p className="mt-2 text-sm text-neutral-300">
+          <p className="mt-2 text-sm text-neutral-700">
             Let the WordPress plugin call the builder directly
           </p>
         </div>
@@ -146,19 +146,19 @@ export default function ProjectSiteKeys({
           type="button"
           onClick={createKey}
           disabled={creating}
-          className="rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs text-neutral-500 hover:text-white disabled:opacity-40"
+          className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
         >
           {creating ? "Creating..." : "New key"}
         </button>
       </div>
 
       {freshKey && (
-        <div className="mt-5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-          <p className="text-[11px] uppercase tracking-wide text-amber-400/80">
+        <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="text-[11px] uppercase tracking-wide text-amber-600">
             Copy this now — it is shown once
           </p>
 
-          <p className="mt-3 break-all font-mono text-xs text-amber-100">
+          <p className="mt-3 break-all font-mono text-xs text-amber-900">
             {freshKey}
           </p>
 
@@ -166,7 +166,7 @@ export default function ProjectSiteKeys({
             <button
               type="button"
               onClick={copyKey}
-              className="rounded-md border border-amber-500/40 px-2.5 py-1.5 text-xs text-amber-200 hover:bg-amber-500/10"
+              className="rounded-md border border-amber-300 px-2.5 py-1.5 text-xs text-amber-700 hover:bg-amber-100"
             >
               {copied ? "Copied" : "Copy"}
             </button>
@@ -174,14 +174,14 @@ export default function ProjectSiteKeys({
             <button
               type="button"
               onClick={() => setFreshKey("")}
-              className="text-xs text-neutral-500 hover:text-neutral-300"
+              className="text-xs text-neutral-500 hover:text-neutral-700"
             >
               Dismiss
             </button>
           </div>
 
           <p className="mt-3 text-[11px] text-neutral-500">
-            Paste it into <span className="text-neutral-400">
+            Paste it into <span className="text-neutral-700">
               WordPress → AI Builder → Cloud connection
             </span>.
           </p>
@@ -199,14 +199,14 @@ export default function ProjectSiteKeys({
       )}
 
       {!loading && keys.length > 0 && (
-        <ul className="mt-5 divide-y divide-neutral-800 border-t border-neutral-800">
+        <ul className="mt-5 divide-y divide-neutral-200 border-t border-neutral-200">
           {keys.map((key) => (
             <li
               key={key.id}
               className="flex items-center justify-between gap-3 py-3"
             >
               <div className="min-w-0">
-                <p className="truncate font-mono text-xs text-neutral-300">
+                <p className="truncate font-mono text-xs text-neutral-700">
                   {key.masked}
                 </p>
 
@@ -225,7 +225,7 @@ export default function ProjectSiteKeys({
                 <button
                   type="button"
                   onClick={() => revokeKey(key.id)}
-                  className="shrink-0 rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs text-neutral-500 hover:border-red-500/40 hover:text-red-400"
+                  className="shrink-0 rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-500 hover:border-red-200 hover:bg-red-50 hover:text-red-600"
                 >
                   Revoke
                 </button>
@@ -235,7 +235,7 @@ export default function ProjectSiteKeys({
         </ul>
       )}
 
-      {error && <p className="mt-4 text-xs text-red-400">{error}</p>}
+      {error && <p className="mt-4 text-xs text-red-600">{error}</p>}
     </div>
   );
 }

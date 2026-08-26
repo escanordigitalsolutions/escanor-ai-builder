@@ -339,12 +339,12 @@ export default function ProjectAIChat({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-neutral-800">
+    <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
       <div className="grid min-h-[650px] md:grid-cols-[240px_1fr]">
-        <aside className="border-b border-neutral-800 bg-neutral-950/70 md:border-b-0 md:border-r">
-          <div className="flex items-center justify-between border-b border-neutral-800 p-4">
+        <aside className="border-b border-neutral-200 bg-neutral-50 md:border-b-0 md:border-r">
+          <div className="flex items-center justify-between border-b border-neutral-200 p-4">
             <div>
-              <p className="text-xs font-medium text-neutral-400">Chats</p>
+              <p className="text-xs font-medium text-neutral-500">Chats</p>
               <p className="mt-1 text-[11px] text-neutral-600">
                 Saved per project
               </p>
@@ -354,7 +354,7 @@ export default function ProjectAIChat({
               type="button"
               onClick={startNewChat}
               disabled={loading}
-              className="rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs text-neutral-400 transition hover:border-neutral-700 hover:text-white disabled:opacity-40"
+              className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-500 transition hover:border-neutral-300 hover:text-neutral-900 disabled:opacity-40"
             >
               + New
             </button>
@@ -376,8 +376,8 @@ export default function ProjectAIChat({
                   key={conversation.id}
                   className={
                     active
-                      ? "group mb-1 flex items-center rounded-lg bg-neutral-800"
-                      : "group mb-1 flex items-center rounded-lg hover:bg-neutral-900"
+                      ? "group mb-1 flex items-center rounded-lg bg-neutral-100"
+                      : "group mb-1 flex items-center rounded-lg hover:bg-neutral-50"
                   }
                 >
                   <button
@@ -386,8 +386,8 @@ export default function ProjectAIChat({
                     disabled={loading || historyLoading || busy}
                     className={
                       active
-                        ? "min-w-0 flex-1 px-3 py-2.5 text-left text-sm text-white"
-                        : "min-w-0 flex-1 px-3 py-2.5 text-left text-sm text-neutral-500 transition group-hover:text-neutral-300"
+                        ? "min-w-0 flex-1 px-3 py-2.5 text-left text-sm text-neutral-900"
+                        : "min-w-0 flex-1 px-3 py-2.5 text-left text-sm text-neutral-500 transition group-hover:text-neutral-700"
                     }
                   >
                     <span className="block truncate">{conversation.title}</span>
@@ -399,7 +399,7 @@ export default function ProjectAIChat({
                       title="Rename chat"
                       onClick={() => renameConversation(conversation)}
                       disabled={busy}
-                      className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-700 hover:text-white disabled:opacity-30"
+                      className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-30"
                     >
                       ✎
                     </button>
@@ -409,7 +409,7 @@ export default function ProjectAIChat({
                       title="Delete chat"
                       onClick={() => deleteConversation(conversation)}
                       disabled={busy}
-                      className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-red-950 hover:text-red-300 disabled:opacity-30"
+                      className="rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
                     >
                       ×
                     </button>
@@ -421,12 +421,12 @@ export default function ProjectAIChat({
         </aside>
 
         <section className="flex min-w-0 flex-col">
-          <div className="border-b border-neutral-800 p-5">
+          <div className="border-b border-neutral-200 p-5">
             <div className="flex items-center gap-3">
-              <div className="h-2 w-2 rounded-full bg-green-400" />
+              <div className="h-2 w-2 rounded-full bg-green-500" />
 
               <div className="min-w-0">
-                <h2 className="font-medium">AI Workspace</h2>
+                <h2 className="font-medium text-neutral-900">AI Workspace</h2>
                 <p className="mt-1 truncate text-xs text-neutral-500">
                   {conversationId
                     ? conversations.find(
@@ -447,7 +447,7 @@ export default function ProjectAIChat({
 
             {!historyLoading && messages.length === 0 && (
               <div className="py-16 text-center">
-                <p className="text-neutral-400">
+                <p className="text-neutral-500">
                   Ask about this WordPress project.
                 </p>
 
@@ -498,8 +498,8 @@ export default function ProjectAIChat({
                   <div
                     className={
                       message.role === "user"
-                        ? "rounded-xl bg-white px-4 py-3 text-black"
-                        : "rounded-xl border border-neutral-800 bg-neutral-900 px-5 py-4"
+                        ? "rounded-xl bg-neutral-900 px-4 py-3 text-white"
+                        : "rounded-xl border border-neutral-200 bg-neutral-50 px-5 py-4"
                     }
                   >
                     {message.role === "assistant" ? (
@@ -518,16 +518,16 @@ export default function ProjectAIChat({
               ))}
 
             {loading && (
-              <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 px-4 py-3 text-sm text-neutral-500">
+              <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-500">
                 <div className="flex items-center gap-3">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-green-400" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
                   Inspecting project files...
                 </div>
               </div>
             )}
 
             {error && (
-              <div className="rounded-lg border border-red-900 bg-red-950/30 p-4 text-sm text-red-400">
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
                 {error}
               </div>
             )}
@@ -535,20 +535,20 @@ export default function ProjectAIChat({
 
           <form
             onSubmit={sendMessage}
-            className="flex gap-3 border-t border-neutral-800 p-4"
+            className="flex gap-3 border-t border-neutral-200 p-4"
           >
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder="Ask AI about this project..."
               disabled={historyLoading}
-              className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-neutral-500 disabled:opacity-50"
+              className="flex-1 rounded-lg border border-neutral-200 bg-white px-4 py-3 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400 disabled:opacity-50"
             />
 
             <button
               type="submit"
               disabled={loading || historyLoading || !input.trim()}
-              className="rounded-lg bg-white px-6 font-medium text-black disabled:opacity-40"
+              className="rounded-lg bg-neutral-900 px-6 font-medium text-white hover:bg-neutral-800 disabled:opacity-40"
             >
               Send
             </button>
@@ -593,48 +593,48 @@ function normalizeMessages(value: unknown): Message[] {
 
 function MarkdownContent({ content }: { content: string }) {
   return (
-    <div className="space-y-3 text-sm leading-7 text-neutral-200">
+    <div className="space-y-3 text-sm leading-7 text-neutral-900">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h1 className="mt-6 text-2xl font-semibold text-white first:mt-0">
+            <h1 className="mt-6 text-2xl font-semibold text-neutral-900 first:mt-0">
               {children}
             </h1>
           ),
           h2: ({ children }) => (
-            <h2 className="mt-6 text-xl font-semibold text-white first:mt-0">
+            <h2 className="mt-6 text-xl font-semibold text-neutral-900 first:mt-0">
               {children}
             </h2>
           ),
           h3: ({ children }) => (
-            <h3 className="mt-5 text-lg font-semibold text-white first:mt-0">
+            <h3 className="mt-5 text-lg font-semibold text-neutral-900 first:mt-0">
               {children}
             </h3>
           ),
           p: ({ children }) => (
-            <p className="whitespace-normal text-neutral-300">{children}</p>
+            <p className="whitespace-normal text-neutral-700">{children}</p>
           ),
           ul: ({ children }) => (
-            <ul className="list-disc space-y-1 pl-5 text-neutral-300">
+            <ul className="list-disc space-y-1 pl-5 text-neutral-700">
               {children}
             </ul>
           ),
           ol: ({ children }) => (
-            <ol className="list-decimal space-y-1 pl-5 text-neutral-300">
+            <ol className="list-decimal space-y-1 pl-5 text-neutral-700">
               {children}
             </ol>
           ),
           li: ({ children }) => <li>{children}</li>,
           strong: ({ children }) => (
-            <strong className="font-semibold text-white">{children}</strong>
+            <strong className="font-semibold text-neutral-900">{children}</strong>
           ),
           code: ({ children, className }) => {
             const isBlock = Boolean(className);
 
             if (!isBlock) {
               return (
-                <code className="rounded bg-neutral-800 px-1.5 py-0.5 text-[0.92em] text-neutral-100">
+                <code className="rounded bg-neutral-100 px-1.5 py-0.5 text-[0.92em] text-neutral-700">
                   {children}
                 </code>
               );
@@ -645,12 +645,12 @@ function MarkdownContent({ content }: { content: string }) {
             );
           },
           pre: ({ children }) => (
-            <pre className="overflow-x-auto rounded-lg border border-neutral-800 bg-neutral-950 p-4 text-sm leading-6 text-neutral-200">
+            <pre className="overflow-x-auto rounded-lg border border-neutral-200 bg-neutral-100 p-4 text-sm leading-6 text-neutral-700">
               {children}
             </pre>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-neutral-700 pl-4 text-neutral-400">
+            <blockquote className="border-l-2 border-neutral-200 pl-4 text-neutral-500">
               {children}
             </blockquote>
           ),
@@ -659,7 +659,7 @@ function MarkdownContent({ content }: { content: string }) {
               href={href}
               target="_blank"
               rel="noreferrer"
-              className="underline decoration-neutral-600 underline-offset-4 hover:text-white"
+              className="underline decoration-neutral-600 underline-offset-4 hover:text-neutral-900"
             >
               {children}
             </a>
@@ -672,12 +672,12 @@ function MarkdownContent({ content }: { content: string }) {
             </div>
           ),
           th: ({ children }) => (
-            <th className="border border-neutral-700 bg-neutral-800 px-3 py-2 font-medium text-white">
+            <th className="border border-neutral-200 bg-neutral-100 px-3 py-2 font-medium text-neutral-900">
               {children}
             </th>
           ),
           td: ({ children }) => (
-            <td className="border border-neutral-800 px-3 py-2 text-neutral-300">
+            <td className="border border-neutral-200 px-3 py-2 text-neutral-700">
               {children}
             </td>
           ),
@@ -718,7 +718,7 @@ function ActivityPanel({ activity }: { activity: ActivityItem[] }) {
   });
 
   return (
-    <details className="mt-3 rounded-lg border border-neutral-800 bg-neutral-950/60 px-4 py-3">
+    <details className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
       <summary className="cursor-pointer select-none text-xs font-medium text-neutral-500">
         AI activity · {items.length} steps
       </summary>
@@ -729,7 +729,7 @@ function ActivityPanel({ activity }: { activity: ActivityItem[] }) {
             key={item.key}
             className="flex items-start gap-2 text-xs text-neutral-500"
           >
-            <span className="mt-[2px] text-green-400">✓</span>
+            <span className="mt-[2px] text-green-600">✓</span>
             <span className="break-all">{item.text}</span>
           </div>
         ))}
@@ -749,7 +749,7 @@ function Suggestion({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-full border border-neutral-800 px-4 py-2 text-xs text-neutral-500 transition hover:border-neutral-700 hover:bg-neutral-900 hover:text-neutral-300"
+      className="rounded-full border border-neutral-200 px-4 py-2 text-xs text-neutral-500 transition hover:border-neutral-300 hover:bg-neutral-50 hover:text-neutral-700"
     >
       {children}
     </button>

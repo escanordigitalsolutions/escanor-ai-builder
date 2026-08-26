@@ -64,13 +64,13 @@ export default function ProjectUsageSummary({
   }
 
   return (
-    <div className="rounded-xl border border-neutral-800 p-5">
+    <div className="rounded-xl border border-neutral-200 bg-white p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-wide text-neutral-600">
             AI usage
           </p>
-          <p className="mt-2 text-sm text-neutral-300">
+          <p className="mt-2 text-sm text-neutral-700">
             Project-level usage totals
           </p>
         </div>
@@ -79,7 +79,7 @@ export default function ProjectUsageSummary({
           type="button"
           onClick={loadUsage}
           disabled={loading}
-          className="rounded-md border border-neutral-800 px-2.5 py-1.5 text-xs text-neutral-500 hover:text-white disabled:opacity-40"
+          className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-500 hover:text-neutral-900 disabled:opacity-40"
         >
           Refresh
         </button>
@@ -109,7 +109,7 @@ export default function ProjectUsageSummary({
       )}
 
       {!loading && usage && (
-        <div className="mt-4 border-t border-neutral-800 pt-4 text-[11px] text-neutral-600">
+        <div className="mt-4 border-t border-neutral-200 pt-4 text-[11px] text-neutral-600">
           Input {usage.inputTokens.toLocaleString()} · Output{" "}
           {usage.outputTokens.toLocaleString()} · Tool calls{" "}
           {usage.toolCalls.toLocaleString()}
@@ -124,7 +124,7 @@ export default function ProjectUsageSummary({
               key={model.model}
               className="flex items-center justify-between gap-3 text-[11px]"
             >
-              <span className="truncate font-mono text-neutral-400">
+              <span className="truncate font-mono text-neutral-500">
                 {model.model}
               </span>
               <span className="shrink-0 text-neutral-600">
@@ -136,7 +136,7 @@ export default function ProjectUsageSummary({
         </div>
       )}
 
-      {error && <p className="mt-4 text-xs text-red-400">{error}</p>}
+      {error && <p className="mt-4 text-xs text-red-600">{error}</p>}
     </div>
   );
 }
@@ -153,7 +153,7 @@ function Metric({
   return (
     <div>
       <p className="text-[11px] text-neutral-600">{label}</p>
-      <p className="mt-1 text-lg font-medium text-white">{value}</p>
+      <p className="mt-1 text-lg font-medium text-neutral-900">{value}</p>
       {hint && <p className="mt-0.5 text-[10px] text-neutral-600">{hint}</p>}
     </div>
   );

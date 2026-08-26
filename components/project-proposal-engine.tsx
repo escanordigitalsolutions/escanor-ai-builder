@@ -268,15 +268,15 @@ export default function ProjectProposalEngine({
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/45">
-      <div className="border-b border-neutral-800 px-5 py-5 sm:px-6">
+    <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      <div className="border-b border-neutral-200 px-5 py-5 sm:px-6">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-600">
+            <p className="text-[11px] uppercase tracking-wide text-neutral-400">
               AI change planner
             </p>
 
-            <h2 className="mt-2 text-xl font-medium text-neutral-100">
+            <h2 className="mt-2 text-lg font-medium text-neutral-900">
               Proposal & Diff Engine
             </h2>
 
@@ -286,7 +286,7 @@ export default function ProjectProposalEngine({
             </p>
           </div>
 
-          <div className="rounded-full border border-neutral-800 bg-neutral-900/70 px-3 py-1.5 text-xs text-neutral-500">
+          <div className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-500">
             READ → PROPOSE → REVIEW
           </div>
         </div>
@@ -298,18 +298,18 @@ export default function ProjectProposalEngine({
             placeholder="Describe the change you want, e.g. Make project cards more compact, add a deadline warning under 48 hours, and strengthen status badges."
             rows={3}
             disabled={generating}
-            className="w-full resize-y rounded-xl border border-neutral-700 bg-neutral-900/80 px-4 py-3 text-sm leading-6 text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-neutral-500 disabled:opacity-50"
+            className="w-full resize-y rounded-xl border border-neutral-200 bg-white px-4 py-3 text-sm leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400 disabled:opacity-50"
           />
 
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-neutral-600">
+            <p className="text-xs text-neutral-500">
               Up to 6 files · modify or create · full-content proposals · SHA-256 pinned for edits
             </p>
 
             <button
               type="submit"
               disabled={generating || !prompt.trim()}
-              className="rounded-lg bg-neutral-100 px-5 py-2.5 text-sm font-medium text-neutral-950 transition hover:bg-white disabled:opacity-40"
+              className="rounded-lg bg-neutral-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-neutral-800 disabled:opacity-40"
             >
               {generating ? "Inspecting & generating..." : "Generate proposal"}
             </button>
@@ -317,14 +317,14 @@ export default function ProjectProposalEngine({
         </form>
 
         {error && (
-          <div className="mt-4 rounded-lg border border-red-900/70 bg-red-950/30 p-3 text-sm text-red-300">
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
             {error}
           </div>
         )}
       </div>
 
       <div className="grid lg:grid-cols-[260px_1fr]">
-        <aside className="border-b border-neutral-800 p-3 lg:border-b-0 lg:border-r">
+        <aside className="border-b border-neutral-200 p-3 lg:border-b-0 lg:border-r">
           <div className="flex items-center justify-between px-2 py-2">
             <p className="text-xs font-medium text-neutral-500">
               Recent proposals
@@ -334,7 +334,7 @@ export default function ProjectProposalEngine({
               type="button"
               onClick={loadProposals}
               disabled={loading || generating}
-              className="text-xs text-neutral-600 hover:text-neutral-300 disabled:opacity-40"
+              className="text-xs text-neutral-500 hover:text-neutral-900 disabled:opacity-40"
             >
               Refresh
             </button>
@@ -342,7 +342,7 @@ export default function ProjectProposalEngine({
 
           <div className="max-h-[420px] space-y-1 overflow-y-auto">
             {!loading && proposals.length === 0 && (
-              <p className="px-2 py-6 text-xs text-neutral-600">
+              <p className="px-2 py-6 text-xs text-neutral-500">
                 No proposals yet.
               </p>
             )}
@@ -357,19 +357,19 @@ export default function ProjectProposalEngine({
                   onClick={() => loadProposal(proposal.id)}
                   className={
                     selected
-                      ? "w-full rounded-xl border border-neutral-700 bg-neutral-800/80 p-3 text-left"
-                      : "w-full rounded-xl border border-transparent p-3 text-left transition hover:border-neutral-800 hover:bg-neutral-900/60"
+                      ? "w-full rounded-xl border border-neutral-200 bg-neutral-100 p-3 text-left"
+                      : "w-full rounded-xl border border-transparent p-3 text-left transition hover:border-neutral-200 hover:bg-neutral-50"
                   }
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">
+                    <span className="min-w-0 flex-1 truncate text-sm text-neutral-900">
                       {proposal.title}
                     </span>
 
                     <RiskDot risk={proposal.risk} />
                   </div>
 
-                  <div className="mt-2 flex items-center gap-2 text-[11px] text-neutral-600">
+                  <div className="mt-2 flex items-center gap-2 text-[11px] text-neutral-500">
                     <span>{proposal.fileCount} files</span>
                     <span>·</span>
                     <span className="capitalize">{proposal.status}</span>
@@ -382,17 +382,17 @@ export default function ProjectProposalEngine({
 
         <div className="min-w-0 p-5 sm:p-6">
           {loading && !active && (
-            <p className="py-16 text-center text-sm text-neutral-600">
+            <p className="py-16 text-center text-sm text-neutral-500">
               Loading proposals...
             </p>
           )}
 
           {!loading && !active && (
             <div className="py-16 text-center">
-              <p className="text-neutral-400">
+              <p className="text-neutral-500">
                 Your first AI change proposal will appear here.
               </p>
-              <p className="mt-2 text-sm text-neutral-600">
+              <p className="mt-2 text-sm text-neutral-500">
                 Generate and approve a proposal here, then deploy it explicitly below.
               </p>
             </div>
@@ -400,23 +400,23 @@ export default function ProjectProposalEngine({
 
           {active && (
             <div>
-              <div className="flex flex-col justify-between gap-4 border-b border-neutral-800 pb-5 sm:flex-row sm:items-start">
+              <div className="flex flex-col justify-between gap-4 border-b border-neutral-200 pb-5 sm:flex-row sm:items-start">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusPill status={active.status} />
                     <RiskPill risk={active.risk} />
                   </div>
 
-                  <h3 className="mt-3 text-2xl font-medium text-neutral-100">
+                  <h3 className="mt-3 text-2xl font-medium text-neutral-900">
                     {active.title}
                   </h3>
 
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-400">
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-neutral-500">
                     {active.summary}
                   </p>
                 </div>
 
-                <div className="text-xs text-neutral-600">
+                <div className="text-xs text-neutral-500">
                   {formatDate(active.createdAt)}
                 </div>
               </div>
@@ -427,12 +427,12 @@ export default function ProjectProposalEngine({
                 ))}
               </div>
 
-              <div className="mt-6 flex flex-col justify-between gap-4 border-t border-neutral-800 pt-5 sm:flex-row sm:items-center">
+              <div className="mt-6 flex flex-col justify-between gap-4 border-t border-neutral-200 pt-5 sm:flex-row sm:items-center">
                 <div>
                   <p className="text-xs text-neutral-500">
                     Approval does not modify WordPress by itself.
                   </p>
-                  <p className="mt-1 text-[11px] text-neutral-700">
+                  <p className="mt-1 text-[11px] text-neutral-500">
                     Bridge v0.5 validates every approved change again before deployment.
                     New files are created exclusively and removed again on rollback.
                   </p>
@@ -444,7 +444,7 @@ export default function ProjectProposalEngine({
                       type="button"
                       onClick={() => setProposalStatus("discarded")}
                       disabled={updating}
-                      className="rounded-lg border border-neutral-700 px-4 py-2.5 text-sm text-neutral-400 hover:bg-neutral-900 disabled:opacity-40"
+                      className="rounded-lg border border-neutral-200 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
                     >
                       Discard
                     </button>
@@ -453,7 +453,7 @@ export default function ProjectProposalEngine({
                       type="button"
                       onClick={() => setProposalStatus("approved")}
                       disabled={updating}
-                      className="rounded-lg bg-neutral-100 px-4 py-2.5 text-sm font-medium text-neutral-950 hover:bg-white disabled:opacity-40"
+                      className="rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-40"
                     >
                       Approve proposal
                     </button>
@@ -474,27 +474,27 @@ function ProposalFileDiff({ file }: { file: ProposalFile }) {
   return (
     <details
       open
-      className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/60"
+      className="overflow-hidden rounded-xl border border-neutral-200 bg-white"
     >
-      <summary className="cursor-pointer select-none border-b border-neutral-800 px-4 py-3">
+      <summary className="cursor-pointer select-none border-b border-neutral-200 px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-500">
+              <span className="rounded-md border border-neutral-200 bg-neutral-100 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-700">
                 {file.scope}
               </span>
 
               <span
                 className={
                   file.operation === "create"
-                    ? "rounded-md border border-sky-900/60 bg-sky-950/25 px-2 py-1 text-[10px] uppercase tracking-wide text-sky-300"
-                    : "rounded-md border border-neutral-800 bg-neutral-900 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-500"
+                    ? "rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] uppercase tracking-wide text-sky-700"
+                    : "rounded-md border border-neutral-200 bg-neutral-100 px-2 py-1 text-[10px] uppercase tracking-wide text-neutral-700"
                 }
               >
                 {file.operation}
               </span>
 
-              <code className="truncate text-sm text-neutral-200">
+              <code className="truncate text-sm text-neutral-900">
                 {file.path}
               </code>
             </div>
@@ -502,7 +502,7 @@ function ProposalFileDiff({ file }: { file: ProposalFile }) {
             <p className="mt-2 text-xs text-neutral-500">{file.summary}</p>
           </div>
 
-          <code className="text-[10px] text-neutral-700">
+          <code className="text-[10px] text-neutral-500">
             {file.operation === "create" || !file.originalSha256
               ? "NEW FILE"
               : `SHA ${file.originalSha256.slice(0, 10)}…`}
@@ -510,7 +510,7 @@ function ProposalFileDiff({ file }: { file: ProposalFile }) {
         </div>
       </summary>
 
-      <div className="max-h-[520px] overflow-auto bg-[#090b0d] font-mono text-[12px] leading-5">
+      <div className="max-h-[520px] overflow-auto bg-white font-mono text-[12px] leading-5">
         {file.diff.flatMap((part, partIndex) =>
           part.value.split("\n").map((line, lineIndex, lines) => {
             if (lineIndex === lines.length - 1 && line === "") {
@@ -522,13 +522,13 @@ function ProposalFileDiff({ file }: { file: ProposalFile }) {
                 key={`${partIndex}-${lineIndex}`}
                 className={
                   part.type === "added"
-                    ? "border-l-2 border-emerald-700/70 bg-emerald-950/25 px-3 py-0.5 text-emerald-200/90"
+                    ? "border-l-2 border-green-200 bg-green-50 px-3 py-0.5 text-green-700"
                     : part.type === "removed"
-                      ? "border-l-2 border-rose-800/70 bg-rose-950/20 px-3 py-0.5 text-rose-200/75"
-                      : "border-l-2 border-transparent px-3 py-0.5 text-neutral-500"
+                      ? "border-l-2 border-red-200 bg-red-50 px-3 py-0.5 text-red-700"
+                      : "border-l-2 border-transparent px-3 py-0.5 text-neutral-600"
                 }
               >
-                <span className="mr-3 inline-block w-3 select-none text-neutral-700">
+                <span className="mr-3 inline-block w-3 select-none text-neutral-400">
                   {part.type === "added"
                     ? "+"
                     : part.type === "removed"
@@ -551,10 +551,10 @@ function RiskDot({ risk }: { risk: "low" | "medium" | "high" }) {
       title={`${risk} risk`}
       className={
         risk === "high"
-          ? "mt-1 h-2 w-2 rounded-full bg-rose-400"
+          ? "mt-1 h-2 w-2 rounded-full bg-red-500"
           : risk === "medium"
-            ? "mt-1 h-2 w-2 rounded-full bg-amber-300"
-            : "mt-1 h-2 w-2 rounded-full bg-neutral-400"
+            ? "mt-1 h-2 w-2 rounded-full bg-amber-400"
+            : "mt-1 h-2 w-2 rounded-full bg-green-500"
       }
     />
   );
@@ -565,10 +565,10 @@ function RiskPill({ risk }: { risk: "low" | "medium" | "high" }) {
     <span
       className={
         risk === "high"
-          ? "rounded-full border border-rose-900/70 bg-rose-950/30 px-2.5 py-1 text-[11px] uppercase tracking-wide text-rose-300"
+          ? "rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] uppercase tracking-wide text-red-700"
           : risk === "medium"
-            ? "rounded-full border border-amber-900/60 bg-amber-950/20 px-2.5 py-1 text-[11px] uppercase tracking-wide text-amber-300"
-            : "rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-[11px] uppercase tracking-wide text-neutral-400"
+            ? "rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] uppercase tracking-wide text-amber-700"
+            : "rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-[11px] uppercase tracking-wide text-green-700"
       }
     >
       {risk} risk
@@ -585,10 +585,10 @@ function StatusPill({
     <span
       className={
         status === "approved"
-          ? "rounded-full border border-emerald-900/60 bg-emerald-950/20 px-2.5 py-1 text-[11px] uppercase tracking-wide text-emerald-300"
+          ? "rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-[11px] uppercase tracking-wide text-green-700"
           : status === "discarded"
-            ? "rounded-full border border-neutral-800 bg-neutral-950 px-2.5 py-1 text-[11px] uppercase tracking-wide text-neutral-600"
-            : "rounded-full border border-neutral-700 bg-neutral-900 px-2.5 py-1 text-[11px] uppercase tracking-wide text-neutral-400"
+            ? "rounded-full border border-neutral-200 bg-neutral-50 px-2.5 py-1 text-[11px] uppercase tracking-wide text-neutral-500"
+            : "rounded-full border border-neutral-200 bg-neutral-100 px-2.5 py-1 text-[11px] uppercase tracking-wide text-neutral-700"
       }
     >
       {status}

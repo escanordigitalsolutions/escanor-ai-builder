@@ -36,18 +36,18 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-neutral-950 text-white">
-      <div className="w-full max-w-md border border-neutral-800 rounded-2xl p-8">
+    <main className="min-h-screen flex items-center justify-center bg-[#f5f6f7] text-neutral-900">
+      <div className="w-full max-w-md border border-neutral-200 bg-white rounded-2xl p-8">
         <div className="mb-8">
-          <p className="text-sm text-neutral-500 mb-2">
+          <p className="text-[11px] uppercase tracking-wide text-neutral-400 mb-2">
             ESCANOR
           </p>
 
-          <h1 className="text-3xl font-semibold">
+          <h1 className="text-2xl font-semibold tracking-tight">
             AI Builder
           </h1>
 
-          <p className="text-neutral-400 mt-2">
+          <p className="text-neutral-500 mt-2">
             Sign in to your development workspace.
           </p>
         </div>
@@ -63,7 +63,7 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-3 text-neutral-900 placeholder:text-neutral-400 outline-none focus:border-neutral-400"
             />
           </div>
 
@@ -77,12 +77,12 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-3 text-neutral-900 placeholder:text-neutral-400 outline-none focus:border-neutral-400"
             />
           </div>
 
           {error && (
-            <p className="text-sm text-red-400">
+            <p className="text-sm text-red-600">
               {error}
             </p>
           )}
@@ -90,7 +90,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-white text-black py-3 font-medium disabled:opacity-50"
+            className="w-full rounded-lg bg-neutral-900 text-white py-3 font-medium hover:bg-neutral-800 disabled:opacity-50"
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>

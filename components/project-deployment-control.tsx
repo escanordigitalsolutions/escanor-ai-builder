@@ -311,14 +311,14 @@ export default function ProjectDeploymentControl({
     data.bridge.preflight;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950/45">
-      <div className="flex flex-col justify-between gap-4 border-b border-neutral-800 px-5 py-5 sm:flex-row sm:items-start sm:px-6">
+    <section className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      <div className="flex flex-col justify-between gap-4 border-b border-neutral-200 px-5 py-5 sm:flex-row sm:items-start sm:px-6">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-600">
+          <p className="text-[11px] uppercase tracking-wide text-neutral-400">
             Build & deploy
           </p>
 
-          <h2 className="mt-2 text-xl font-medium text-neutral-100">
+          <h2 className="mt-2 text-lg font-medium text-neutral-900">
             Deployment Control
           </h2>
 
@@ -335,7 +335,7 @@ export default function ProjectDeploymentControl({
             type="button"
             onClick={load}
             disabled={loading || Boolean(busyId)}
-            className="text-xs text-neutral-600 hover:text-neutral-300 disabled:opacity-40"
+            className="text-xs text-neutral-500 hover:text-neutral-900 disabled:opacity-40"
           >
             Refresh
           </button>
@@ -343,19 +343,19 @@ export default function ProjectDeploymentControl({
       </div>
 
       {notice && (
-        <div className="mx-5 mt-5 rounded-lg border border-emerald-900/60 bg-emerald-950/20 p-3 text-sm text-emerald-300 sm:mx-6">
+        <div className="mx-5 mt-5 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 sm:mx-6">
           {notice}
         </div>
       )}
 
       {error && (
-        <div className="mx-5 mt-5 rounded-lg border border-red-900/70 bg-red-950/30 p-3 text-sm text-red-300 sm:mx-6">
+        <div className="mx-5 mt-5 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 sm:mx-6">
           {error}
         </div>
       )}
 
       {!loading && data && !bridgeReady && (
-        <div className="mx-5 mt-5 rounded-xl border border-amber-900/40 bg-amber-950/15 p-4 text-sm text-amber-200/80 sm:mx-6">
+        <div className="mx-5 mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 sm:mx-6">
           {!data.bridge.connected
             ? `Bridge status unavailable${
                 data.bridge.error ? `: ${data.bridge.error}` : "."
@@ -367,13 +367,13 @@ export default function ProjectDeploymentControl({
       )}
 
       <div className="grid lg:grid-cols-2">
-        <div className="border-b border-neutral-800 p-5 sm:p-6 lg:border-b-0 lg:border-r">
+        <div className="border-b border-neutral-200 p-5 sm:p-6 lg:border-b-0 lg:border-r">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-neutral-300">
+              <p className="text-sm font-medium text-neutral-700">
                 Approved proposals
               </p>
-              <p className="mt-1 text-xs text-neutral-600">
+              <p className="mt-1 text-xs text-neutral-500">
                 Preflight can be repeated without changing WordPress.
               </p>
             </div>
@@ -381,7 +381,7 @@ export default function ProjectDeploymentControl({
 
           <div className="mt-4 space-y-3">
             {loading && (
-              <p className="py-8 text-center text-sm text-neutral-600">
+              <p className="py-8 text-center text-sm text-neutral-500">
                 Loading approved proposals...
               </p>
             )}
@@ -389,7 +389,7 @@ export default function ProjectDeploymentControl({
             {!loading &&
               data?.readyProposals.filter((proposal) => proposal.ready).length ===
                 0 && (
-                <p className="py-8 text-center text-sm text-neutral-600">
+                <p className="py-8 text-center text-sm text-neutral-500">
                   No approved proposals are waiting to be deployed.
                 </p>
               )}
@@ -402,20 +402,20 @@ export default function ProjectDeploymentControl({
                 return (
                   <div
                     key={proposal.id}
-                    className="rounded-xl border border-neutral-800 bg-neutral-950/50 p-4"
+                    className="rounded-xl border border-neutral-200 bg-neutral-50 p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="truncate text-sm text-neutral-200">
+                        <p className="truncate text-sm text-neutral-900">
                           {proposal.title}
                         </p>
 
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-neutral-600">
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-neutral-500">
                           {proposal.modifyCount > 0 && (
                             <span>{proposal.modifyCount} modify</span>
                           )}
                           {proposal.createCount > 0 && (
-                            <span className="text-sky-300/80">
+                            <span className="text-sky-600">
                               + {proposal.createCount} create
                             </span>
                           )}
@@ -429,7 +429,7 @@ export default function ProjectDeploymentControl({
                           type="button"
                           onClick={() => validateProposal(proposal)}
                           disabled={!bridgeReady || Boolean(busyId)}
-                          className="rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:bg-neutral-900 disabled:opacity-35"
+                          className="rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-35"
                         >
                           {busyId === `validate:${proposal.id}`
                             ? "Checking..."
@@ -440,7 +440,7 @@ export default function ProjectDeploymentControl({
                           type="button"
                           onClick={() => applyProposal(proposal)}
                           disabled={!bridgeReady || Boolean(busyId)}
-                          className="rounded-lg bg-neutral-100 px-3.5 py-2 text-xs font-medium text-neutral-950 hover:bg-white disabled:opacity-35"
+                          className="rounded-lg bg-neutral-900 px-3.5 py-2 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-35"
                         >
                           {busyId === `apply:${proposal.id}`
                             ? "Deploying..."
@@ -454,7 +454,7 @@ export default function ProjectDeploymentControl({
                     )}
 
                     {!preflight && proposal.lastPreflightAt && (
-                      <p className="mt-3 text-[11px] text-neutral-600">
+                      <p className="mt-3 text-[11px] text-neutral-500">
                         Last saved preflight: {proposal.lastPreflightOk ? "READY" : "FAILED"} · {formatDate(proposal.lastPreflightAt)}
                       </p>
                     )}
@@ -466,17 +466,17 @@ export default function ProjectDeploymentControl({
 
         <div className="p-5 sm:p-6">
           <div>
-            <p className="text-sm font-medium text-neutral-300">
+            <p className="text-sm font-medium text-neutral-700">
               Deployment history
             </p>
-            <p className="mt-1 text-xs text-neutral-600">
+            <p className="mt-1 text-xs text-neutral-500">
               Every apply is backed by a local WordPress snapshot.
             </p>
           </div>
 
           <div className="mt-4 space-y-3">
             {!loading && data?.deployments.length === 0 && (
-              <p className="py-8 text-center text-sm text-neutral-600">
+              <p className="py-8 text-center text-sm text-neutral-500">
                 No live deployments yet.
               </p>
             )}
@@ -492,18 +492,18 @@ export default function ProjectDeploymentControl({
               return (
                 <div
                   key={deployment.id}
-                  className="rounded-xl border border-neutral-800 bg-neutral-950/50 p-4"
+                  className="rounded-xl border border-neutral-200 bg-neutral-50 p-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <Status status={deployment.status} />
-                        <span className="truncate text-sm text-neutral-300">
+                        <span className="truncate text-sm text-neutral-700">
                           {deployment.proposalTitle}
                         </span>
                       </div>
 
-                      <p className="mt-2 text-[11px] text-neutral-600">
+                      <p className="mt-2 text-[11px] text-neutral-500">
                         {deployment.filesCount} files
                         {createdCount > 0 ? ` · ${createdCount} created` : ""}
                         {deployment.snapshotId
@@ -513,13 +513,13 @@ export default function ProjectDeploymentControl({
 
                       {deployment.status === "applied" &&
                         deployment.result?.health?.ok === true && (
-                          <p className="mt-2 text-[11px] text-emerald-400/70">
+                          <p className="mt-2 text-[11px] text-green-600">
                             ✓ Home + REST health checks passed
                           </p>
                         )}
 
                       {deployment.error && (
-                        <p className="mt-2 text-xs leading-5 text-red-300/80">
+                        <p className="mt-2 text-xs leading-5 text-red-600">
                           {deployment.error}
                         </p>
                       )}
@@ -531,7 +531,7 @@ export default function ProjectDeploymentControl({
                           type="button"
                           onClick={() => rollbackDeployment(deployment)}
                           disabled={!bridgeReady || Boolean(busyId)}
-                          className="shrink-0 rounded-lg border border-neutral-700 px-3 py-2 text-xs text-neutral-300 hover:bg-neutral-900 disabled:opacity-35"
+                          className="shrink-0 rounded-lg border border-neutral-200 px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-100 disabled:opacity-35"
                         >
                           {busyId === `rollback:${deployment.id}`
                             ? "Rolling back..."
@@ -546,7 +546,7 @@ export default function ProjectDeploymentControl({
         </div>
       </div>
 
-      <div className="border-t border-neutral-800 px-5 py-4 text-[11px] leading-5 text-neutral-600 sm:px-6">
+      <div className="border-t border-neutral-200 px-5 py-4 text-[11px] leading-5 text-neutral-500 sm:px-6">
         Bridge v0.5 can modify existing approved files and create new allowlisted
         project files. It still cannot delete, rename or execute arbitrary files.
         Rollback restores modified files and removes files created by that
@@ -563,22 +563,22 @@ function PreflightSummary({ report }: { report: PreflightReport }) {
     <div
       className={
         report.ready
-          ? "mt-3 rounded-lg border border-emerald-900/50 bg-emerald-950/15 p-3"
-          : "mt-3 rounded-lg border border-red-900/50 bg-red-950/15 p-3"
+          ? "mt-3 rounded-lg border border-green-200 bg-green-50 p-3"
+          : "mt-3 rounded-lg border border-red-200 bg-red-50 p-3"
       }
     >
       <div className="flex items-center justify-between gap-3">
         <span
           className={
             report.ready
-              ? "text-xs font-medium text-emerald-300"
-              : "text-xs font-medium text-red-300"
+              ? "text-xs font-medium text-green-700"
+              : "text-xs font-medium text-red-600"
           }
         >
           {report.ready ? "✓ PREFLIGHT READY" : "PREFLIGHT FAILED"}
         </span>
 
-        <span className="text-[10px] text-neutral-600">
+        <span className="text-[10px] text-neutral-500">
           {formatBytes(report.total_bytes ?? 0)} · {report.file_count ?? 0} files
         </span>
       </div>
@@ -593,12 +593,12 @@ function PreflightSummary({ report }: { report: PreflightReport }) {
       ) : (
         <div className="mt-2 space-y-1">
           {failed.slice(0, 3).map((file) => (
-            <p key={`${file.scope}:${file.path}`} className="text-[11px] text-red-300/80">
+            <p key={`${file.scope}:${file.path}`} className="text-[11px] text-red-600">
               {file.scope}/{file.path}: {file.error?.message ?? "Not ready"}
             </p>
           ))}
           {report.global_error && (
-            <p className="text-[11px] text-red-300/80">
+            <p className="text-[11px] text-red-600">
               {report.global_error}
             </p>
           )}
@@ -611,7 +611,7 @@ function PreflightSummary({ report }: { report: PreflightReport }) {
 function BridgeState({ bridge }: { bridge: BridgeStateData | null }) {
   if (!bridge) {
     return (
-      <span className="rounded-full border border-neutral-800 px-3 py-1.5 text-xs text-neutral-600">
+      <span className="rounded-full border border-neutral-200 px-3 py-1.5 text-xs text-neutral-500">
         Checking Bridge...
       </span>
     );
@@ -628,8 +628,8 @@ function BridgeState({ bridge }: { bridge: BridgeStateData | null }) {
     <span
       className={
         ready
-          ? "rounded-full border border-emerald-900/50 bg-emerald-950/20 px-3 py-1.5 text-xs text-emerald-300"
-          : "rounded-full border border-neutral-800 bg-neutral-900/60 px-3 py-1.5 text-xs text-neutral-500"
+          ? "rounded-full border border-green-200 bg-green-50 px-3 py-1.5 text-xs text-green-700"
+          : "rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-500"
       }
     >
       {bridge.version ? `Bridge ${bridge.version}` : "Bridge"} · {" "}
@@ -641,12 +641,12 @@ function BridgeState({ bridge }: { bridge: BridgeStateData | null }) {
 function Status({ status }: { status: Deployment["status"] }) {
   const className =
     status === "applied"
-      ? "border-emerald-900/50 bg-emerald-950/20 text-emerald-300"
+      ? "border-green-200 bg-green-50 text-green-700"
       : status === "failed"
-        ? "border-red-900/60 bg-red-950/20 text-red-300"
+        ? "border-red-200 bg-red-50 text-red-700"
         : status === "rolled_back"
-          ? "border-amber-900/50 bg-amber-950/20 text-amber-300"
-          : "border-neutral-700 bg-neutral-900 text-neutral-400";
+          ? "border-amber-200 bg-amber-50 text-amber-700"
+          : "border-neutral-200 bg-neutral-100 text-neutral-500";
 
   return (
     <span

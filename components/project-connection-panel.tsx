@@ -119,10 +119,10 @@ export default function ProjectConnectionPanel({
   const connected = connection?.connected !== false;
 
   return (
-    <div className="rounded-xl border border-neutral-800 bg-neutral-950/45 p-5 shadow-[inset_0_1px_rgba(255,255,255,0.025)]">
+    <div className="rounded-xl border border-neutral-200 bg-white p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-neutral-600">
+          <p className="text-[11px] uppercase tracking-wide text-neutral-400">
             WordPress connection
           </p>
 
@@ -130,11 +130,11 @@ export default function ProjectConnectionPanel({
             <span
               className={
                 connected
-                  ? "h-2 w-2 rounded-full bg-green-400"
-                  : "h-2 w-2 rounded-full bg-red-400"
+                  ? "h-2 w-2 rounded-full bg-green-500"
+                  : "h-2 w-2 rounded-full bg-red-500"
               }
             />
-            <span className="text-sm text-neutral-200">
+            <span className="text-sm text-neutral-900">
               {connected ? "Connected" : "Needs attention"}
             </span>
           </div>
@@ -161,7 +161,7 @@ export default function ProjectConnectionPanel({
             type="button"
             onClick={testConnection}
             disabled={testing}
-            className="rounded-lg border border-neutral-700 bg-neutral-900/70 px-3 py-2 text-xs text-neutral-300 transition hover:border-neutral-500 hover:bg-neutral-800 disabled:opacity-40"
+            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-40"
           >
             {testing ? "Checking..." : "Test connection"}
           </button>
@@ -173,7 +173,7 @@ export default function ProjectConnectionPanel({
               setError("");
             }}
             disabled={testing}
-            className="rounded-lg border border-neutral-700 bg-neutral-900/70 px-3 py-2 text-xs text-neutral-300 transition hover:border-neutral-500 hover:bg-neutral-800 disabled:opacity-40"
+            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-40"
           >
             Replace token
           </button>
@@ -183,7 +183,7 @@ export default function ProjectConnectionPanel({
               href={wpAdminBridgeUrl}
               target="_blank"
               rel="noreferrer"
-              className="rounded-lg border border-neutral-700 bg-neutral-900/70 px-3 py-2 text-xs text-neutral-300 transition hover:border-neutral-500 hover:bg-neutral-800"
+              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50"
             >
               WP Admin ↗
             </a>
@@ -192,7 +192,7 @@ export default function ProjectConnectionPanel({
       </div>
 
       {editingToken && (
-        <div className="mt-5 border-t border-neutral-800 pt-5">
+        <div className="mt-5 border-t border-neutral-200 pt-5">
           <label className="block text-xs text-neutral-500">
             New Bridge token
           </label>
@@ -203,14 +203,14 @@ export default function ProjectConnectionPanel({
               value={token}
               onChange={(event) => setToken(event.target.value)}
               placeholder="Paste newly generated token"
-              className="min-w-0 flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2.5 text-sm outline-none focus:border-neutral-500"
+              className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400"
             />
 
             <button
               type="button"
               onClick={replaceToken}
               disabled={testing || !token.trim()}
-              className="rounded-lg bg-neutral-100 px-4 text-sm font-medium text-neutral-950 transition hover:bg-white disabled:opacity-40"
+              className="rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white transition hover:bg-neutral-800 disabled:opacity-40"
             >
               Save
             </button>
@@ -223,7 +223,7 @@ export default function ProjectConnectionPanel({
       )}
 
       {error && (
-        <div className="mt-4 rounded-lg border border-red-900 bg-red-950/30 p-3 text-xs text-red-400">
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-600">
           {error}
         </div>
       )}
