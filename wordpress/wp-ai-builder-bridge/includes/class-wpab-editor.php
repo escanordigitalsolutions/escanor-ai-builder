@@ -381,9 +381,9 @@ final class WPAB_Editor {
 				<div class="wpab-studio__panel">
 					<div class="wpab-studio__tabs">
 						<button type="button" class="wpab-tab is-active" data-tab="chat">Chat</button>
-						<button type="button" class="wpab-tab" data-tab="build">Build</button>
 						<button type="button" class="wpab-tab" data-tab="content">Content</button>
 						<button type="button" class="wpab-tab" data-tab="visual">Inspect</button>
+						<button type="button" class="wpab-tab" data-tab="build">History</button>
 						<span class="wpab-studio__spacer"></span>
 						<button type="button" id="wpab-collapse" class="wpab-studio__collapse">▾ Collapse</button>
 					</div>
@@ -391,26 +391,25 @@ final class WPAB_Editor {
 					<div class="wpab-studio__content">
 						<div id="wpab-pane-chat" class="wpab-pane">
 							<div class="wpab-pane__bar">
-								<span class="wpab-pane__hint">Ask about the theme or plugin.</span>
+								<span class="wpab-pane__hint">Ask a question or describe a change — I’ll propose it inline.</span>
 								<button type="button" id="wpab-editor-new" class="button">New chat</button>
 							</div>
 							<div id="wpab-suggests" class="wpab-suggests"></div>
 							<div id="wpab-editor-thread" class="wpab-editor__thread" aria-live="polite"></div>
 							<form id="wpab-editor-form" class="wpab-editor__form" autocomplete="off">
 								<textarea id="wpab-editor-input" class="wpab-editor__input" rows="2"
-									placeholder="e.g. Where is the header rendered?"></textarea>
+									placeholder="Ask anything, or e.g. “Make the header sticky and add a Contact button.”"></textarea>
 								<button type="submit" id="wpab-editor-send" class="button button-primary">Send</button>
 							</form>
 							<p id="wpab-editor-meta" class="wpab-editor__meta"></p>
 						</div>
 
 						<div id="wpab-pane-build" class="wpab-pane" hidden>
-							<form id="wpab-build-form" class="wpab-editor__form" autocomplete="off">
-								<textarea id="wpab-build-input" class="wpab-editor__input" rows="3"
-									placeholder="Describe a change, e.g. Add a newsletter section to the footer."></textarea>
-								<button type="submit" id="wpab-build-send" class="button button-primary">Propose</button>
-							</form>
-							<p id="wpab-build-meta" class="wpab-editor__meta"></p>
+							<div class="wpab-pane__bar">
+									<span class="wpab-pane__hint">Past proposals &amp; deployments. New changes start in Chat.</span>
+									<button type="button" id="wpab-build-refresh" class="button">Refresh</button>
+								</div>
+								<p id="wpab-build-meta" class="wpab-editor__meta"></p>
 							<div id="wpab-current"></div>
 							<h3 class="wpab-col__title">Recent proposals</h3>
 							<div id="wpab-proposals" class="wpab-list"></div>
@@ -565,6 +564,9 @@ final class WPAB_Editor {
 			.wpab-v-input { width: 100%; box-sizing: border-box; font-size: 13px; }
 			.wpab-v-color { width: 100%; height: 32px; padding: 0; border: 1px solid #dcdcde; border-radius: 6px; background: #fff; }
 			.wpab-v-note { font-size: 11px; color: #8c8f94; margin-top: 10px; }
+			.wpab-prop-mount:empty { display: none; }
+			.wpab-prop-mount { margin-top: 8px; }
+			.wpab-inline-status { margin-top: 4px; }
 			.wpab-ctypes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 			.wpab-ctype { background: #f0f0f1; border: 1px solid #e2e4e7; border-radius: 999px; padding: 4px 12px; font-size: 12px; color: #3c434a; cursor: pointer; }
 			.wpab-ctype:hover { background: #e8e8ea; }
@@ -611,9 +613,6 @@ final class WPAB_Editor {
 			var newBtn = $('wpab-editor-new');
 			var statusEl = $('wpab-editor-status');
 			var metaEl = $('wpab-editor-meta');
-			var buildForm = $('wpab-build-form');
-			var buildInput = $('wpab-build-input');
-			var buildBtn = $('wpab-build-send');
 			var buildMeta = $('wpab-build-meta');
 			var currentEl = $('wpab-current');
 			var proposalsEl = $('wpab-proposals');
@@ -633,7 +632,6 @@ final class WPAB_Editor {
 			function setBusy(state) {
 				busy = state;
 				sendBtn.disabled = state; input.disabled = state;
-				buildBtn.disabled = state; buildInput.disabled = state;
 			}
 			function api(method, url, payload) {
 				var opts = { method: method, headers: { 'X-WP-Nonce': cfg.nonce } };
@@ -691,7 +689,8 @@ final class WPAB_Editor {
 
 			/* ---- Chat ---- */
 			function renderActivity(activity) {
-				if (!activity || !activity.length) { return ''; }
+				activity = (activity || []).filter(function (item) { return item.tool !== 'request_build'; });
+				if (!activity.length) { return ''; }
 				var parts = activity.map(function (item) {
 					var label = (item.tool === 'read_project_files' || item.tool === 'get_content') ? 'read' : (item.tool === 'list_content_types' ? 'content types' : 'listed');
 					var scope = item.scope ? escapeHtml(item.scope) : '';
@@ -719,7 +718,8 @@ final class WPAB_Editor {
 				thread.innerHTML = '<p class="wpab-editor__empty">Ask a question to inspect this site’s theme or companion plugin.</p>';
 			}
 			function sendChat(message) {
-				setBusy(true); metaEl.textContent = '';
+				var pendingBuild = null;
+					setBusy(true); metaEl.textContent = '';
 				var runId = genRunId();
 				var typing = addTyping();
 				var stepsBox = typing.querySelector('.wpab-steps');
@@ -742,9 +742,10 @@ final class WPAB_Editor {
 					var d = out.data;
 					if (d.conversation && d.conversation.id) { conversationId = d.conversation.id; }
 					addMessage('assistant', d.answer || 'Analysis completed.', d.activity);
+						if (d.buildRequest && d.buildRequest.instruction) { pendingBuild = d.buildRequest.instruction; }
 					if (d.usage) { metaEl.textContent = (d.toolCalls || 0) + ' tool calls · ' + (d.usage.totalTokens || 0).toLocaleString() + ' tokens'; }
 				}).catch(function () { polling = false; typing.remove(); addMessage('assistant', 'Error: network request failed.'); })
-				.then(function () { setBusy(false); input.focus(); });
+				.then(function () { setBusy(false); input.focus(); if (pendingBuild) { startInlineProposal(pendingBuild); } });
 			}
 			form.addEventListener('submit', function (e) { e.preventDefault(); if (busy) { return; } var m = input.value.trim(); if (!m) { return; } addMessage('user', m); input.value = ''; sendChat(m); });
 			input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); } });
@@ -764,182 +765,192 @@ final class WPAB_Editor {
 				}
 				return '<pre class="wpab-diff">' + out + '</pre>';
 			}
-			function renderProposal(p) {
-				var filesHtml = (p.files || []).map(function (f) {
-					return '<div class="wpab-file"><div class="wpab-file__head"><span class="wpab-file__op">' + escapeHtml(f.operation || 'modify') + '</span><span class="wpab-file__path">' + escapeHtml((f.scope || '') + '/' + (f.path || '')) + '</span></div>' + renderDiff(f.diff) + '</div>';
-				}).join('');
-				currentEl.innerHTML = '<div class="wpab-prop"><div class="wpab-prop__head">' + riskPill(p.risk) + '<h3 class="wpab-prop__title">' + escapeHtml(p.title || 'Proposed change') + '</h3></div><p class="wpab-prop__summary">' + escapeHtml(p.summary || '') + '</p>' + filesHtml + '<div class="wpab-prop__actions"><button type="button" class="button button-primary" id="wpab-apply-btn">Deploy</button><button type="button" class="button" id="wpab-close-btn">Close</button></div><div id="wpab-deploy"></div></div>';
-				$('wpab-apply-btn').addEventListener('click', function () { deploy(p.id); });
-				$('wpab-close-btn').addEventListener('click', function () { if (!busy) { currentEl.innerHTML = ''; } });
-			}
-			function loadBuild() {
-				api('GET', cfg.restProposals + '?limit=6').then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) { return; }
-					renderProposalsList(out.data.proposals || []);
-					renderDeploymentsList(out.data.deployments || []);
-				});
-			}
-			function renderProposalsList(list) {
-				if (!list.length) { proposalsEl.innerHTML = '<p class="wpab-empty">No proposals yet.</p>'; return; }
-				proposalsEl.innerHTML = '';
-				list.forEach(function (p) {
-					var el = document.createElement('div'); el.className = 'wpab-item'; el.style.cursor = 'pointer';
-					el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(p.title || 'Proposal') + '</span>' + riskPill(p.risk) + '</div><div class="wpab-item__meta">' + (p.files ? p.files.length : 0) + ' file(s) · ' + escapeHtml(p.status || 'draft') + '</div>';
-					el.addEventListener('click', function () { renderProposal(p); });
-					proposalsEl.appendChild(el);
-				});
-			}
-			function renderDeploymentsList(list) {
-				if (!list.length) { deploymentsEl.innerHTML = '<p class="wpab-empty">No deployments yet.</p>'; return; }
-				deploymentsEl.innerHTML = '';
-				list.forEach(function (d) {
-					var el = document.createElement('div'); el.className = 'wpab-item';
-					var canRoll = (d.status === 'applied' && d.snapshotId);
-					var btn = canRoll ? '<button type="button" class="button" data-run="' + escapeHtml(d.id) + '">Rollback</button>' : '';
-					el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(d.proposalTitle || 'Deployment') + '</span><span class="wpab-status wpab-status--' + escapeHtml(d.status || '') + '">' + escapeHtml(d.status || '') + '</span></div><div class="wpab-item__row"><span class="wpab-item__meta">' + (d.filesCount || 0) + ' file(s)' + (d.snapshotId ? ' · ' + escapeHtml(d.snapshotId) : '') + '</span>' + btn + '</div>';
-					if (canRoll) { el.querySelector('button').addEventListener('click', function () { rollback(d.id); }); }
-					deploymentsEl.appendChild(el);
-				});
-			}
-			function propose(promptText) {
-				setBusy(true); currentEl.innerHTML = '';
-				buildMeta.textContent = 'Inspecting the project and drafting a change… this can take up to a minute.';
-				var since = nowIso();
-				api('POST', cfg.restPropose, { prompt: promptText }).then(function (out) {
-					if (out.ok && out.data && out.data.proposal) { buildMeta.textContent = ''; renderProposal(out.data.proposal); loadBuild(); setBusy(false); return; }
-					if (out.data && out.data.success === false && out.data.error && !out.data.started) { buildMeta.textContent = ''; currentEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(out.data.error) + '</div>'; setBusy(false); return; }
-					pollForProposal(since, 0);
-				}).catch(function () { pollForProposal(since, 0); });
-			}
-			function pollForProposal(since, attempt) {
-				if (attempt > 40) { buildMeta.textContent = ''; currentEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Generation is taking longer than expected. Check "Recent proposals" in a moment, or try again.</div>'; loadBuild(); setBusy(false); return; }
-				setTimeout(function () {
-					api('GET', cfg.restProposals + '?limit=3&since=' + encodeURIComponent(since)).then(function (out) {
-						var list = (out.data && out.data.proposals) || [];
-						if (list.length) { buildMeta.textContent = ''; renderProposal(list[0]); loadBuild(); setBusy(false); }
-						else { pollForProposal(since, attempt + 1); }
-					}).catch(function () { pollForProposal(since, attempt + 1); });
-				}, 4000);
-			}
-			function deploy(proposalId) {
-				if (busy) { return; }
-				setBusy(true);
-				var deployEl = $('wpab-deploy');
-				if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
-				api('POST', cfg.restApply, { proposalId: proposalId }).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) { var err = (out.data && (out.data.error || out.data.message)) || 'Deploy failed.'; if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; } return; }
-					var d = out.data.deployment || {};
-					var snap = d.snapshotId ? ' · snapshot ' + escapeHtml(String(d.snapshotId)) : '';
-					if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Deployed ✓ · ' + (d.filesCount || 0) + ' file(s)' + snap + '.</div>'; }
-					var b = $('wpab-apply-btn'); if (b) { b.disabled = true; b.textContent = 'Deployed'; }
-					reloadPreview();
-				}).catch(function () { if (deployEl) { deployEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; } })
-				.then(function () { setBusy(false); loadBuild(); });
-			}
-			function rollback(runId) {
-				if (busy) { return; }
-				if (!window.confirm('Roll back this deployment? The snapshot will be restored.')) { return; }
-				setBusy(true);
-				api('POST', cfg.restRollback, { runId: runId }).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) { window.alert((out.data && (out.data.error || out.data.message)) || 'Rollback failed.'); }
-					else { reloadPreview(); }
-				}).catch(function () { window.alert('Network request failed.'); })
-				.then(function () { setBusy(false); loadBuild(); });
-			}
-			buildForm.addEventListener('submit', function (e) { e.preventDefault(); if (busy) { return; } var p = buildInput.value.trim(); if (!p) { return; } propose(p); });
-
-			/* ---- Content browser (native WP components, read-only) ---- */
-			var ctypesEl = $('wpab-content-types');
-			var cbodyEl = $('wpab-content-body');
-			function cStatusClass(s) { return 'wpab-cstatus wpab-cstatus--' + escapeHtml(String(s || '')); }
-			function loadContentTypes() {
-				ctypesEl.innerHTML = '';
-				cbodyEl.innerHTML = '<p class="wpab-empty">Loading content…</p>';
-				api('GET', cfg.restContentTypes).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not load content.</p>'; return; }
-					var types = (out.data.types || []).filter(function (t) { return t.count > 0 || t.key === 'page' || t.key === 'post'; });
-					if (!types.length) { cbodyEl.innerHTML = '<p class="wpab-empty">No content found.</p>'; return; }
-					ctypesEl.innerHTML = '';
-					types.forEach(function (t) {
-						var b = document.createElement('button'); b.type = 'button'; b.className = 'wpab-ctype'; b.setAttribute('data-type', t.key);
-						b.innerHTML = escapeHtml(t.label) + '<span class="wpab-ctype__count">' + (t.count || 0) + '</span>';
-						b.addEventListener('click', function () { selectContentType(t.key); });
-						ctypesEl.appendChild(b);
-					});
-					selectContentType(types[0].key);
-				}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
-			}
-			function selectContentType(type) {
-				contentActiveType = type;
-				var btns = ctypesEl.querySelectorAll('.wpab-ctype');
-				for (var i = 0; i < btns.length; i++) { btns[i].classList.toggle('is-active', btns[i].getAttribute('data-type') === type); }
-				cbodyEl.innerHTML = '<p class="wpab-empty">Loading…</p>';
-				api('GET', cfg.restContentList + '?type=' + encodeURIComponent(type) + '&limit=40').then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not load items.</p>'; return; }
-					renderContentList(type, out.data.items || []);
-				}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
-			}
-			function renderContentList(type, items) {
-				if (!items.length) { cbodyEl.innerHTML = '<p class="wpab-empty">Nothing here yet.</p>'; return; }
-				cbodyEl.innerHTML = '';
-				items.forEach(function (it) {
-					var el = document.createElement('div'); el.className = 'wpab-crow';
-					var right = '';
-					if (type === 'menu') { right = '<span class="wpab-cstatus">' + (it.count || 0) + ' items</span>'; }
-					else if (type === 'media') { right = '<span class="wpab-cstatus">' + escapeHtml((it.mime || '').split('/').pop()) + '</span>'; }
-					else { right = '<span class="' + cStatusClass(it.status) + '">' + escapeHtml(it.status || '') + '</span>'; }
-					var meta = '';
-					if (type === 'media') { meta = escapeHtml(it.url || ''); }
-					else if (type === 'menu') { meta = 'Navigation menu'; }
-					else { meta = '#' + it.id + (it.sku ? ' · SKU ' + escapeHtml(it.sku) : '') + (it.price ? ' · ' + escapeHtml(it.price) : ''); }
-					el.innerHTML = '<div class="wpab-crow__top"><span class="wpab-crow__title">' + escapeHtml(it.title || '(no title)') + '</span>' + right + '</div><div class="wpab-crow__meta">' + meta + '</div>';
-					el.addEventListener('click', function () { openContentItem(type, it.id); });
-					cbodyEl.appendChild(el);
-				});
-			}
-			function openContentItem(type, id) {
-				cbodyEl.innerHTML = '<p class="wpab-empty">Loading…</p>';
-				api('GET', cfg.restContentGet + '?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id)).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false || !out.data.item) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not open item.</p>'; return; }
-					renderContentDetail(type, out.data.item);
-				}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
-			}
-			function renderContentDetail(type, item) {
-				var rows = '';
-				function row(label, val) { if (val === '' || val == null) { return ''; } return '<div class="wpab-cdetail__row">' + escapeHtml(label) + ': <code>' + escapeHtml(String(val)) + '</code></div>'; }
-				var body = '';
-				if (type === 'menu') {
-					rows += row('Items', (item.items || []).length);
-					body = (item.items || []).map(function (mi) { return '• ' + (mi.title || '') + '  →  ' + (mi.url || ''); }).join('\n');
-				} else if (type === 'media') {
-					rows += row('Type', item.mime) + row('Dimensions', (item.width && item.height) ? item.width + '×' + item.height : '') + row('Alt', item.alt) + row('URL', item.url);
-					if ((item.mime || '').indexOf('image/') === 0) { body = ''; }
-				} else {
-					rows += row('Status', item.status) + row('Type', item.type) + row('Slug', item.slug) + row('Template', item.template) + row('URL', item.url) + row('Modified', item.modified);
-					if (item.product) { rows += row('SKU', item.product.sku) + row('Price', item.product.price) + row('Stock', item.product.stock_status); }
-					body = item.content || '';
-					if (item.truncated) { body += '\n\n… (truncated, ' + item.content_chars + ' chars total)'; }
+			function renderProposal(p, mount) {
+					var filesHtml = (p.files || []).map(function (f) {
+						return '<div class="wpab-file"><div class="wpab-file__head"><span class="wpab-file__op">' + escapeHtml(f.operation || 'modify') + '</span><span class="wpab-file__path">' + escapeHtml((f.scope || '') + '/' + (f.path || '')) + '</span></div>' + renderDiff(f.diff) + '</div>';
+					}).join('');
+					mount.innerHTML = '<div class="wpab-prop"><div class="wpab-prop__head">' + riskPill(p.risk) + '<h3 class="wpab-prop__title">' + escapeHtml(p.title || 'Proposed change') + '</h3></div><p class="wpab-prop__summary">' + escapeHtml(p.summary || '') + '</p>' + filesHtml + '<div class="wpab-prop__actions"><button type="button" class="button button-primary wpab-apply-btn">Deploy</button><button type="button" class="button wpab-close-btn">Dismiss</button></div><div class="wpab-deploy-slot"></div></div>';
+					var card = mount.querySelector('.wpab-prop');
+					card.querySelector('.wpab-apply-btn').addEventListener('click', function () { deploy(p.id, card); });
+					card.querySelector('.wpab-close-btn').addEventListener('click', function () { if (!busy) { mount.innerHTML = ''; } });
 				}
-				var thumb = (type === 'media' && (item.mime || '').indexOf('image/') === 0 && item.url) ? '<img class="wpab-cthumb" src="' + escapeHtml(item.url) + '" alt="" />' : '';
-				var contentBlock = body ? '<div class="wpab-cdetail__content">' + escapeHtml(body) + '</div>' : '';
-				cbodyEl.innerHTML =
-					'<button type="button" class="wpab-cback" id="wpab-cback">‹ Back to list</button>' +
-					'<div class="wpab-cdetail"><h3 class="wpab-cdetail__title">' + escapeHtml(item.title || '(no title)') + '</h3>' + rows + thumb + contentBlock +
-					'<div class="wpab-cdetail__actions">' +
-					(item.url ? '<a class="button" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">View</a>' : '') +
-					(item.edit_url ? '<a class="button" href="' + escapeHtml(item.edit_url) + '" target="_blank" rel="noopener">Edit in WP</a>' : '') +
-					'<button type="button" class="button" id="wpab-cask">Ask AI about this</button>' +
-					'</div></div>';
-				var back = $('wpab-cback'); if (back) { back.addEventListener('click', function () { selectContentType(contentActiveType); }); }
-				var ask = $('wpab-cask'); if (ask) { ask.addEventListener('click', function () {
-					var label = (type === 'menu' ? 'menu' : (type === 'media' ? 'media item' : type));
-					var q = 'Tell me about the ' + label + ' "' + (item.title || '') + '"' + (item.id ? ' (id ' + item.id + ')' : '') + ' and suggest improvements.';
-					for (var i = 0; i < tabs.length; i++) { tabs[i].classList.toggle('is-active', tabs[i].getAttribute('data-tab') === 'chat'); }
-					$('wpab-pane-chat').hidden = false; $('wpab-pane-build').hidden = true; $('wpab-pane-content').hidden = true; $('wpab-pane-visual').hidden = true;
-					input.value = q; input.focus();
-				}); }
-			}
-			(function () { var rb = $('wpab-content-refresh'); if (rb) { rb.addEventListener('click', function () { loadContentTypes(); }); } })();
+				function loadBuild() {
+					api('GET', cfg.restProposals + '?limit=6').then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) { return; }
+						renderProposalsList(out.data.proposals || []);
+						renderDeploymentsList(out.data.deployments || []);
+					});
+				}
+				function renderProposalsList(list) {
+					if (!list.length) { proposalsEl.innerHTML = '<p class="wpab-empty">No proposals yet.</p>'; return; }
+					proposalsEl.innerHTML = '';
+					list.forEach(function (p) {
+						var el = document.createElement('div'); el.className = 'wpab-item'; el.style.cursor = 'pointer';
+						el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(p.title || 'Proposal') + '</span>' + riskPill(p.risk) + '</div><div class="wpab-item__meta">' + (p.files ? p.files.length : 0) + ' file(s) · ' + escapeHtml(p.status || 'draft') + '</div>';
+						el.addEventListener('click', function () { renderProposal(p, currentEl); currentEl.scrollIntoView({ block: 'nearest' }); });
+						proposalsEl.appendChild(el);
+					});
+				}
+				function renderDeploymentsList(list) {
+					if (!list.length) { deploymentsEl.innerHTML = '<p class="wpab-empty">No deployments yet.</p>'; return; }
+					deploymentsEl.innerHTML = '';
+					list.forEach(function (d) {
+						var el = document.createElement('div'); el.className = 'wpab-item';
+						var canRoll = (d.status === 'applied' && d.snapshotId);
+						var btn = canRoll ? '<button type="button" class="button" data-run="' + escapeHtml(d.id) + '">Rollback</button>' : '';
+						el.innerHTML = '<div class="wpab-item__row"><span class="wpab-item__title">' + escapeHtml(d.proposalTitle || 'Deployment') + '</span><span class="wpab-status wpab-status--' + escapeHtml(d.status || '') + '">' + escapeHtml(d.status || '') + '</span></div><div class="wpab-item__row"><span class="wpab-item__meta">' + (d.filesCount || 0) + ' file(s)' + (d.snapshotId ? ' · ' + escapeHtml(d.snapshotId) : '') + '</span>' + btn + '</div>';
+						if (canRoll) { el.querySelector('button').addEventListener('click', function () { rollback(d.id); }); }
+						deploymentsEl.appendChild(el);
+					});
+				}
+				function runProposal(instruction, mount, statusFn) {
+					setBusy(true);
+					if (statusFn) { statusFn('Inspecting the project and drafting the change… this can take up to a minute.'); }
+					var since = nowIso();
+					function done() { setBusy(false); loadBuild(); input.focus(); }
+					function fail(msg) { if (statusFn) { statusFn(''); } mount.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(msg) + '</div>'; }
+					api('POST', cfg.restPropose, { prompt: instruction }).then(function (out) {
+						if (out.ok && out.data && out.data.proposal) { if (statusFn) { statusFn(''); } renderProposal(out.data.proposal, mount); done(); return; }
+						if (out.data && out.data.success === false && out.data.error && !out.data.started) { fail(out.data.error); done(); return; }
+						pollProposal(since, 0, mount, statusFn, done, fail);
+					}).catch(function () { pollProposal(since, 0, mount, statusFn, done, fail); });
+				}
+				function pollProposal(since, attempt, mount, statusFn, done, fail) {
+					if (attempt > 40) { fail('Generation is taking longer than expected. Check the History tab in a moment, or try again.'); done(); return; }
+					setTimeout(function () {
+						api('GET', cfg.restProposals + '?limit=3&since=' + encodeURIComponent(since)).then(function (out) {
+							var list = (out.data && out.data.proposals) || [];
+							if (list.length) { if (statusFn) { statusFn(''); } renderProposal(list[0], mount); done(); }
+							else { pollProposal(since, attempt + 1, mount, statusFn, done, fail); }
+						}).catch(function () { pollProposal(since, attempt + 1, mount, statusFn, done, fail); });
+					}, 4000);
+				}
+				function startInlineProposal(instruction) {
+					var wrap = document.createElement('div'); wrap.className = 'wpab-msg wpab-msg--assistant';
+					wrap.innerHTML = '<div class="wpab-msg__role">Proposal</div><div class="wpab-inline-status wpab-typing">Drafting the change…</div><div class="wpab-prop-mount"></div>';
+					thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
+					var st = wrap.querySelector('.wpab-inline-status');
+					var mount = wrap.querySelector('.wpab-prop-mount');
+					runProposal(instruction, mount, function (t) { if (st) { st.textContent = t; st.style.display = t ? '' : 'none'; } thread.scrollTop = thread.scrollHeight; });
+				}
+				function deploy(proposalId, card) {
+					if (busy) { return; }
+					setBusy(true);
+					var slot = card.querySelector('.wpab-deploy-slot');
+					if (slot) { slot.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
+					api('POST', cfg.restApply, { proposalId: proposalId }).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) { var err = (out.data && (out.data.error || out.data.message)) || 'Deploy failed.'; if (slot) { slot.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; } return; }
+						var d = out.data.deployment || {};
+						var snap = d.snapshotId ? ' · snapshot ' + escapeHtml(String(d.snapshotId)) : '';
+						if (slot) { slot.innerHTML = '<div class="wpab-deploy wpab-deploy--ok">Deployed ✓ · ' + (d.filesCount || 0) + ' file(s)' + snap + '.</div>'; }
+						var b = card.querySelector('.wpab-apply-btn'); if (b) { b.disabled = true; b.textContent = 'Deployed'; }
+						reloadPreview();
+					}).catch(function () { if (slot) { slot.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed.</div>'; } })
+					.then(function () { setBusy(false); loadBuild(); });
+				}
+				function rollback(runId) {
+					if (busy) { return; }
+					if (!window.confirm('Roll back this deployment? The snapshot will be restored.')) { return; }
+					setBusy(true);
+					api('POST', cfg.restRollback, { runId: runId }).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) { window.alert((out.data && (out.data.error || out.data.message)) || 'Rollback failed.'); }
+						else { reloadPreview(); }
+					}).catch(function () { window.alert('Network request failed.'); })
+					.then(function () { setBusy(false); loadBuild(); });
+				}
+				/* ---- Content browser (native WP components, read-only) ---- */
+				var ctypesEl = $('wpab-content-types');
+				var cbodyEl = $('wpab-content-body');
+				function cStatusClass(s) { return 'wpab-cstatus wpab-cstatus--' + escapeHtml(String(s || '')); }
+				function loadContentTypes() {
+					ctypesEl.innerHTML = '';
+					cbodyEl.innerHTML = '<p class="wpab-empty">Loading content…</p>';
+					api('GET', cfg.restContentTypes).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not load content.</p>'; return; }
+						var types = (out.data.types || []).filter(function (t) { return t.count > 0 || t.key === 'page' || t.key === 'post'; });
+						if (!types.length) { cbodyEl.innerHTML = '<p class="wpab-empty">No content found.</p>'; return; }
+						ctypesEl.innerHTML = '';
+						types.forEach(function (t) {
+							var b = document.createElement('button'); b.type = 'button'; b.className = 'wpab-ctype'; b.setAttribute('data-type', t.key);
+							b.innerHTML = escapeHtml(t.label) + '<span class="wpab-ctype__count">' + (t.count || 0) + '</span>';
+							b.addEventListener('click', function () { selectContentType(t.key); });
+							ctypesEl.appendChild(b);
+						});
+						selectContentType(types[0].key);
+					}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
+				}
+				function selectContentType(type) {
+					contentActiveType = type;
+					var btns = ctypesEl.querySelectorAll('.wpab-ctype');
+					for (var i = 0; i < btns.length; i++) { btns[i].classList.toggle('is-active', btns[i].getAttribute('data-type') === type); }
+					cbodyEl.innerHTML = '<p class="wpab-empty">Loading…</p>';
+					api('GET', cfg.restContentList + '?type=' + encodeURIComponent(type) + '&limit=40').then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not load items.</p>'; return; }
+						renderContentList(type, out.data.items || []);
+					}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
+				}
+				function renderContentList(type, items) {
+					if (!items.length) { cbodyEl.innerHTML = '<p class="wpab-empty">Nothing here yet.</p>'; return; }
+					cbodyEl.innerHTML = '';
+					items.forEach(function (it) {
+						var el = document.createElement('div'); el.className = 'wpab-crow';
+						var right = '';
+						if (type === 'menu') { right = '<span class="wpab-cstatus">' + (it.count || 0) + ' items</span>'; }
+						else if (type === 'media') { right = '<span class="wpab-cstatus">' + escapeHtml((it.mime || '').split('/').pop()) + '</span>'; }
+						else { right = '<span class="' + cStatusClass(it.status) + '">' + escapeHtml(it.status || '') + '</span>'; }
+						var meta = '';
+						if (type === 'media') { meta = escapeHtml(it.url || ''); }
+						else if (type === 'menu') { meta = 'Navigation menu'; }
+						else { meta = '#' + it.id + (it.sku ? ' · SKU ' + escapeHtml(it.sku) : '') + (it.price ? ' · ' + escapeHtml(it.price) : ''); }
+						el.innerHTML = '<div class="wpab-crow__top"><span class="wpab-crow__title">' + escapeHtml(it.title || '(no title)') + '</span>' + right + '</div><div class="wpab-crow__meta">' + meta + '</div>';
+						el.addEventListener('click', function () { openContentItem(type, it.id); });
+						cbodyEl.appendChild(el);
+					});
+				}
+				function openContentItem(type, id) {
+					cbodyEl.innerHTML = '<p class="wpab-empty">Loading…</p>';
+					api('GET', cfg.restContentGet + '?type=' + encodeURIComponent(type) + '&id=' + encodeURIComponent(id)).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false || !out.data.item) { cbodyEl.innerHTML = '<p class="wpab-empty">Could not open item.</p>'; return; }
+						renderContentDetail(type, out.data.item);
+					}).catch(function () { cbodyEl.innerHTML = '<p class="wpab-empty">Could not reach WordPress.</p>'; });
+				}
+				function renderContentDetail(type, item) {
+					var rows = '';
+					function row(label, val) { if (val === '' || val == null) { return ''; } return '<div class="wpab-cdetail__row">' + escapeHtml(label) + ': <code>' + escapeHtml(String(val)) + '</code></div>'; }
+					var body = '';
+					if (type === 'menu') {
+						rows += row('Items', (item.items || []).length);
+						body = (item.items || []).map(function (mi) { return '• ' + (mi.title || '') + '  →  ' + (mi.url || ''); }).join('\n');
+					} else if (type === 'media') {
+						rows += row('Type', item.mime) + row('Dimensions', (item.width && item.height) ? item.width + '×' + item.height : '') + row('Alt', item.alt) + row('URL', item.url);
+						if ((item.mime || '').indexOf('image/') === 0) { body = ''; }
+					} else {
+						rows += row('Status', item.status) + row('Type', item.type) + row('Slug', item.slug) + row('Template', item.template) + row('URL', item.url) + row('Modified', item.modified);
+						if (item.product) { rows += row('SKU', item.product.sku) + row('Price', item.product.price) + row('Stock', item.product.stock_status); }
+						body = item.content || '';
+						if (item.truncated) { body += '\n\n… (truncated, ' + item.content_chars + ' chars total)'; }
+					}
+					var thumb = (type === 'media' && (item.mime || '').indexOf('image/') === 0 && item.url) ? '<img class="wpab-cthumb" src="' + escapeHtml(item.url) + '" alt="" />' : '';
+					var contentBlock = body ? '<div class="wpab-cdetail__content">' + escapeHtml(body) + '</div>' : '';
+					cbodyEl.innerHTML =
+						'<button type="button" class="wpab-cback" id="wpab-cback">‹ Back to list</button>' +
+						'<div class="wpab-cdetail"><h3 class="wpab-cdetail__title">' + escapeHtml(item.title || '(no title)') + '</h3>' + rows + thumb + contentBlock +
+						'<div class="wpab-cdetail__actions">' +
+						(item.url ? '<a class="button" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">View</a>' : '') +
+						(item.edit_url ? '<a class="button" href="' + escapeHtml(item.edit_url) + '" target="_blank" rel="noopener">Edit in WP</a>' : '') +
+						'<button type="button" class="button" id="wpab-cask">Ask AI about this</button>' +
+						'</div></div>';
+					var back = $('wpab-cback'); if (back) { back.addEventListener('click', function () { selectContentType(contentActiveType); }); }
+					var ask = $('wpab-cask'); if (ask) { ask.addEventListener('click', function () {
+						var label = (type === 'menu' ? 'menu' : (type === 'media' ? 'media item' : type));
+						var q = 'Tell me about the ' + label + ' "' + (item.title || '') + '"' + (item.id ? ' (id ' + item.id + ')' : '') + ' and suggest improvements.';
+						for (var i = 0; i < tabs.length; i++) { tabs[i].classList.toggle('is-active', tabs[i].getAttribute('data-tab') === 'chat'); }
+						$('wpab-pane-chat').hidden = false; $('wpab-pane-build').hidden = true; $('wpab-pane-content').hidden = true; $('wpab-pane-visual').hidden = true;
+						input.value = q; input.focus();
+					}); }
+				}
+				(function () { var rb = $('wpab-content-refresh'); if (rb) { rb.addEventListener('click', function () { loadContentTypes(); }); } })();
+				(function () { var rb = $('wpab-build-refresh'); if (rb) { rb.addEventListener('click', function () { loadBuild(); }); } })();
 
 			/* ---- Inspect (visual CSS) ---- */
 			var vFrame = $('wpab-visual-frame');
