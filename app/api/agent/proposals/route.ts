@@ -22,6 +22,22 @@ const openai = new OpenAI({
 // Site-key authenticated proposal generation for the wp-admin editor (v3A).
 const MODEL = SMART_MODEL;
 
+/** Extra generation rules when the active theme is our native block theme. */
+const ESCANOR_NATIVE_RULES = `
+ESCANOR NATIVE MODE — the active theme is ESCANOR Native, our official Full Site Editing block theme. Generate the native WordPress way only:
+- Design/look = edit theme.json design tokens (color, typography, spacing presets). Never hardcode a hex or px when a preset exists — add or adjust the preset.
+- Sections/pages = native Gutenberg block markup, or block patterns as .php files in the theme's /patterns folder (with a pattern header comment). Use core blocks + registered ESCANOR blocks only. No shortcodes, no page-builder markup.
+- Templates/parts = block template HTML in /templates and /parts; compose header/footer via template parts.
+- Reusable components = native blocks (block.json + render) — put those in the companion plugin, not the theme.
+- Everything must remain editable in the Site Editor and post editor with the AI off. Prefer theme.json + block supports over custom CSS.`;
+
+function isEscanorNative(themeSlug?: string | null, themeName?: string | null) {
+  return (
+    (themeSlug ?? "").toLowerCase() === "escanor-native" ||
+    (themeName ?? "").toLowerCase().includes("escanor native")
+  );
+}
+
 type ActivityItem = {
   tool: string;
   scope?: string;
@@ -523,7 +539,7 @@ Rules:
   low = isolated styling/presentation change,
   medium = multiple files, new templates/components, or behavioral logic,
   high = core data flow, auth, persistence, destructive behavior or broad architecture.
-`;
+${isEscanorNative(site.theme_slug, site.theme_name) ? ESCANOR_NATIVE_RULES : ""}`;
 
     const usageTotals: UsageTotals = {
       inputTokens: 0,
