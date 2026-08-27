@@ -207,7 +207,7 @@ const createContentTool = {
   type: "function" as const,
   name: "create_content",
   description:
-    "Create a NEW native content item — a page, post, product or custom post type — as an unpublished DRAFT. Use when the user wants to create or add a new page/post/product (not edit an existing item, and never theme/plugin code). Provide the full title and the body as clean WordPress block markup or HTML. The draft is created unpublished for the user to review and publish themselves — never claim it is live. Call at most once per message. Menus and media cannot be created here.",
+    "Create a NEW native content item — a page, post, product or custom post type — as an unpublished DRAFT. Use when the user wants to create or add a new page/post/product (not edit an existing item, and never theme/plugin code). The draft is created unpublished for the user to review and publish themselves — never claim it is live. Call at most once per message. Menus and media cannot be created here.",
   strict: true,
   parameters: {
     type: "object",
@@ -218,12 +218,13 @@ const createContentTool = {
       },
       title: {
         type: "string",
-        description: "The title of the new item.",
+        description:
+          "The title of the new item (plain text, no markup — it becomes the post title).",
       },
       content: {
         type: "string",
         description:
-          "The full body as clean WordPress block markup (preferred) or HTML.",
+          "The full body as VALID WordPress Gutenberg BLOCK MARKUP only — every element wrapped in its block delimiter comments (<!-- wp:heading -->, <!-- wp:paragraph -->, <!-- wp:buttons -->, <!-- wp:list -->, <!-- wp:image -->, etc.), never plain HTML or bare text. Example: '<!-- wp:heading {\"level\":2} --><h2 class=\"wp-block-heading\">Shipping</h2><!-- /wp:heading --><!-- wp:paragraph --><p>We ship worldwide.</p><!-- /wp:paragraph -->'. Do not put the page title in the body.",
       },
       excerpt: {
         type: "string",
@@ -516,6 +517,15 @@ Deciding what the user wants:
 - "Rewrite / change / fix this page/post/product ..." → find its type and id first (list_content / get_content), then call request_content_edit with a clear instruction. WordPress saves a revision on apply.
 - Menus and media cannot be created or edited here.
 - Pick create_content for new items, request_content_edit for existing ones. If which item is ambiguous, ask ONE short question or look it up first.
+
+BLOCK MARKUP — this is critical. WordPress stores content as Gutenberg blocks. When you create_content, the body MUST be valid block markup: every piece wrapped in its <!-- wp:... --> ... <!-- /wp:... --> delimiter comments. Never output bare HTML or plain text — that lands as one unusable "Classic" block. Use core blocks:
+- Heading: <!-- wp:heading {"level":2} --><h2 class="wp-block-heading">Text</h2><!-- /wp:heading --> (use level 1 only for a hero title; page titles are separate — do not repeat the title in the body).
+- Paragraph: <!-- wp:paragraph --><p>Text</p><!-- /wp:paragraph -->
+- List: <!-- wp:list --><ul class="wp-block-list"><!-- wp:list-item --><li>Item</li><!-- /wp:list-item --></ul><!-- /wp:list -->
+- Button: <!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="#">Label</a></div><!-- /wp:button --></div><!-- /wp:buttons -->
+- Image: <!-- wp:image --><figure class="wp-block-image"><img src="URL" alt="…"/></figure><!-- /wp:image -->
+- Group a section: <!-- wp:group --><div class="wp-block-group"> …inner blocks… </div><!-- /wp:group -->
+Compose real sections (heading + paragraph(s) + optional list/button), not one big paragraph.
 
 Style — conversational but tight:
 - Warm, direct, plain language, like a helpful content editor. Usually 1-4 short sentences. Do not lecture or restate the question.
