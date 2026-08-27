@@ -177,20 +177,10 @@ export async function authenticateSiteRequest(
   if (projectError) {
     console.error("Site key project lookup failed:", projectError);
 
-    // Surface the underlying database error while we diagnose the v3A path.
-    const detail = [
-      projectError.message,
-      projectError.code ? `[${projectError.code}]` : "",
-      projectError.details ?? "",
-      projectError.hint ?? "",
-    ]
-      .filter(Boolean)
-      .join(" ");
-
     return {
       ok: false,
       status: 500,
-      error: `Could not load the project for this site key: ${detail}`,
+      error: "Could not load the project for this site key.",
     };
   }
 

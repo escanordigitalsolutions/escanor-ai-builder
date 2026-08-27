@@ -10,7 +10,8 @@
  *   Chat    — read-only project inspection + answers.
  *   Build   — describe a change -> AI proposal + diff -> Deploy -> Rollback.
  *   Inspect — click an element in the preview, tweak its CSS live, Apply
- *             deterministically (no AI) with snapshot + rollback.
+ *             deterministically (no AI) as a site-local override, instantly
+ *             reversible via "Clear all applied CSS".
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -20,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class WPAB_Editor {
 
 	private const PAGE_SLUG = 'wp-ai-builder-editor';
-	private const NAMESPACE = 'wp-ai-builder/v1';
+	private const NAMESPACE = WPAB_REST_NAMESPACE;
 
 	private const VISUAL_CSS_OPTION = 'wpab_visual_css';
 
@@ -68,7 +69,6 @@ final class WPAB_Editor {
 			'propose'   => 'rest_propose',
 			'apply'     => 'rest_apply',
 			'rollback'  => 'rest_rollback',
-			'css-apply' => 'rest_css_apply',
 		);
 
 		foreach ( $post as $route => $cb ) {
@@ -430,19 +430,6 @@ final class WPAB_Editor {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
-	public static function rest_css_apply( WP_REST_Request $request ) {
-		$params = self::json_params( $request );
-		$css    = isset( $params['css'] ) ? (string) $params['css'] : '';
-
-		if ( '' === trim( $css ) ) {
-			return new WP_Error( 'wpab_editor_no_css', 'No CSS to apply.', array( 'status' => 400 ) );
-		}
-
-		$result = WPAB_Cloud::request( 'agent/css-apply', array( 'css' => $css ), 90 );
-
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
 	/* ---------------------------------------------------------------------
 	 * Studio page (full screen)
 	 * ------------------------------------------------------------------ */
@@ -470,7 +457,6 @@ final class WPAB_Editor {
 			'restProposals' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/proposals' ) ),
 			'restApply'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/apply' ) ),
 			'restRollback'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/rollback' ) ),
-			'restCssApply'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/css-apply' ) ),
 			'restVisualCss' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/visual-css' ) ),
 			'restSteps'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/steps' ) ),
 			'restContentTypes' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/types' ) ),
@@ -564,7 +550,7 @@ final class WPAB_Editor {
 									<span class="wpab-understand__title">AI read of this site</span>
 									<button type="button" id="wpab-understand-run" class="wpab-btn">Scan site</button>
 								</div>
-								<div id="wpab-understand-body" class="wpab-understand__body"><p class="wpab-empty">Click \u201cScan site\u201d for an AI biography \u2014 what this site is, who it is for, the problem it solves, its objective, standpoint and economic outlook.</p></div>
+								<div id="wpab-understand-body" class="wpab-understand__body"><p class="wpab-empty">Click &ldquo;Scan site&rdquo; for an AI biography &mdash; what this site is, who it is for, the problem it solves, its objective, standpoint and economic outlook.</p></div>
 							</div>
 							<div id="wpab-insights-body"><p class="wpab-empty">Loading…</p></div>
 						</div>
@@ -1423,7 +1409,7 @@ final class WPAB_Editor {
 				var resultEl = $('wpab-v-result');
 				if (!css) { if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Nothing to apply yet — pick an element and change a style.</div>'; } return; }
 				setBusy(true);
-				if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy">Applying with snapshot…</div>'; }
+				if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy">Applying…</div>'; }
 				api('POST', cfg.restVisualCss, { css: (vBaseCss ? vBaseCss.trim() + '\n' : '') + css }).then(function (out) {
 					if (!out.ok || !out.data || out.data.success === false) { var err = (out.data && (out.data.error || out.data.message)) || 'Apply failed.'; if (resultEl) { resultEl.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml(err) + '</div>'; } return; }
 					var d = out.data.deployment || {};

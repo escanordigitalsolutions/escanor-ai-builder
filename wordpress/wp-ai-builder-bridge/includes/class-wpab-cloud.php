@@ -33,7 +33,7 @@ final class WPAB_Cloud {
 	private const KEY_SET_OPTION   = 'wpab_cloud_key_set_at';
 	private const PROJECT_OPTION   = 'wpab_cloud_project';
 
-	private const NAMESPACE = 'wp-ai-builder/v1';
+	private const NAMESPACE = WPAB_REST_NAMESPACE;
 
 	public static function init(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_page' ), 20 );
