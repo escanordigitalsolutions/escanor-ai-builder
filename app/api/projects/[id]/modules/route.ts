@@ -154,13 +154,23 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     .eq("id", id);
 
   if (error) {
-    console.error("Update project modules error:", error);
+    console.error("Update project modules error:", {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
 
+    // Surface the real Postgres error so the cause is visible in the UI while
+    // we get this wired up (column-missing vs. permission vs. something else).
     return NextResponse.json(
       {
         success: false,
         error:
           "Could not save module settings. Make sure the project_modules migration has been applied.",
+        detail: error.message,
+        code: error.code ?? null,
+        hint: error.hint ?? null,
       },
       { status: 500 }
     );

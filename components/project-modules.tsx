@@ -113,7 +113,12 @@ export default function ProjectModules({ projectId }: { projectId: string }) {
       const data = await response.json();
 
       if (!response.ok || !data.success) {
-        throw new Error(data.error ?? "Could not save modules.");
+        const extra = [data.detail, data.code ? `(${data.code})` : ""]
+          .filter(Boolean)
+          .join(" ");
+        throw new Error(
+          extra ? `${data.error ?? "Could not save modules."} — ${extra}` : data.error ?? "Could not save modules."
+        );
       }
 
       setModules(data.modules);
