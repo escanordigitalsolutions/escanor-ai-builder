@@ -49,6 +49,11 @@ export async function POST(request: NextRequest) {
       displayName: context.actor.displayName,
     },
 
+    // Which product modules this project is licensed for. The wp-admin plugin
+    // caches these and locks the modules a project is not entitled to.
+    modules: context.modules,
+    plan: context.plan,
+
     // Advertised to wp-admin so the editor can hide UI the backend cannot
     // serve yet. These flip on as the later milestones land.
     capabilities: {
