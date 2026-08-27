@@ -8,6 +8,7 @@ import ProjectAIChat from "@/components/project-ai-chat";
 import ProjectConnectionPanel from "@/components/project-connection-panel";
 import ProjectUsageSummary from "@/components/project-usage-summary";
 import ProjectSiteKeys from "@/components/project-site-keys";
+import ProjectModules from "@/components/project-modules";
 import ProjectProposalEngine from "@/components/project-proposal-engine";
 import ProjectDeploymentControl from "@/components/project-deployment-control";
 
@@ -109,8 +110,10 @@ export default async function ProjectPage({
           <ProjectUsageSummary projectId={project.id} />
         </div>
 
-        <div className="mt-4">
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <ProjectSiteKeys projectId={project.id} />
+
+          <ProjectModules projectId={project.id} />
         </div>
 
         <div className="mt-8">

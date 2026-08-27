@@ -8,6 +8,12 @@ import {
   type ModelUsage,
   type ModelPricing,
 } from "@/lib/ai/pricing";
+import {
+  resolveModules,
+  resolvePlan,
+  type ModuleKey,
+  type Modules,
+} from "@/lib/entitlements";
 
 type SiteRow = {
   site_url: string | null;
@@ -90,6 +96,32 @@ export default async function DashboardPage() {
   const projects = (projectsData ?? []) as unknown as ProjectRow[];
   const projectIds = projects.map((p) => p.id);
   const projectName = new Map(projects.map((p) => [p.id, p.name]));
+
+  // --- module entitlements (defensive: column may not exist yet) ---
+  const moduleMap = new Map<string, Modules>();
+  const planMap = new Map<string, string>();
+
+  if (projectIds.length > 0) {
+    try {
+      const { data: entData, error: entError } = await supabase
+        .from("projects")
+        .select("id, modules, plan")
+        .in("id", projectIds);
+
+      if (!entError && entData) {
+        for (const row of entData as unknown as {
+          id: string;
+          modules: unknown;
+          plan: unknown;
+        }[]) {
+          moduleMap.set(row.id, resolveModules(row.modules));
+          planMap.set(row.id, resolvePlan(row.plan));
+        }
+      }
+    } catch {
+      // Migration pending — cards simply omit module chips.
+    }
+  }
 
   // --- usage: chat runs (ai_runs) + build proposals (ai_proposals) ---
   const convToProject = new Map<string, string>();
@@ -205,32 +237,31 @@ export default async function DashboardPage() {
   const totalActions = runs.length + proposals.length;
 
   return (
-    <main className="relative min-h-screen bg-[#0c0d0f] text-neutral-200">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[420px] bg-[radial-gradient(1100px_460px_at_50%_-140px,rgba(110,168,254,0.10),transparent)]" />
-      <div className="relative max-w-7xl mx-auto px-6 md:px-8 py-8">
+    <main className="min-h-screen bg-[#f5f6f7] text-neutral-900">
+      <div className="mx-auto max-w-7xl px-6 py-8 md:px-8">
         {/* Header */}
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+            <p className="text-[11px] uppercase tracking-[0.18em] text-neutral-400">
               ESCANOR
             </p>
-            <h1 className="text-2xl font-semibold tracking-tight mt-1 text-white">
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-900">
               AI Builder
             </h1>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] backdrop-blur px-3.5 py-2">
-              <span className="w-6 h-6 rounded-full bg-gradient-to-br from-sky-400/70 to-indigo-500/70 flex items-center justify-center text-[11px] font-semibold text-white">
+            <div className="hidden items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3.5 py-2 sm:flex">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">
                 {(user.email ?? "?").slice(0, 1).toUpperCase()}
               </span>
-              <span className="text-sm text-neutral-300 max-w-[220px] truncate">
+              <span className="max-w-[220px] truncate text-sm text-neutral-700">
                 {user.email}
               </span>
             </div>
             <Link
               href="/dashboard/new"
-              className="rounded-xl bg-white text-black px-4 py-2.5 text-sm font-semibold hover:bg-neutral-200 transition"
+              className="rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-neutral-800"
             >
               + New project
             </Link>
@@ -238,24 +269,20 @@ export default async function DashboardPage() {
         </header>
 
         {/* Stat cards */}
-        <section className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <section className="mt-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Stat
             label="Projects"
             value={String(projects.length)}
             sub={`${activeCount} active now`}
-            accent="sky"
           />
           <Stat
             label="Tokens used"
             value={compact(totalTot)}
             sub={`${compact(inTot)} in · ${compact(outTot)} out`}
-            accent="violet"
           />
           <Stat
             label="Estimated spend"
-            value={
-              estimatedCostUsd === null ? "—" : formatCost(estimatedCostUsd)
-            }
+            value={estimatedCostUsd === null ? "—" : formatCost(estimatedCostUsd)}
             sub={
               estimatedCostUsd === null
                 ? "Set OPENAI_PRICING"
@@ -263,22 +290,24 @@ export default async function DashboardPage() {
                   ? "all-time, all models"
                   : "partial — some models unpriced"
             }
-            accent="emerald"
           />
           <Stat
             label="AI actions"
             value={compact(totalActions)}
             sub={`${runs.length} chats · ${proposals.length} builds`}
-            accent="amber"
           />
         </section>
 
         {/* Pricing + account */}
-        <section className="mt-4 grid lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/[0.035] backdrop-blur-xl p-5">
+        <section className="mt-4 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-xl border border-neutral-200 bg-white p-5 lg:col-span-2">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-medium text-white">Pricing &amp; models</h2>
-              <span className="text-[11px] text-neutral-500">USD per 1M tokens</span>
+              <h2 className="text-sm font-medium text-neutral-900">
+                Pricing &amp; models
+              </h2>
+              <span className="text-[11px] text-neutral-400">
+                USD per 1M tokens
+              </span>
             </div>
 
             <div className="mt-4 space-y-2">
@@ -301,14 +330,15 @@ export default async function DashboardPage() {
 
             {Object.keys(pricing).length === 0 && (
               <p className="mt-3 text-xs text-neutral-500">
-                No prices configured. Set the <code className="text-neutral-300">OPENAI_PRICING</code> env
-                var (JSON, USD per 1M tokens) to see live cost estimates.
+                No prices configured. Set the{" "}
+                <code className="text-neutral-700">OPENAI_PRICING</code> env var
+                (JSON, USD per 1M tokens) to see live cost estimates.
               </p>
             )}
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-white/[0.035] backdrop-blur-xl p-5">
-            <h2 className="text-sm font-medium text-white">Account</h2>
+          <div className="rounded-xl border border-neutral-200 bg-white p-5">
+            <h2 className="text-sm font-medium text-neutral-900">Account</h2>
             <dl className="mt-4 space-y-3 text-sm">
               <Row k="Email" v={user.email ?? "—"} />
               <Row k="Member since" v={formatDate(user.created_at)} />
@@ -322,15 +352,15 @@ export default async function DashboardPage() {
         <section className="mt-8">
           <div className="flex items-end justify-between">
             <div>
-              <h2 className="text-base font-medium text-white">Activity</h2>
-              <p className="text-neutral-500 text-sm mt-1">
+              <h2 className="text-base font-medium text-neutral-900">Activity</h2>
+              <p className="mt-1 text-sm text-neutral-500">
                 Tokens and estimated cost per action (chat &amp; build).
               </p>
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.035] backdrop-blur-xl overflow-hidden">
-            <div className="hidden md:grid grid-cols-[130px_1fr_90px_150px_120px_90px] gap-3 px-5 py-3 text-[11px] uppercase tracking-wider text-neutral-500 border-b border-white/10">
+          <div className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+            <div className="hidden grid-cols-[130px_1fr_90px_150px_120px_90px] gap-3 border-b border-neutral-200 px-5 py-3 text-[11px] uppercase tracking-wider text-neutral-400 md:grid">
               <span>When</span>
               <span>Project</span>
               <span>Action</span>
@@ -344,45 +374,43 @@ export default async function DashboardPage() {
                 No AI activity yet. Start a chat or build in a project.
               </p>
             ) : (
-              <div className="divide-y divide-white/[0.06]">
+              <div className="divide-y divide-neutral-100">
                 {recentEvents.map((e, i) => {
                   const cost = eventCost(e.model, e.inTok, e.outTok, pricing);
                   return (
                     <div
                       key={i}
-                      className="grid grid-cols-2 md:grid-cols-[130px_1fr_90px_150px_120px_90px] gap-x-3 gap-y-1 px-5 py-3 text-sm"
+                      className="grid grid-cols-2 gap-x-3 gap-y-1 px-5 py-3 text-sm md:grid-cols-[130px_1fr_90px_150px_120px_90px]"
                     >
-                      <span className="text-neutral-500 md:text-neutral-400">
-                        {relTime(e.at)}
-                      </span>
-                      <span className="text-neutral-200 truncate">
+                      <span className="text-neutral-400">{relTime(e.at)}</span>
+                      <span className="truncate text-neutral-800">
                         {e.project}
                         {e.label ? (
-                          <span className="text-neutral-500"> · {e.label}</span>
+                          <span className="text-neutral-400"> · {e.label}</span>
                         ) : null}
                       </span>
                       <span>
                         <span
-                          className={`text-[11px] rounded-md px-2 py-0.5 border ${
+                          className={`rounded-md px-2 py-0.5 text-[11px] ${
                             e.action === "Build"
-                              ? "border-sky-400/30 bg-sky-400/10 text-sky-300"
-                              : "border-white/10 bg-white/5 text-neutral-300"
+                              ? "bg-sky-50 text-sky-700 ring-1 ring-sky-200"
+                              : "bg-neutral-100 text-neutral-600"
                           }`}
                         >
                           {e.action}
                         </span>
                       </span>
-                      <span className="text-neutral-400 font-mono text-xs truncate self-center">
+                      <span className="self-center truncate font-mono text-xs text-neutral-500">
                         {e.model}
                       </span>
-                      <span className="text-right text-neutral-200 tabular-nums self-center">
+                      <span className="self-center text-right tabular-nums text-neutral-800">
                         {compact(e.totalTok)}
-                        <span className="hidden md:inline text-neutral-600 text-xs">
+                        <span className="hidden text-xs text-neutral-400 md:inline">
                           {" "}
                           ({compact(e.inTok)}/{compact(e.outTok)})
                         </span>
                       </span>
-                      <span className="text-right text-neutral-300 tabular-nums self-center">
+                      <span className="self-center text-right tabular-nums text-neutral-600">
                         {cost === null ? "—" : formatCost(cost)}
                       </span>
                     </div>
@@ -395,23 +423,23 @@ export default async function DashboardPage() {
 
         {/* Projects */}
         <section className="mt-10">
-          <h2 className="text-base font-medium text-white">Projects</h2>
-          <p className="text-neutral-500 text-sm mt-1">
+          <h2 className="text-base font-medium text-neutral-900">Projects</h2>
+          <p className="mt-1 text-sm text-neutral-500">
             Your connected WordPress websites.
           </p>
 
           {projects.length === 0 ? (
-            <div className="mt-6 rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-10 text-center">
-              <p className="text-neutral-400">No projects yet.</p>
+            <div className="mt-6 rounded-xl border border-dashed border-neutral-300 bg-white p-10 text-center">
+              <p className="text-neutral-500">No projects yet.</p>
               <Link
                 href="/dashboard/new"
-                className="inline-block mt-5 rounded-xl border border-white/15 bg-white/5 px-5 py-2.5 text-sm hover:bg-white/10 transition"
+                className="mt-5 inline-block rounded-xl border border-neutral-200 bg-white px-5 py-2.5 text-sm text-neutral-700 transition hover:bg-neutral-50"
               >
                 Connect WordPress
               </Link>
             </div>
           ) : (
-            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mt-6">
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {projects.map((project) => {
                 const site = siteOf(project);
                 const state = connectionAge(site?.last_connected_at);
@@ -419,14 +447,14 @@ export default async function DashboardPage() {
                   <Link
                     key={project.id}
                     href={`/dashboard/projects/${project.id}`}
-                    className="group rounded-2xl border border-white/10 bg-white/[0.035] backdrop-blur-xl p-5 hover:border-white/20 hover:bg-white/[0.06] transition"
+                    className="group rounded-xl border border-neutral-200 bg-white p-5 transition hover:border-neutral-300 hover:shadow-sm"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-[11px] uppercase tracking-wider text-neutral-500">
+                        <p className="text-[11px] uppercase tracking-wider text-neutral-400">
                           WordPress Project
                         </p>
-                        <h3 className="text-base font-medium mt-1.5 text-white">
+                        <h3 className="mt-1.5 text-base font-medium text-neutral-900">
                           {project.name}
                         </h3>
                       </div>
@@ -436,11 +464,19 @@ export default async function DashboardPage() {
                       />
                     </div>
 
-                    <p className="text-neutral-500 text-sm mt-3 truncate">
+                    <p className="mt-3 truncate text-sm text-neutral-500">
                       {site?.site_url ?? "No site connected"}
+                      {planMap.get(project.id) ? (
+                        <span className="text-neutral-400">
+                          {" "}
+                          · Plan {planMap.get(project.id)}
+                        </span>
+                      ) : null}
                     </p>
 
-                    <div className="border-t border-white/10 mt-5 pt-4 grid grid-cols-2 gap-3">
+                    <ModuleChips modules={moduleMap.get(project.id)} />
+
+                    <div className="mt-5 grid grid-cols-2 gap-3 border-t border-neutral-100 pt-4">
                       <Meta label="WordPress" value={site?.wp_version} />
                       <Meta label="Bridge" value={site?.bridge_version} />
                       <Meta label="Theme" value={site?.theme_name} />
@@ -448,8 +484,12 @@ export default async function DashboardPage() {
                     </div>
 
                     <div className="mt-5 flex items-center justify-between">
-                      <span className="text-xs text-neutral-500">Open workspace</span>
-                      <span className="text-neutral-500 group-hover:text-white transition">→</span>
+                      <span className="text-xs text-neutral-400">
+                        Open workspace
+                      </span>
+                      <span className="text-neutral-400 transition group-hover:text-neutral-900">
+                        →
+                      </span>
                     </div>
                   </Link>
                 );
@@ -458,8 +498,9 @@ export default async function DashboardPage() {
           )}
         </section>
 
-        <footer className="mt-12 pb-6 text-center text-[11px] text-neutral-600">
-          ESCANOR AI Builder · usage estimates are indicative and based on configured pricing.
+        <footer className="mt-12 pb-6 text-center text-[11px] text-neutral-400">
+          ESCANOR AI Builder · usage estimates are indicative and based on
+          configured pricing.
         </footer>
       </div>
     </main>
@@ -530,26 +571,19 @@ function Stat({
   label,
   value,
   sub,
-  accent,
 }: {
   label: string;
   value: string;
   sub: string;
-  accent: "sky" | "violet" | "emerald" | "amber";
 }) {
-  const dot = {
-    sky: "bg-sky-400",
-    violet: "bg-violet-400",
-    emerald: "bg-emerald-400",
-    amber: "bg-amber-400",
-  }[accent];
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.035] backdrop-blur-xl p-5">
-      <div className="flex items-center gap-2">
-        <span className={`w-1.5 h-1.5 rounded-full ${dot}`} />
-        <p className="text-[11px] uppercase tracking-wider text-neutral-500">{label}</p>
-      </div>
-      <p className="mt-2 text-2xl font-semibold text-white tabular-nums">{value}</p>
+    <div className="rounded-xl border border-neutral-200 bg-white p-5">
+      <p className="text-[11px] uppercase tracking-wider text-neutral-400">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-neutral-900">
+        {value}
+      </p>
       <p className="mt-1 text-xs text-neutral-500">{sub}</p>
     </div>
   );
@@ -565,19 +599,19 @@ function ModelLine({
   price: ModelPricing | undefined;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-3.5 py-2.5">
+    <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 py-2.5">
       <div className="min-w-0">
-        <p className="text-sm text-neutral-200 font-mono truncate">{model}</p>
+        <p className="truncate font-mono text-sm text-neutral-800">{model}</p>
         <p className="text-[11px] text-neutral-500">{role}</p>
       </div>
-      <div className="text-right shrink-0 pl-3">
+      <div className="shrink-0 pl-3 text-right">
         {price ? (
-          <p className="text-sm text-neutral-200 tabular-nums">
-            ${price.in} <span className="text-neutral-600">in</span> · ${price.out}{" "}
-            <span className="text-neutral-600">out</span>
+          <p className="text-sm tabular-nums text-neutral-800">
+            ${price.in} <span className="text-neutral-400">in</span> · ${price.out}{" "}
+            <span className="text-neutral-400">out</span>
           </p>
         ) : (
-          <p className="text-sm text-neutral-500">unpriced</p>
+          <p className="text-sm text-neutral-400">unpriced</p>
         )}
       </div>
     </div>
@@ -588,7 +622,9 @@ function Row({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <dt className="text-neutral-500">{k}</dt>
-      <dd className={`text-neutral-200 truncate ${mono ? "font-mono text-xs" : ""}`}>{v}</dd>
+      <dd className={`truncate text-neutral-800 ${mono ? "font-mono text-xs" : ""}`}>
+        {v}
+      </dd>
     </div>
   );
 }
@@ -602,23 +638,23 @@ function StatusBadge({
 }) {
   if (state === "active") {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-emerald-400 shrink-0">
-        <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" />
+      <div className="flex shrink-0 items-center gap-1.5 text-xs text-emerald-600">
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
         Active
       </div>
     );
   }
   if (state === "idle") {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-amber-400/90 shrink-0">
-        <span className="w-2 h-2 rounded-full bg-amber-400/80" />
+      <div className="flex shrink-0 items-center gap-1.5 text-xs text-amber-600">
+        <span className="h-2 w-2 rounded-full bg-amber-500" />
         {at ? `Seen ${relTime(at)}` : "Idle"}
       </div>
     );
   }
   return (
-    <div className="flex items-center gap-1.5 text-xs text-neutral-500 shrink-0">
-      <span className="w-2 h-2 rounded-full bg-neutral-600" />
+    <div className="flex shrink-0 items-center gap-1.5 text-xs text-neutral-400">
+      <span className="h-2 w-2 rounded-full bg-neutral-300" />
       Not connected
     </div>
   );
@@ -627,8 +663,43 @@ function StatusBadge({
 function Meta({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wider text-neutral-500">{label}</p>
-      <p className="text-sm mt-0.5 text-neutral-300 truncate">{value ?? "Unknown"}</p>
+      <p className="text-[11px] uppercase tracking-wider text-neutral-400">
+        {label}
+      </p>
+      <p className="mt-0.5 truncate text-sm text-neutral-700">
+        {value ?? "Unknown"}
+      </p>
+    </div>
+  );
+}
+
+function ModuleChips({ modules }: { modules?: Modules }) {
+  if (!modules) return null;
+
+  const items: { key: ModuleKey; label: string }[] = [
+    { key: "content", label: "Content" },
+    { key: "seo", label: "SEO" },
+    { key: "health", label: "Health" },
+    { key: "build", label: "Build" },
+  ];
+
+  return (
+    <div className="mt-4 flex flex-wrap gap-1.5">
+      {items.map((it) => {
+        const on = Boolean(modules[it.key]);
+        return (
+          <span
+            key={it.key}
+            className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
+              on
+                ? "bg-neutral-900 text-white"
+                : "bg-neutral-100 text-neutral-400 line-through"
+            }`}
+          >
+            {it.label}
+          </span>
+        );
+      })}
     </div>
   );
 }
