@@ -91,6 +91,17 @@ final class WPAB_Admin {
 			);
 		}
 
+		if ( WPAB_Modules::is_enabled( 'build' ) ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				'ESCANOR — Build',
+				'Build',
+				'manage_options',
+				'wp-ai-builder-build',
+				array( 'WPAB_Dashboard', 'render_build' )
+			);
+		}
+
 		add_submenu_page(
 			self::MENU_SLUG,
 			'ESCANOR — Insights',

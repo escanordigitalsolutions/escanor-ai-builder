@@ -235,6 +235,17 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Builder: generate a standalone per-site theme from a wizard brief.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/create-theme',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_create_theme' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Analysis: /analyze is computed locally (instant, no AI); /recommend is
 		// proxied to the SaaS model which reads the same audit.
 		register_rest_route(
@@ -606,6 +617,37 @@ final class WPAB_Editor {
 		}
 
 		return new WP_REST_Response( WPAB_Seo::site(), 200 );
+	}
+
+	public static function rest_build_create_theme( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+
+		$spec = array(
+			'brand'     => isset( $params['brand'] ) ? (string) $params['brand'] : '',
+			'tagline'   => isset( $params['tagline'] ) ? (string) $params['tagline'] : '',
+			'site_type' => isset( $params['site_type'] ) ? (string) $params['site_type'] : '',
+			'style'     => isset( $params['style'] ) ? (string) $params['style'] : '',
+			'primary'   => isset( $params['primary'] ) ? (string) $params['primary'] : '',
+			'dark'      => ! empty( $params['dark'] ),
+			'font'      => isset( $params['font'] ) ? (string) $params['font'] : 'sans',
+		);
+
+		if ( '' === trim( $spec['brand'] ) ) {
+			return new WP_Error( 'wpab_build_no_brand', 'A brand / site name is required.', array( 'status' => 400 ) );
+		}
+
+		try {
+			$result = WPAB_Builder::scaffold_theme( $spec );
+		} catch ( \Throwable $e ) {
+			return new WP_Error( 'wpab_build_error', 'Theme generation failed: ' . $e->getMessage(), array( 'status' => 500 ) );
+		}
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
 	public static function rest_seo_apply( WP_REST_Request $request ) {

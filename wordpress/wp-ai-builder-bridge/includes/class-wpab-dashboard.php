@@ -70,8 +70,8 @@ final class WPAB_Dashboard {
 				'key'   => 'build',
 				'icon'  => 'dashicons-hammer',
 				'title' => 'Build',
-				'desc'  => 'Generate theme and block changes, review the diff, deploy and roll back.',
-				'home'  => 'studio',
+				'desc'  => 'Generate a custom theme, sections, pages and features — then refine with AI.',
+				'home'  => 'build',
 			),
 		);
 	}
@@ -85,6 +85,9 @@ final class WPAB_Dashboard {
 	}
 	public static function render_insights(): void {
 		self::render( 'insights' );
+	}
+	public static function render_build(): void {
+		self::render( 'build' );
 	}
 
 	public static function render( string $view = 'home' ): void {
@@ -100,6 +103,7 @@ final class WPAB_Dashboard {
 		$content_url  = admin_url( 'admin.php?page=wp-ai-builder-content' );
 		$seo_url      = admin_url( 'admin.php?page=wp-ai-builder-seo' );
 		$insights_url = admin_url( 'admin.php?page=wp-ai-builder-insights' );
+		$build_url    = admin_url( 'admin.php?page=wp-ai-builder-build' );
 
 		$project_name = isset( $project['name'] ) ? (string) $project['name'] : '';
 		$modules      = WPAB_Modules::all();
@@ -110,6 +114,7 @@ final class WPAB_Dashboard {
 			'content'   => 'Chat with the AI and create or edit pages, posts and products.',
 			'seo'       => 'Optimize titles, meta and keyphrases — written into your SEO plugin.',
 			'insights'  => 'What the AI understands about this site.',
+			'build'     => 'Generate a custom theme for this site, then refine everything with AI.',
 		);
 		$subtitle = isset( $subs[ $view ] ) ? $subs[ $view ] : $subs['home'];
 
@@ -130,6 +135,7 @@ final class WPAB_Dashboard {
 			'restSeoSite'       => esc_url_raw( rest_url( self::NAMESPACE . '/editor/seo/site' ) ),
 			'restAnalyze'       => esc_url_raw( rest_url( self::NAMESPACE . '/editor/analyze' ) ),
 			'restUnderstand'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/understand' ) ),
+			'restBuildTheme'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/create-theme' ) ),
 			'seoEnabled'        => ! empty( $modules['seo'] ),
 			'nonce'            => wp_create_nonce( 'wp_rest' ),
 			'studioUrl'        => esc_url_raw( $studio ),
@@ -181,7 +187,7 @@ final class WPAB_Dashboard {
 					if ( ! $enabled ) {
 						$card_class  = 'is-locked';
 						$badge       = '&#128274; Locked';
-					} elseif ( $is_base || 'dashboard' === $m['home'] ) {
+					} elseif ( $is_base || 'dashboard' === $m['home'] || 'build' === $m['home'] ) {
 						$card_class  = 'is-active';
 						$badge       = 'Active';
 					} elseif ( 'studio' === $m['home'] ) {
@@ -205,6 +211,8 @@ final class WPAB_Dashboard {
 							<a class="button button-primary wpab-card__btn" href="<?php echo esc_url( $content_url ); ?>">Open Content</a>
 						<?php elseif ( 'dashboard' === $m['home'] ) : ?>
 							<a class="button button-primary wpab-card__btn" href="<?php echo esc_url( $seo_url ); ?>">Open SEO</a>
+						<?php elseif ( 'build' === $m['home'] ) : ?>
+							<a class="button button-primary wpab-card__btn" href="<?php echo esc_url( $build_url ); ?>">Open Build</a>
 						<?php elseif ( 'studio' === $m['home'] ) : ?>
 							<a class="button wpab-card__btn" href="<?php echo esc_url( $studio ); ?>">Open in Studio</a>
 						<?php else : ?>
@@ -294,6 +302,70 @@ final class WPAB_Dashboard {
 					<div id="wpab-insights-body" class="wpab-seo__body">
 						<p class="wpab-chat__empty">Click &ldquo;Scan site with AI&rdquo; for a plain-language read of what this site is, who it is for, the problem it solves, its objective, positioning and outlook.</p>
 					</div>
+				</div>
+			<?php endif; ?>
+
+			<?php if ( 'build' === $view ) : ?>
+				<div class="wpab-panel" id="wpab-dash-build">
+					<div class="wpab-panel__head">
+						<h2 class="wpab-panel__title"><span class="dashicons dashicons-art"></span> Create your site</h2>
+					</div>
+					<?php if ( ! $connected ) : ?>
+						<div class="wpab-build__body"><p class="wpab-chat__empty">Connect this site first to generate a theme.</p></div>
+					<?php elseif ( empty( $modules['build'] ) ) : ?>
+						<div class="wpab-build__body"><p class="wpab-chat__empty">The Build module is locked on your plan. Enable it under Modules &amp; plan to generate a custom theme.</p></div>
+					<?php else : ?>
+					<div class="wpab-build__body">
+						<p class="wpab-build__intro">Answer a few questions and the AI generates a brand-new custom block theme for this site — its own colours, type and identity. Sections, pages, custom features and AI images come next. Everything stays fully editable in WordPress and via chat.</p>
+						<div class="wpab-build__grid">
+							<label class="wpab-build__field"><span>Site name</span><input type="text" id="wpab-b-brand" placeholder="e.g. Aurora Studio" maxlength="60" /></label>
+							<label class="wpab-build__field"><span>Tagline</span><input type="text" id="wpab-b-tagline" placeholder="e.g. Design that moves people" maxlength="120" /></label>
+							<label class="wpab-build__field"><span>Site type</span>
+								<select id="wpab-b-type">
+									<option value="business">Business</option>
+									<option value="restaurant">Restaurant / café</option>
+									<option value="booking">Bookings / services</option>
+									<option value="portfolio">Portfolio</option>
+									<option value="shop">Shop</option>
+									<option value="landing">Landing page</option>
+									<option value="blog">Blog</option>
+								</select>
+							</label>
+							<label class="wpab-build__field"><span>Style</span>
+								<select id="wpab-b-style">
+									<option value="modern">Modern</option>
+									<option value="minimal">Minimal</option>
+									<option value="bold">Bold</option>
+									<option value="elegant">Elegant</option>
+									<option value="playful">Playful</option>
+								</select>
+							</label>
+							<label class="wpab-build__field"><span>Primary colour</span>
+								<span class="wpab-build__color"><input type="color" id="wpab-b-color" value="#3a5bff" /><input type="text" id="wpab-b-colorhex" value="#3a5bff" maxlength="7" /></span>
+							</label>
+							<label class="wpab-build__field"><span>Typography</span>
+								<select id="wpab-b-font">
+									<option value="sans">Modern sans</option>
+									<option value="rounded">Friendly / rounded</option>
+									<option value="serif">Classic serif</option>
+									<option value="editorial">Editorial serif</option>
+									<option value="mono">Technical / mono</option>
+								</select>
+							</label>
+							<label class="wpab-build__field"><span>Base</span>
+								<select id="wpab-b-base">
+									<option value="light">Light</option>
+									<option value="dark">Dark</option>
+								</select>
+							</label>
+						</div>
+						<div class="wpab-build__actions">
+							<button type="button" class="button button-primary button-hero" id="wpab-b-generate">Generate my theme</button>
+							<span class="wpab-build__note">Creates a new, activated block theme. Your current content is kept.</span>
+						</div>
+						<div id="wpab-build-result" class="wpab-build__result"></div>
+					</div>
+					<?php endif; ?>
 				</div>
 			<?php endif; ?>
 
@@ -419,6 +491,20 @@ final class WPAB_Dashboard {
 		#wpab-dash .wpab-glance__tile { border:1px solid #f0f0f1; border-radius:8px; padding:12px; text-align:center; background:#fafafa; }
 		#wpab-dash .wpab-glance__num { font-size:22px; font-weight:600; color:#1d2327; }
 		#wpab-dash .wpab-glance__label { font-size:12px; color:#646970; margin-top:2px; }
+		#wpab-dash .wpab-build__body { padding:18px; }
+		#wpab-dash .wpab-build__intro { color:#646970; font-size:13px; margin:0 0 16px; max-width:740px; line-height:1.6; }
+		#wpab-dash .wpab-build__grid { display:grid; grid-template-columns:repeat(2,1fr); gap:14px; max-width:820px; }
+		@media (max-width:700px){ #wpab-dash .wpab-build__grid { grid-template-columns:1fr; } }
+		#wpab-dash .wpab-build__field { display:flex; flex-direction:column; gap:5px; font-size:12px; color:#646970; font-weight:600; }
+		#wpab-dash .wpab-build__field input[type=text], #wpab-dash .wpab-build__field select { font-size:13px; padding:7px 9px; border:1px solid #dcdcde; border-radius:7px; background:#fff; color:#1d2327; }
+		#wpab-dash .wpab-build__color { display:flex; gap:8px; align-items:center; }
+		#wpab-dash .wpab-build__color input[type=color] { width:42px; height:34px; padding:0; border:1px solid #dcdcde; border-radius:7px; background:#fff; cursor:pointer; }
+		#wpab-dash .wpab-build__color input[type=text] { width:110px; }
+		#wpab-dash .wpab-build__actions { margin-top:18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+		#wpab-dash .wpab-build__note { font-size:12px; color:#8c8f94; }
+		#wpab-dash .wpab-build__result { margin-top:16px; max-width:820px; }
+		#wpab-dash .wpab-build__ok { background:#e6f5ec; border:1px solid #b7e0c6; border-radius:8px; padding:14px 16px; font-size:14px; color:#00733f; }
+		#wpab-dash .wpab-build__err { color:#b32d2e; font-size:13px; }
 		#wpab-dash .wpab-seo__field { border-top:1px solid #f0f0f1; padding:10px 0; }
 		#wpab-dash .wpab-seo__field:first-child { border-top:none; }
 		#wpab-dash .wpab-seo__fname { font-size:11px; font-weight:700; text-transform:uppercase; color:#8c8f94; margin-bottom:4px; display:flex; justify-content:space-between; }
@@ -1163,6 +1249,47 @@ final class WPAB_Dashboard {
 						return '<div class="wpab-glance__tile"><div class="wpab-glance__num">' + (t.count || 0) + '</div><div class="wpab-glance__label">' + esc(t.label) + '</div></div>';
 					}).join('');
 				}).catch(function () { glanceBody.innerHTML = '<p class="wpab-chat__empty">Could not reach WordPress.</p>'; });
+			}
+
+			/* ---- Builder wizard ---- */
+			var bGen = $('wpab-b-generate');
+			if (bGen) {
+				var bColor = $('wpab-b-color'), bColorHex = $('wpab-b-colorhex');
+				if (bColor && bColorHex) {
+					bColor.addEventListener('input', function () { bColorHex.value = bColor.value; });
+					bColorHex.addEventListener('input', function () { if (/^#[0-9a-fA-F]{6}$/.test(bColorHex.value)) { bColor.value = bColorHex.value; } });
+				}
+				bGen.addEventListener('click', function () {
+					if (busy) { return; }
+					var result = $('wpab-build-result');
+					var brand = ($('wpab-b-brand').value || '').trim();
+					if (!brand) { result.innerHTML = '<div class="wpab-build__err">Please enter a site name.</div>'; return; }
+					setBusy(true); bGen.disabled = true;
+					result.innerHTML = '<p class="wpab-chat__empty"><span class="wpab-typing">Generating your theme… this takes a few seconds.</span></p>';
+					var payload = {
+						brand: brand,
+						tagline: ($('wpab-b-tagline').value || '').trim(),
+						site_type: $('wpab-b-type').value,
+						style: $('wpab-b-style').value,
+						primary: (bColorHex && bColorHex.value) || '#3a5bff',
+						font: $('wpab-b-font').value,
+						dark: $('wpab-b-base').value === 'dark'
+					};
+					api('POST', cfg.restBuildTheme, payload).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) {
+							result.innerHTML = '<div class="wpab-build__err">' + esc((out.data && (out.data.message || out.data.error)) || 'Could not generate the theme.') + '</div>';
+							bGen.disabled = false; return;
+						}
+						var d = out.data;
+						result.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; Your theme &ldquo;' + esc(d.theme_name) + '&rdquo; is live.</strong>'
+							+ '<div style="margin-top:8px">'
+							+ (d.preview_url ? '<a class="button" href="' + esc(d.preview_url) + '" target="_blank" rel="noopener">View site</a> ' : '')
+							+ (d.editor_url ? '<a class="button" href="' + esc(d.editor_url) + '" target="_blank" rel="noopener">Open Site Editor</a>' : '')
+							+ '</div><p style="margin:10px 0 0;color:#3c434a;font-size:13px">Next in the Builder: sections, pages, custom features and AI images. You can already refine everything in Content chat and the Studio.</p></div>';
+						bGen.textContent = 'Generate another';
+					}).catch(function () { result.innerHTML = '<div class="wpab-build__err">Network error generating the theme.</div>'; bGen.disabled = false; })
+					.then(function () { setBusy(false); });
+				});
 			}
 
 			loadTypes();
