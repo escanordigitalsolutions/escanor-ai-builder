@@ -26,7 +26,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 final class WPAB_Builder {
 
-	private const BASE_THEME = 'escanor-native';
+	/**
+	 * The base skeleton is bundled inside this plugin (base-theme/), so a fresh
+	 * WordPress with ONLY the bridge installed can generate a theme — no other
+	 * theme has to be present. It is copied and re-themed per site; it is never
+	 * activated on its own.
+	 */
+	private static function base_theme_dir(): string {
+		return rtrim( wp_normalize_path( WPAB_DIR ), '/' ) . '/base-theme';
+	}
 
 	/** Curated, dependency-free font stacks selectable in the wizard. */
 	private static function font_stack( string $vibe ): string {
@@ -205,13 +213,13 @@ final class WPAB_Builder {
 	 * or a WP_Error.
 	 */
 	public static function scaffold_theme( array $spec ) {
-		$base_dir = get_theme_root() . '/' . self::BASE_THEME;
+		$base_dir = self::base_theme_dir();
 
 		if ( ! is_dir( $base_dir ) ) {
 			return new WP_Error(
 				'wpab_builder_base_missing',
-				'The ESCANOR Native theme is required as the base for generated themes. Install and keep it, then try again.',
-				array( 'status' => 400 )
+				'The bundled base theme is missing from the bridge plugin. Re-upload the plugin and try again.',
+				array( 'status' => 500 )
 			);
 		}
 
@@ -230,6 +238,11 @@ final class WPAB_Builder {
 		$dest = get_theme_root() . '/' . $slug;
 
 		require_once ABSPATH . 'wp-admin/includes/file.php';
+
+		// copy_dir() copies files INTO $dest, so the destination must exist first.
+		if ( ! $fs->is_dir( $dest ) && ! $fs->mkdir( $dest, FS_CHMOD_DIR ) ) {
+			return new WP_Error( 'wpab_builder_mkdir', 'Could not create the new theme folder.', array( 'status' => 500 ) );
+		}
 
 		$copied = copy_dir( $base_dir, $dest );
 
