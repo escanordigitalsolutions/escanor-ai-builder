@@ -22,7 +22,6 @@ final class WPAB_Admin {
 
 	private const MENU_SLUG      = 'wp-ai-builder';
 	private const BRIDGE_SLUG    = 'wp-ai-builder-bridge';
-	private const SNAPSHOTS_SLUG = 'wp-ai-builder-snapshots';
 	private const LOG_SLUG       = 'wp-ai-builder-log';
 
 	public static function init(): void {

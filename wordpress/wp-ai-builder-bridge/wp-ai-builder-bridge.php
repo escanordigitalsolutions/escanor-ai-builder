@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       WP AI Builder Bridge
  * Plugin URI:        https://builder.escanor.lt
- * Description:       Secure bridge between this WordPress site and the ESCANOR AI Builder. Project inspection, controlled writes with SHA-256 verification, snapshots, health checks and one-click rollback.
- * Version:           0.62.0
+ * Description:       Read-only bridge between this WordPress site and the ESCANOR AI Builder. Lets the AI Editor inspect the active theme and the site's content.
+ * Version:           0.63.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            ESCANOR Digital Solutions
@@ -32,7 +32,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAB_VERSION', '0.62.0' );
+define( 'WPAB_VERSION', '0.63.0' );
 define( 'WPAB_FILE', __FILE__ );
 define( 'WPAB_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAB_URL', plugin_dir_url( __FILE__ ) );
@@ -44,6 +44,7 @@ require_once WPAB_DIR . 'includes/class-wpab-auth.php';
 require_once WPAB_DIR . 'includes/class-wpab-scopes.php';
 require_once WPAB_DIR . 'includes/class-wpab-content.php';
 require_once WPAB_DIR . 'includes/class-wpab-files.php';
+require_once WPAB_DIR . 'includes/class-wpab-theme-writer.php';
 require_once WPAB_DIR . 'includes/class-wpab-rest.php';
 require_once WPAB_DIR . 'includes/class-wpab-admin.php';
 require_once WPAB_DIR . 'includes/class-wpab-cloud.php';
@@ -80,7 +81,7 @@ register_activation_hook( __FILE__, 'wpab_activate' );
 
 /**
  * Deactivation drops the write lock so a crashed apply cannot leave the site
- * permanently locked, but keeps tokens and snapshots intact.
+ * permanently locked, but keeps the bridge token intact.
  */
 function wpab_deactivate() {
 	delete_option( 'wpab_apply_lock' );
