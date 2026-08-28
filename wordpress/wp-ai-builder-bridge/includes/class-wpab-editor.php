@@ -292,6 +292,24 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Builder: the AI audit log (inputs, exact prompt, output summary).
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/ai-log',
+			array(
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( __CLASS__, 'rest_ai_log_get' ),
+					'permission_callback' => $permission,
+				),
+				array(
+					'methods'             => WP_REST_Server::DELETABLE,
+					'callback'            => array( __CLASS__, 'rest_ai_log_clear' ),
+					'permission_callback' => $permission,
+				),
+			)
+		);
+
 		// Analysis: /analyze is computed locally (instant, no AI); /recommend is
 		// proxied to the SaaS model which reads the same audit.
 		register_rest_route(
@@ -583,6 +601,142 @@ final class WPAB_Editor {
 		return null;
 	}
 
+	/* ---------------------------------------------------------------------
+	 * AI log: a rolling audit of every AI generation — the inputs collected,
+	 * the exact prompt the model was given, and a summary of what it returned.
+	 * Stored non-autoloaded and capped; base64 image payloads are never kept.
+	 * ------------------------------------------------------------------ */
+
+	private const AI_LOG_OPTION = 'wpab_ai_log';
+	private const AI_LOG_MAX    = 25;
+
+	private static function truncate( string $s, int $len ): string {
+		if ( strlen( $s ) <= $len ) {
+			return $s;
+		}
+		return substr( $s, 0, $len ) . '…';
+	}
+
+	private static function ai_log_output( string $action, $result ): array {
+		if ( ! is_array( $result ) ) {
+			return array();
+		}
+
+		if ( 'generate-site' === $action ) {
+			$pages = array();
+			if ( isset( $result['pages'] ) && is_array( $result['pages'] ) ) {
+				foreach ( $result['pages'] as $p ) {
+					if ( ! is_array( $p ) ) {
+						continue;
+					}
+					$blocks  = (string) ( $p['blocks'] ?? '' );
+					$pages[] = array(
+						'title'   => (string) ( $p['title'] ?? '' ),
+						'slug'    => (string) ( $p['slug'] ?? '' ),
+						'front'   => ! empty( $p['front'] ),
+						'chars'   => strlen( $blocks ),
+						'preview' => self::truncate( $blocks, 1500 ),
+					);
+				}
+			}
+
+			$patterns = array();
+			if ( isset( $result['patterns'] ) && is_array( $result['patterns'] ) ) {
+				foreach ( $result['patterns'] as $p ) {
+					if ( ! is_array( $p ) ) {
+						continue;
+					}
+					$patterns[] = array(
+						'title' => (string) ( $p['title'] ?? '' ),
+						'slug'  => (string) ( $p['slug'] ?? '' ),
+						'chars' => strlen( (string) ( $p['blocks'] ?? '' ) ),
+					);
+				}
+			}
+
+			return array( 'pages' => $pages, 'patterns' => $patterns );
+		}
+
+		if ( 'build-image' === $action ) {
+			$count = ( isset( $result['images'] ) && is_array( $result['images'] ) ) ? count( $result['images'] ) : 0;
+			return array(
+				'model'  => isset( $result['model'] ) ? (string) $result['model'] : '',
+				'images' => $count,
+			);
+		}
+
+		return array();
+	}
+
+	private static function ai_log_add( string $action, array $input, $result, string $error ): void {
+		$debug  = ( is_array( $result ) && isset( $result['debug'] ) && is_array( $result['debug'] ) ) ? $result['debug'] : array();
+		$prompt = '';
+
+		if ( isset( $debug['prompt'] ) ) {
+			$prompt = (string) $debug['prompt'];
+		} elseif ( isset( $debug['prompts'] ) && is_array( $debug['prompts'] ) ) {
+			$prompt = implode( "\n\n----\n\n", array_map( 'strval', $debug['prompts'] ) );
+		}
+
+		$usage = ( is_array( $result ) && isset( $result['usage'] ) && is_array( $result['usage'] ) ) ? $result['usage'] : null;
+		$model = isset( $debug['model'] ) ? (string) $debug['model'] : ( isset( $result['model'] ) ? (string) $result['model'] : '' );
+
+		$user  = wp_get_current_user();
+
+		$entry = array(
+			'time'   => gmdate( 'c' ),
+			'user'   => ( $user && $user->exists() ) ? (string) $user->user_login : '',
+			'action' => $action,
+			'model'  => $model,
+			'ok'     => ( '' === $error ),
+			'error'  => self::truncate( $error, 500 ),
+			'input'  => $input,
+			'prompt' => self::truncate( $prompt, 8000 ),
+			'output' => self::ai_log_output( $action, $result ),
+			'usage'  => $usage,
+		);
+
+		$log = get_option( self::AI_LOG_OPTION, array() );
+		if ( ! is_array( $log ) ) {
+			$log = array();
+		}
+
+		array_unshift( $log, $entry );
+		if ( count( $log ) > self::AI_LOG_MAX ) {
+			$log = array_slice( $log, 0, self::AI_LOG_MAX );
+		}
+
+		update_option( self::AI_LOG_OPTION, $log, false );
+	}
+
+	public static function rest_ai_log_get( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$log = get_option( self::AI_LOG_OPTION, array() );
+
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'entries' => is_array( $log ) ? $log : array(),
+			),
+			200
+		);
+	}
+
+	public static function rest_ai_log_clear( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		delete_option( self::AI_LOG_OPTION );
+
+		return new WP_REST_Response( array( 'success' => true ), 200 );
+	}
+
 	public static function rest_seo_get( WP_REST_Request $request ) {
 		$gate = self::require_module( 'seo' );
 		if ( is_wp_error( $gate ) ) {
@@ -714,20 +868,25 @@ final class WPAB_Editor {
 			'siteType' => isset( $params['site_type'] ) ? (string) $params['site_type'] : '',
 			'style'    => isset( $params['style'] ) ? (string) $params['style'] : '',
 			'primary'  => isset( $params['primary'] ) ? (string) $params['primary'] : '',
+			'custom'   => isset( $params['custom'] ) ? (string) $params['custom'] : '',
 		);
 
 		$result = WPAB_Cloud::request( 'agent/build-site', $body, 120 );
 
 		if ( is_wp_error( $result ) ) {
+			self::ai_log_add( 'generate-site', $body, null, $result->get_error_message() );
 			return $result;
 		}
 
 		if ( empty( $result['pages'] ) || ! is_array( $result['pages'] ) ) {
 			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The AI did not return any pages.';
+			self::ai_log_add( 'generate-site', $body, is_array( $result ) ? $result : null, $msg );
 			return new WP_Error( 'wpab_build_empty', $msg, array( 'status' => 502 ) );
 		}
 
 		$patterns = ( isset( $result['patterns'] ) && is_array( $result['patterns'] ) ) ? $result['patterns'] : array();
+
+		self::ai_log_add( 'generate-site', $body, $result, '' );
 
 		try {
 			$applied = WPAB_Builder::apply_site( $result['pages'], $patterns );
@@ -765,13 +924,17 @@ final class WPAB_Editor {
 		$result = WPAB_Cloud::request( 'agent/build-images', $body, 120 );
 
 		if ( is_wp_error( $result ) ) {
+			self::ai_log_add( 'build-image', $body, null, $result->get_error_message() );
 			return $result;
 		}
 
 		if ( empty( $result['images'] ) || ! is_array( $result['images'] ) ) {
 			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'No image was generated.';
+			self::ai_log_add( 'build-image', $body, is_array( $result ) ? $result : null, $msg );
 			return new WP_Error( 'wpab_build_image_empty', $msg, array( 'status' => 502 ) );
 		}
+
+		self::ai_log_add( 'build-image', $body, $result, '' );
 
 		$first = $result['images'][0];
 		$b64   = isset( $first['b64'] ) ? (string) $first['b64'] : '';

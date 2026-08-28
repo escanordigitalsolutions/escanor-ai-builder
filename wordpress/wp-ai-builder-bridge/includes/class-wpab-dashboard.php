@@ -140,6 +140,7 @@ final class WPAB_Dashboard {
 			'restBuildImage'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/image' ) ),
 			'restBuildGallery'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/gallery' ) ),
 			'restBuildFeature'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/feature' ) ),
+			'restAiLog'         => esc_url_raw( rest_url( self::NAMESPACE . '/editor/ai-log' ) ),
 			'seoEnabled'        => ! empty( $modules['seo'] ),
 			'nonce'            => wp_create_nonce( 'wp_rest' ),
 			'studioUrl'        => esc_url_raw( $studio ),
@@ -363,11 +364,27 @@ final class WPAB_Dashboard {
 								</select>
 							</label>
 						</div>
+						<div class="wpab-build__custom">
+							<label for="wpab-b-custom"><span>Extra details / custom instructions <em>(optional)</em></span></label>
+							<textarea id="wpab-b-custom" rows="4" placeholder="Anything specific: the pages you need (e.g. Services, Menu, Portfolio, Pricing, Contact), tone of voice, key selling points, sections you want, what to avoid. The more you write, the more tailored the pages."></textarea>
+							<span class="wpab-build__note">Used when generating pages &amp; sections. The theme colours/type come from the fields above.</span>
+						</div>
 						<div class="wpab-build__actions">
 							<button type="button" class="button button-primary button-hero" id="wpab-b-generate">Generate my theme</button>
 							<span class="wpab-build__note">Creates a new, activated block theme. Your current content is kept.</span>
 						</div>
 						<div id="wpab-build-result" class="wpab-build__result"></div>
+
+						<div class="wpab-log" id="wpab-ai-log">
+							<div class="wpab-log__head">
+								<p class="wpab-log__title"><span class="dashicons dashicons-media-text"></span> AI log &mdash; inputs, prompt &amp; output</p>
+								<span>
+									<button type="button" class="button button-small" id="wpab-log-refresh">Refresh</button>
+									<button type="button" class="button button-small" id="wpab-log-clear">Clear</button>
+								</span>
+							</div>
+							<div class="wpab-log__list" id="wpab-log-list"><p class="wpab-chat__empty">Loading&hellip;</p></div>
+						</div>
 					</div>
 					<?php endif; ?>
 				</div>
@@ -504,6 +521,23 @@ final class WPAB_Dashboard {
 		#wpab-dash .wpab-build__color { display:flex; gap:8px; align-items:center; }
 		#wpab-dash .wpab-build__color input[type=color] { width:42px; height:34px; padding:0; border:1px solid #dcdcde; border-radius:7px; background:#fff; cursor:pointer; }
 		#wpab-dash .wpab-build__color input[type=text] { width:110px; }
+		#wpab-dash .wpab-build__custom { max-width:820px; margin-top:14px; display:flex; flex-direction:column; gap:5px; font-size:12px; color:#646970; font-weight:600; }
+		#wpab-dash .wpab-build__custom em { font-weight:400; color:#8a8f94; font-style:normal; }
+		#wpab-dash .wpab-build__custom textarea { font-size:13px; padding:9px 11px; border:1px solid #dcdcde; border-radius:7px; background:#fff; color:#1d2327; font-weight:400; line-height:1.5; resize:vertical; min-height:84px; font-family:inherit; }
+		#wpab-dash .wpab-log { max-width:900px; margin-top:22px; border-top:1px solid #e2e4e7; padding-top:16px; }
+		#wpab-dash .wpab-log__head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+		#wpab-dash .wpab-log__title { font-size:13px; font-weight:600; color:#1d2327; margin:0; }
+		#wpab-dash .wpab-log__list { margin-top:12px; display:flex; flex-direction:column; gap:8px; }
+		#wpab-dash .wpab-log__item { border:1px solid #e2e4e7; border-radius:8px; overflow:hidden; background:#fff; }
+		#wpab-dash .wpab-log__sum { display:flex; align-items:center; gap:10px; padding:9px 12px; cursor:pointer; font-size:13px; }
+		#wpab-dash .wpab-log__sum:hover { background:#f6f7f7; }
+		#wpab-dash .wpab-log__badge { font-size:11px; font-weight:600; padding:2px 7px; border-radius:20px; }
+		#wpab-dash .wpab-log__badge.is-ok { background:rgba(46,160,67,.12); color:#1a7f37; }
+		#wpab-dash .wpab-log__badge.is-err { background:rgba(207,34,46,.1); color:#cf222e; }
+		#wpab-dash .wpab-log__meta { color:#787c82; font-size:12px; margin-left:auto; }
+		#wpab-dash .wpab-log__body { padding:0 12px 12px; border-top:1px solid #f0f0f1; }
+		#wpab-dash .wpab-log__body h4 { margin:12px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#787c82; }
+		#wpab-dash .wpab-log__pre { margin:0; background:#1d2327; color:#e6e7e8; padding:10px 12px; border-radius:7px; font-size:12px; line-height:1.5; white-space:pre-wrap; word-break:break-word; max-height:320px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
 		#wpab-dash .wpab-build__actions { margin-top:18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 		#wpab-dash .wpab-build__note { font-size:12px; color:#8c8f94; }
 		#wpab-dash .wpab-build__result { margin-top:16px; max-width:820px; }
@@ -1396,7 +1430,8 @@ final class WPAB_Dashboard {
 						style: $('wpab-b-style').value,
 						primary: (bColorHex && bColorHex.value) || '#3a5bff',
 						font: $('wpab-b-font').value,
-						dark: $('wpab-b-base').value === 'dark'
+						dark: $('wpab-b-base').value === 'dark',
+						custom: (($('wpab-b-custom') && $('wpab-b-custom').value) || '').trim()
 					};
 					api('POST', cfg.restBuildTheme, payload).then(function (out) {
 						if (!out.ok || !out.data || out.data.success === false) {
@@ -1419,10 +1454,46 @@ final class WPAB_Dashboard {
 				});
 			}
 
+			function initAiLog() {
+				var wrap = $('wpab-ai-log'); if (!wrap) { return; }
+				var list = $('wpab-log-list');
+				function fmtTime(t) { try { return new Date(t).toLocaleString(); } catch (e) { return t; } }
+				function render(entries) {
+					if (!entries || !entries.length) { list.innerHTML = '<p class="wpab-chat__empty">No AI generations logged yet. Generate pages or images and they appear here.</p>'; return; }
+					list.innerHTML = entries.map(function (e) {
+						var ok = e.ok !== false;
+						var input = JSON.stringify(e.input || {}, null, 2);
+						var output = JSON.stringify(e.output || {}, null, 2);
+						var tok = e.usage ? (' · ' + (e.usage.totalTokens || e.usage.total_tokens || '?') + ' tok') : '';
+						var head = '<div class="wpab-log__sum"><span class="wpab-log__badge ' + (ok ? 'is-ok' : 'is-err') + '">' + (ok ? 'OK' : 'ERR') + '</span><strong>' + esc(e.action || '') + '</strong>' + (e.model ? ' <span style="color:#787c82">' + esc(e.model) + '</span>' : '') + '<span class="wpab-log__meta">' + esc(fmtTime(e.time)) + tok + '</span></div>';
+						var body = '<div class="wpab-log__body" hidden>'
+							+ (e.error ? '<h4>Error</h4><pre class="wpab-log__pre">' + esc(e.error) + '</pre>' : '')
+							+ '<h4>Input collected</h4><pre class="wpab-log__pre">' + esc(input) + '</pre>'
+							+ '<h4>Prompt sent to the model</h4><pre class="wpab-log__pre">' + esc(e.prompt || '(none)') + '</pre>'
+							+ '<h4>Output</h4><pre class="wpab-log__pre">' + esc(output) + '</pre>'
+							+ '</div>';
+						return '<div class="wpab-log__item">' + head + body + '</div>';
+					}).join('');
+					Array.prototype.forEach.call(list.querySelectorAll('.wpab-log__sum'), function (s) {
+						s.addEventListener('click', function () { var b = s.nextElementSibling; if (b) { b.hidden = !b.hidden; } });
+					});
+				}
+				function load() {
+					list.innerHTML = '<p class="wpab-chat__empty">Loading\u2026</p>';
+					api('GET', cfg.restAiLog).then(function (out) {
+						if (out.ok && out.data && out.data.entries) { render(out.data.entries); }
+						else { list.innerHTML = '<p class="wpab-chat__empty">Could not load the log.</p>'; }
+					}).catch(function () { list.innerHTML = '<p class="wpab-chat__empty">Could not load the log.</p>'; });
+				}
+				var rb = $('wpab-log-refresh'); if (rb) { rb.addEventListener('click', load); }
+				var cb = $('wpab-log-clear'); if (cb) { cb.addEventListener('click', function () { api('DELETE', cfg.restAiLog).then(function () { load(); }); }); }
+				load();
+			}
 			loadTypes();
 			initPicker();
 			initSeo();
 			initGlance();
+			initAiLog();
 		})();
 		</script>
 		<?php

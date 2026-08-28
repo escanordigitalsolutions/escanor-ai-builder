@@ -118,7 +118,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, images, model: IMAGE_MODEL });
+    return NextResponse.json({
+      success: true,
+      images,
+      model: IMAGE_MODEL,
+      debug: {
+        model: IMAGE_MODEL,
+        input: { brand, tagline, siteType, style, index: hasIndex ? index : null, count },
+        prompts: prompts.map((p) => p.prompt),
+      },
+    });
   } catch (error) {
     console.error("Build images error:", error);
 

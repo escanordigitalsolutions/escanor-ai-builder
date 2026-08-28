@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
     const tagline = str(body.tagline).trim().slice(0, 160);
     const siteType = str(body.siteType || body.site_type).trim().slice(0, 40) || "business";
     const style = str(body.style).trim().slice(0, 40) || "modern";
+    const custom = str(body.custom || body.customPrompt || body.details).trim().slice(0, 3000);
 
     const instructions = `
 You are designing a small but COMPLETE WordPress website as Gutenberg block markup for a new site.
@@ -109,7 +110,7 @@ Brand: ${brand}
 ${tagline ? `Tagline: ${tagline}` : ""}
 Site type: ${siteType}
 Style: ${style}
-
+${custom ? `\nCLIENT'S SPECIFIC INSTRUCTIONS (follow these closely — they override the generic guidance where they conflict, as long as the output stays valid Gutenberg block markup):\n${custom}\n` : ""}
 Call submit_site with 4-8 pages appropriate to a ${siteType} site, PLUS 6-10 reusable section "patterns".
 
 Pages: Exactly ONE page has front=true — the home page — and it must be the richest: a hero (a large heading + a short intro paragraph + a primary button), then 4-6 more sections (services/features grid, about, a stats or "why us" band, a testimonial-style quote, an FAQ or steps section, and a closing call-to-action). Build a FULL site — choose the pages that fit a ${siteType}: e.g. About, Services (or Menu/Portfolio/Shop), Pricing, FAQ, Gallery, Team, Blog, Contact. Every non-home page should still have 2-4 real sections, not a single block.
@@ -201,6 +202,13 @@ Keep each page focused; the whole site should feel cohesive and on-brand for a $
             totalTokens: response.usage.total_tokens,
           }
         : null,
+      // Echoed so the WordPress bridge can store a full audit log of what was
+      // asked and what the model was told (the exact prompt) for this account.
+      debug: {
+        model: MODEL,
+        input: { brand, tagline, siteType, style, custom },
+        prompt: instructions,
+      },
     });
   } catch (error) {
     console.error("Build site error:", error);
