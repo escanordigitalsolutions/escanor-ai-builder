@@ -26,10 +26,22 @@ READ THE BRIEF FIRST. The brief is mostly a free-text description in "prompt" (p
 - the pages the site needs, the sections on each, the colour direction and the overall style.
 Honour anything the brief states explicitly (a colour, a page, a library, a vibe, a language) EXACTLY. Where the brief is silent, make confident, tasteful, opinionated decisions — never leave it generic.
 
-DESIGN BAR — this must feel like an award-winning custom site (Awwwards / Linear / Stripe / Vercel / Framer), never a template:
-- Confident fluid typography, generous whitespace, a refined colour system with a signature gradient, depth from soft shadows, rounded corners, and smooth, tasteful motion.
-- Mobile-first and fully responsive.
-- Signature motion + effects to plan for: scroll-triggered staggered reveals, parallax depth, an ANIMATED hero background, a sticky header that shrinks on scroll, a scroll-progress indicator, count-up stats, and modern interactive buttons (gradient / shine / magnetic hover). Elegant, never gaudy, and always mindful of prefers-reduced-motion.
+=== ART DIRECTION FIRST (this is what stops themes looking generic) ===
+Before anything else, COMMIT to a distinctive art-direction CONCEPT that fits THIS brief — then let fonts, colour, layout, imagery and motion all flow from it. Do NOT default to the same clean tech-SaaS look every time. Pick the archetype that suits the business (a bakery, a law firm, a skate brand and a fintech must look nothing alike):
+- editorial — magazine feel: oversized serif/display headlines, asymmetric columns, ruled lines, restrained palette, huge whitespace. Fonts like Fraunces, Playfair Display, Libre Caslon Text, Newsreader.
+- brutalist / mono — raw grid, hard 1-2px borders, NO shadows, high contrast, one loud accent, monospace accents. Fonts like Space Mono, Archivo, JetBrains Mono, Space Grotesk.
+- luxury — dark or ivory, gold/muted accent, generous spacing, small caps, slow elegant motion. Fonts like Cormorant Garamond, Marcellus, Italiana, Cormorant.
+- warm / organic — cream + earth tones, big rounded shapes, blobs, photography-led, friendly. Fonts like Bricolage Grotesque, Gambetta, DM Serif Display, Fraunces.
+- techno / cyber — dark, neon or electric accent, grid/scanlines, glow, kinetic. Fonts like Chakra Petch, Rajdhani, Space Grotesk + mono.
+- swiss / modernist — strict grid, Helvetica-like sans, black/red/white, function-first, confident type scale. Fonts like Inter, Archivo, Manrope, Sora.
+- maximalist / playful — bright multi-colour, sticker energy, big rounded type, motion everywhere. Fonts like Poppins, Bricolage, Clash-style, Baloo.
+This can be ONE archetype or a considered blend. AIM HIGH — Awwwards-level craft: a strong signature idea, dramatic type scale, asymmetry, full-bleed imagery, generous negative space. AVOID the safe defaults (centered 3-column card grids, the navy/indigo SaaS palette, a right-side hero "card") unless the brief truly calls for them. Every theme must have ONE signature device it is built around.
+
+DESIGN BAR — express the concept with real craft:
+- Typography that MATCHES the concept, with a dramatic scale (display headlines can be genuinely large) and clear hierarchy — not the same safe sans every time.
+- A distinctive colour system true to the concept (a signature gradient only where it fits — brutalist/editorial concepts may use none), real contrast, depth via considered shadows or hard edges per the archetype.
+- Ambitious, mobile-first responsive layout: asymmetry, full-bleed sections, overlap and off-grid moments where the concept supports them — not everything boxed and centered.
+- Signature motion to plan for: scroll-triggered staggered reveals, parallax depth, an ANIMATED hero background, a sticky header that shrinks on scroll, a scroll-progress indicator, count-up stats, and modern interactive buttons. Elegant and intentional, tuned to the concept (a luxury site moves slowly; a techno site is sharp), always mindful of prefers-reduced-motion.
 
 MOTION + JS LIBRARIES — these are loaded by functions.php and MUST come from cdnjs ONLY (https://cdnjs.cloudflare.com/ajax/libs/...). Use EXACT version URLs. Choose 2-5 that the sections actually use:
 - GSAP core — gsap/3.12.5/gsap.min.js — and ScrollTrigger — gsap/3.12.5/ScrollTrigger.min.js. This is the animation backbone: reveals, parallax, pinned sections, hero motion. Include it in almost every theme for a premium feel.
@@ -60,7 +72,7 @@ STRUCTURE (classic PHP theme):
 
 SECTIONS — the top-level "sections" array describes every UNIQUE section as an object:
 - slug: kebab-case, unique (matches template-parts/section-{slug}.php and the .section-{slug} CSS class).
-- type: one of hero | logos | features | feature-split | stats | gallery | testimonials | pricing | faq | steps | team | cta | contact | content.
+- type: one of hero | logos | features | feature-split | stats | gallery | testimonials | pricing | faq | steps | team | cta | contact | content | statement | marquee | oversized-quote | index-list | process | full-bleed-image | split-editorial | showcase. Use the expressive types (statement, marquee, oversized-quote, index-list, full-bleed-image, split-editorial) to break the generic rhythm — at least ONE section should be a distinctive, non-standard "signature" moment that embodies the concept.
 - layout: a short hint, e.g. "split-left-image", "3-col-cards", "centered", "alternating-rows", "masonry", "logo-marquee", "two-col".
 - background: one of base | surface | gradient | dark | animated-mesh | animated-blobs | animated-aurora | animated-grid | animated-particles.
 - animation: a short hint, e.g. "stagger-reveal", "parallax", "count-up", "slider", "typed-headline", "tilt-cards", "pin-scroll".
@@ -76,6 +88,14 @@ Output rules:
 JSON schema (use EXACTLY these keys):
 {
   "theme": { "name": string, "description": string, "textDomain": string },
+  "concept": {
+    "archetype": string,
+    "mood": string,
+    "signature": string,
+    "typeConcept": string,
+    "colorConcept": string,
+    "layoutConcept": string
+  },
   "design": {
     "palette": { "bg": hex, "surface": hex, "fg": hex, "muted": hex, "border": hex, "accent": hex, "accent2": hex },
     "gradient": string,

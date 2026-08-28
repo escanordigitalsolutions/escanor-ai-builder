@@ -32,6 +32,14 @@ DESIGN + QUALITY BAR (Awwwards / Linear / Stripe / Vercel / Framer):
 - Accessible: semantic HTML5, alt text, visible :focus-visible, aria where needed, and honour @media (prefers-reduced-motion: reduce) — motion must degrade to no-motion gracefully and content must NEVER stay hidden if JS or GSAP fails.
 - Real, on-topic copy for the site's purpose (never lorem ipsum), guided by each section's "copy". Keep headlines tight (<= ~8 words) and paragraphs to 1-3 sentences.
 
+=== EXPRESS THE CONCEPT (this is what makes it distinctive, not generic) ===
+The blueprint carries a "concept" (archetype, mood, signature, typeConcept, colorConcept, layoutConcept). Build the theme to EMBODY it, aiming for Awwwards-level craft:
+- Typography: honour typeConcept with a DRAMATIC, confident scale — display/hero headlines can be genuinely large (e.g. clamp up to ~8-10rem for an editorial/statement hero) with tight tracking and strong hierarchy. Do not shrink everything to the same safe size.
+- Layout: honour layoutConcept — use asymmetry, full-bleed sections, overlap, off-grid and generous negative space where the concept calls for it. Avoid defaulting every section to a centered 3-column card grid.
+- Colour: honour colorConcept exactly (a brutalist/editorial concept may use hard edges and no gradient; a luxury one uses restraint and space). Use the blueprint palette/tokens; don't fall back to a generic navy+indigo look.
+- Signature: make the section(s) that carry the "signature" genuinely distinctive — the memorable moment of the site (an oversized quote, a marquee, a full-bleed treated image, a giant index, kinetic type).
+- Imagery + motion tuned to the concept (a luxury site moves slowly; a techno site is sharp). Keep everything responsive, accessible and reduced-motion safe — bold, but never broken.
+
 === CLASS + DATA-ATTRIBUTE CONTRACT (critical — obey exactly) ===
 Naming (deterministic from the blueprint, so CSS and markup agree across batches):
 - Each section's root element is <section class="section section-<slug>" ...> using the section's slug EXACTLY. Child elements use BEM: .section-<slug>__<part> (e.g. __inner, __title, __grid, __card, __cta). Shared primitives use these global classes: .container, .btn, .btn--primary, .btn--ghost, .eyebrow, .section__head, .grid, .card.

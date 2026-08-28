@@ -118,6 +118,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/design-plan',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_design_plan' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/create-theme',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -294,6 +303,30 @@ final class WPAB_Editor {
 			),
 			200
 		);
+	}
+
+	/**
+	 * Staged design revision — the critique step. Proxies to the SaaS, which
+	 * returns a small punch-list of design elevations; the JS applies each one
+	 * via the edit-theme path so every call stays small and timeout-safe.
+	 */
+	public static function rest_design_plan( WP_REST_Request $request ) {
+		$params  = self::json_params( $request );
+		$payload = array();
+		if ( isset( $params['concept'] ) && is_array( $params['concept'] ) ) {
+			$payload['concept'] = $params['concept'];
+		} elseif ( isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ) {
+			$payload['blueprint'] = $params['blueprint'];
+		}
+
+		$result = WPAB_Cloud::request( 'agent/design-plan', $payload, 120 );
+
+		if ( is_wp_error( $result ) ) {
+			// Non-fatal: skip the design pass rather than failing generation.
+			return new WP_REST_Response( array( 'success' => true, 'targets' => array() ), 200 );
+		}
+
+		return new WP_REST_Response( $result, 200 );
 	}
 
 	public static function rest_create_theme( WP_REST_Request $request ) {
@@ -724,6 +757,7 @@ final class WPAB_Editor {
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
+			'restDesignPlan'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design-plan' ) ),
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'   => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'exitUrl'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
@@ -753,11 +787,11 @@ final class WPAB_Editor {
 
 					<div id="wpab-ed-wprogress" class="wpab-ed__wprogress" hidden>
 						<ol class="wpab-ed__steps" id="wpab-ed-steps">
-							<li class="wpab-ed__step" data-phase="plan"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Planning the design</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="plan"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Setting the art direction</span><span class="wpab-ed__stepmeta"></span></li>
 							<li class="wpab-ed__step" data-phase="build"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Building the theme</span><span class="wpab-ed__stepmeta"></span></li>
 							<li class="wpab-ed__step" data-phase="write"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Writing files</span><span class="wpab-ed__stepmeta"></span></li>
-							<li class="wpab-ed__step" data-phase="check"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Checking for issues</span><span class="wpab-ed__stepmeta"></span></li>
-							<li class="wpab-ed__step" data-phase="revise"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Final revision</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="refine"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Elevating the design</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="check"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Final quality check</span><span class="wpab-ed__stepmeta"></span></li>
 						</ol>
 						<div class="wpab-ed__wbar"><span id="wpab-ed-wbarfill" class="wpab-ed__wbarfill"></span></div>
 						<div id="wpab-ed-wstep" class="wpab-ed__wstep"></div>
@@ -1140,7 +1174,7 @@ final class WPAB_Editor {
 			function errText(out, fallback) { return (out && out.data && (out.data.message || out.data.error)) || fallback; }
 
 			// Animated step feedback ------------------------------------------------
-			var PHASES = ['plan', 'build', 'write', 'check', 'revise'];
+			var PHASES = ['plan', 'build', 'write', 'refine', 'check'];
 			function stepEl(phase) { var s = $('wpab-ed-steps'); return s ? s.querySelector('[data-phase="' + phase + '"]') : null; }
 			function stepState(phase, state, meta) {
 				var el = stepEl(phase);
@@ -1197,16 +1231,41 @@ final class WPAB_Editor {
 				phaseProgress('plan');
 				setBuildDetail('Designing the layout, palette and sections…');
 
-				// Runs a review pass; non-fatal — resolves even if the pass fails.
+				// Correctness pass — non-fatal; resolves even if it fails.
 				function reviewPass(phase, focus) {
 					phaseProgress(phase);
-					setBuildDetail(phase === 'revise' ? 'Applying any final fixes…' : 'Scanning the theme for issues…');
+					setBuildDetail('Scanning the theme for issues…');
 					if (!cfg.restReviewTheme) { stepState(phase, 'done'); return Promise.resolve(); }
 					return wpost(cfg.restReviewTheme, focus ? { focus: focus } : {}).then(function (rOut) {
 						var d = (rOut && rOut.data) || {};
 						var meta = d.applied ? ('fixed ' + (d.updated || 0)) : 'clean';
 						stepState(phase, 'done', meta);
 					}).catch(function () { stepState(phase, 'done'); });
+				}
+
+				// Staged design elevation: get a punch-list, then apply each target
+				// one at a time (small, timeout-safe calls with live per-file steps).
+				function designRevise(blueprint) {
+					phaseProgress('refine');
+					setBuildDetail('Reviewing the design against its concept…');
+					if (!cfg.restDesignPlan || !cfg.restEditTheme) { stepState('refine', 'done'); return Promise.resolve(); }
+					return wpost(cfg.restDesignPlan, { concept: (blueprint && blueprint.concept) || null, blueprint: blueprint }).then(function (pOut) {
+						var targets = (pOut && pOut.data && Array.isArray(pOut.data.targets)) ? pOut.data.targets.slice(0, 6) : [];
+						if (!targets.length) { stepState('refine', 'done', 'no changes'); return; }
+						var i = 0, applied = 0;
+						function nextTarget() {
+							if (i >= targets.length) { stepState('refine', 'done', 'elevated ' + applied); return; }
+							var t = targets[i]; i++;
+							stepState('refine', 'active', i + '/' + targets.length);
+							setBuildDetail('Elevating ' + friendlyName(t.path) + '…');
+							if (!t || typeof t.instruction !== 'string' || !t.instruction) { return nextTarget(); }
+							return wpost(cfg.restEditTheme, { instruction: t.instruction }).then(function (eOut) {
+								if (eOut && eOut.data && eOut.data.success) { applied++; }
+								return nextTarget();
+							}).catch(function () { return nextTarget(); });
+						}
+						return nextTarget();
+					}).catch(function () { stepState('refine', 'done'); });
 				}
 
 				wpost(cfg.restBuildPlan, { brief: brief }).then(function (out) {
@@ -1275,12 +1334,13 @@ final class WPAB_Editor {
 								var extra = fin.pages_created ? (fin.pages_created + ' pages' + (fin.menu_built ? ' + menu' : '')) : (cOut.data.files_written || built.length) + ' files';
 								stepState('write', 'done', extra);
 								var themeName = cOut.data.name || brand;
-								// QA passes: check, then a final revision. Both non-fatal.
-								return reviewPass('check').then(function () {
-									return reviewPass('revise', 'any remaining invisible or hidden content, header/nav or mobile-menu selector mismatches, JS using a library that functions.php does not enqueue, PHP errors, or horizontal overflow');
+								// Elevate the design (staged, per-file), then a final correctness
+								// check to clean up anything the elevation touched. Both non-fatal.
+								return designRevise(blueprint).then(function () {
+									return reviewPass('check', 'any invisible or hidden content, header/nav or mobile-menu selector mismatches, JS using a library that functions.php does not enqueue, PHP errors, horizontal overflow, or empty image placeholders');
 								}).then(function () {
 									finishAllSteps();
-									if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + '), checked and activated. Reloading…'; }
+									if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + '), designed and activated. Reloading…'; }
 									setTimeout(function () { location.reload(); }, 1500);
 								});
 							});
