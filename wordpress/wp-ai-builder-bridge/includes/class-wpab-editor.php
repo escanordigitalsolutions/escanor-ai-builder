@@ -82,6 +82,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/build/files',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_files' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/create-theme',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -122,6 +131,37 @@ final class WPAB_Editor {
 				'path'      => $path,
 			),
 			90
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Generate a BATCH of theme files in one SaaS call (fewer wizard steps). */
+	public static function rest_build_files( WP_REST_Request $request ) {
+		$params    = self::json_params( $request );
+		$blueprint = isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ? $params['blueprint'] : array();
+		$paths     = array();
+
+		if ( isset( $params['paths'] ) && is_array( $params['paths'] ) ) {
+			foreach ( $params['paths'] as $p ) {
+				$p = trim( (string) $p );
+				if ( '' !== $p ) {
+					$paths[] = $p;
+				}
+			}
+		}
+
+		if ( empty( $blueprint ) || empty( $paths ) ) {
+			return new WP_Error( 'wpab_files_bad', 'A blueprint and paths are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request(
+			'agent/build-files',
+			array(
+				'blueprint' => $blueprint,
+				'paths'     => $paths,
+			),
+			180
 		);
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
@@ -551,6 +591,7 @@ final class WPAB_Editor {
 			'restCreateTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/create-theme' ) ),
 			'restBuildPlan'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
 			'restBuildFile'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/file' ) ),
+			'restBuildFiles'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files' ) ),
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'   => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'exitUrl'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
@@ -1162,11 +1203,14 @@ final class WPAB_Editor {
 					if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
 
 					var built = [];
-					var total = files.length;
+					// Group files into small batches so generation takes a few steps, not many.
+					var batches = [];
+					for (var bi = 0; bi < files.length; bi += 3) { batches.push(files.slice(bi, bi + 3)); }
+					var totalB = batches.length;
 
-					function next(i) {
-						if (i >= total) {
-							setProgress(total, total, 'Writing theme…');
+					function runBatch(b) {
+						if (b >= totalB) {
+							setProgress(totalB, totalB, 'Writing theme…');
 							return wpost(cfg.restCreateTheme, {
 								brand: brand,
 								description: (blueprint.theme && blueprint.theme.description) || '',
@@ -1182,18 +1226,21 @@ final class WPAB_Editor {
 								setTimeout(function () { location.reload(); }, 1400);
 							});
 						}
-						var path = files[i];
-						setProgress(i, total, 'Generating ' + path + ' (' + (i + 1) + '/' + total + ')');
-						return wpost(cfg.restBuildFile, { blueprint: blueprint, path: path }).then(function (fOut) {
-							if (!fOut.ok || !fOut.data || fOut.data.success === false || typeof fOut.data.contents !== 'string') {
-								throw new Error(errText(fOut, 'Could not generate ' + path + '.'));
+						var batch = batches[b];
+						setProgress(b, totalB, 'Designing & building your theme… (' + (b + 1) + '/' + totalB + ')');
+						return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: batch }).then(function (fOut) {
+							if (!fOut.ok || !fOut.data || fOut.data.success === false || !Array.isArray(fOut.data.files) || !fOut.data.files.length) {
+								throw new Error(errText(fOut, 'Could not generate a batch of files.'));
 							}
-							built.push({ path: path, contents: fOut.data.contents });
-							return next(i + 1);
+							for (var k = 0; k < fOut.data.files.length; k++) {
+								var f = fOut.data.files[k];
+								if (f && typeof f.path === 'string' && typeof f.contents === 'string') { built.push({ path: f.path, contents: f.contents }); }
+							}
+							return runBatch(b + 1);
 						});
 					}
 
-					return next(0);
+					return runBatch(0);
 				}).catch(function (err) {
 					busy = false;
 					if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = (err && err.message) || 'Theme generation failed.'; }
