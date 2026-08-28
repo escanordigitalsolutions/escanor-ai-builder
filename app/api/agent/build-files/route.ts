@@ -96,14 +96,20 @@ type Json = Record<string, unknown>;
 
 function parseFiles(text: string): { path: string; contents: string }[] {
   const out: { path: string; contents: string }[] = [];
-  // Tolerant of stray spaces around the markers and of an accidental code fence.
-  const re = /===\s*WPAB_FILE\s*:\s*([^\n=]+?)\s*===\s*\n?([\s\S]*?)\n?===\s*WPAB_END\s*===/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
+  // Split on the FILE marker so a MISSING or malformed ===WPAB_END=== between
+  // files can never merge them: each file's content runs until the next FILE
+  // marker (or the end). A trailing ===WPAB_END=== is then stripped.
+  const parts = text.split(/===\s*WPAB_FILE\s*:/);
+  for (let i = 1; i < parts.length; i++) {
+    const seg = parts[i];
+    const m = seg.match(/^\s*([^\n=]+?)\s*===\s*\r?\n?([\s\S]*)$/);
+    if (!m) {
+      continue;
+    }
     const path = m[1].trim().replace(/^`+|`+$/g, "");
-    let contents = m[2];
-    // Trim BOM + one leading/trailing blank line; keep internal formatting.
-    contents = contents.replace(/^﻿/, "");
+    let contents = m[2].replace(/^﻿/, "");
+    // Drop a trailing WPAB_END marker (and anything after it) when present.
+    contents = contents.replace(/\n?===\s*WPAB_END\s*===[\s\S]*$/, "");
     if (path) {
       out.push({ path, contents: contents.replace(/\s+$/, "") + "\n" });
     }

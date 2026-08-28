@@ -73,12 +73,19 @@ type Json = Record<string, unknown>;
 
 function parseOutput(text: string): { summary: string; files: { path: string; contents: string }[] } {
   const files: { path: string; contents: string }[] = [];
-  const re = /===WPAB_FILE:([^\n=]+)===\n?([\s\S]*?)\n?===WPAB_END===/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const path = m[1].trim();
+  // Split on the FILE marker so a missing/malformed ===WPAB_END=== can't merge
+  // adjacent files; each file's content runs until the next FILE marker.
+  const parts = text.split(/===\s*WPAB_FILE\s*:/);
+  for (let i = 1; i < parts.length; i++) {
+    const m = parts[i].match(/^\s*([^\n=]+?)\s*===\s*\r?\n?([\s\S]*)$/);
+    if (!m) {
+      continue;
+    }
+    const path = m[1].trim().replace(/^`+|`+$/g, "");
+    let contents = m[2].replace(/^﻿/, "");
+    contents = contents.replace(/\n?===\s*WPAB_END\s*===[\s\S]*$/, "");
     if (path) {
-      files.push({ path, contents: m[2].replace(/^﻿/, "").replace(/\s+$/, "") + "\n" });
+      files.push({ path, contents: contents.replace(/\s+$/, "") + "\n" });
     }
   }
   const sm = text.match(/SUMMARY:\s*(.+)/);
