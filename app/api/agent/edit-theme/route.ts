@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
-import { SMART_MODEL } from "@/lib/ai/models";
+import { GEN_MODEL } from "@/lib/ai/models";
 import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
 
 /**
@@ -21,15 +21,23 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const INSTRUCTIONS = `You are a senior WordPress theme developer editing a MODERN, professional CLASSIC PHP theme in place, from a plain-language instruction.
+const INSTRUCTIONS = `You are a senior WordPress theme developer editing a MODERN, DEPENDENCY-FREE classic PHP theme in place, from a plain-language instruction. Your change must look like it always belonged — match the theme's existing design system, tokens and art-direction concept.
 
 How to work:
-1. First inspect the real theme using the tools (list_project_files, then read_project_files) so you edit the ACTUAL current code — never guess file contents or paths.
-2. Change the SMALLEST set of files that satisfies the request. Reuse the theme's existing classes, design tokens (CSS custom properties in assets/css/main.css) and conventions. Keep everything responsive, accessible and consistent with the current design.
-3. You may edit existing files and create new ones (e.g. a new template-parts/section-*.php, and wire it into the relevant page template). Keep the classic-theme conventions: get_header()/get_footer(), get_template_part('template-parts/section','<slug>'), the loop, esc_* output, enqueue via functions.php.
+1. First inspect the real theme with the tools (list_project_files, then read_project_files) so you edit the ACTUAL current code — never guess. Read the file(s) you'll change PLUS assets/css/main.css for the design tokens and conventions.
+2. Change the SMALLEST set of files that satisfies the request. Reuse the theme's existing classes, design tokens (CSS custom properties in main.css), section conventions and the concept already established. Keep everything responsive, accessible and consistent.
+3. You may edit existing files and create new ones (e.g. a new template-parts/section-*.php wired into the page). Keep the classic-theme conventions: get_header()/get_footer(), get_template_part('template-parts/section','<slug>'), the loop, esc_* output, enqueue via functions.php.
 4. Return the COMPLETE new contents of each changed file — not a diff, not a fragment.
 
-Security — NEVER use any of these in PHP: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backtick shell execution. (Enqueuing a remote CSS/JS URL with wp_enqueue_style/script is fine.)
+DEPENDENCY-FREE — the theme uses NO external JS libraries or frameworks. Do NOT add GSAP, Swiper, tsParticles, GLightbox, Typed, AOS, Alpine, jQuery or any CDN script. (Google Fonts is the only allowed external stylesheet; real <img> placeholder photos are fine.) Any motion is modern CSS + small vanilla JS in assets/js/main.js.
+
+FOLLOW THE THEME CONTRACT so nothing breaks:
+- Scroll reveals: elements use data-reveal (up|left|right|scale) / data-reveal-group; CSS hides them under html.has-motion with opacity+transform ONLY (never visibility/display) and main.js reveals by adding .is-revealed via IntersectionObserver. Never hide content in a way the JS won't clear.
+- Header/nav: keep the existing hooks (.site-header[data-header], .site-nav[data-nav], .site-header__toggle[data-nav-toggle], .site-nav__menu, .is-scrolled, .is-open) — main.js targets these; do not rename them.
+- Sections stay <section class="section section-<slug>"> with a matching .section-<slug> CSS block; animated backgrounds use <div class="section-bg" data-bg="mesh|blobs|aurora|grid">.
+- Use the design tokens (colours, --grad, --space-*, --radius, --shadow-*), not hardcoded values.
+
+Security — NEVER use any of these in PHP: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backtick shell execution. (filemtime() and enqueuing the Google Fonts stylesheet are fine; do NOT enqueue any JS library.)
 
 When you are done inspecting and ready to deliver, respond with NO tool calls and output EXACTLY this, and nothing else:
 SUMMARY: <one short sentence describing the change>
@@ -162,7 +170,7 @@ export async function POST(request: NextRequest) {
 
   try {
     let response = await openai.responses.create({
-      model: SMART_MODEL,
+      model: GEN_MODEL,
       instructions: INSTRUCTIONS,
       input: `Instruction: ${instruction}`,
       tools,
@@ -209,7 +217,7 @@ export async function POST(request: NextRequest) {
       );
 
       response = await openai.responses.create({
-        model: SMART_MODEL,
+        model: GEN_MODEL,
         instructions: INSTRUCTIONS,
         previous_response_id: response.id,
         input: outputs,

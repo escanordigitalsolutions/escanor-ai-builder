@@ -234,11 +234,19 @@ final class WPAB_Editor {
 			return $applied;
 		}
 
+		$changed = array();
+		foreach ( $files as $f ) {
+			if ( is_array( $f ) && isset( $f['path'] ) && '' !== trim( (string) $f['path'] ) ) {
+				$changed[] = (string) $f['path'];
+			}
+		}
+
 		return new WP_REST_Response(
 			array(
 				'success'        => true,
 				'summary'        => isset( $result['summary'] ) ? (string) $result['summary'] : 'Updated the theme.',
 				'updated'        => isset( $applied['updated'] ) ? (int) $applied['updated'] : count( $files ),
+				'files'          => $changed,
 				'undo_available' => true,
 			),
 			200
@@ -939,6 +947,11 @@ final class WPAB_Editor {
 			.wpab-ed__undo { margin-top: 8px; appearance: none; border: 1px solid var(--ed-border-strong); border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--ed-surface); color: var(--ed-text); }
 			.wpab-ed__undo:hover:not(:disabled) { border-color: var(--ed-accent); color: var(--ed-accent); }
 			.wpab-ed__undo:disabled { opacity: .55; cursor: default; }
+			.wpab-ed__editdone { font-weight: 600; color: var(--ed-text); }
+			.wpab-ed__chips2 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+			.wpab-ed__chipslead { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ed-faint); margin-right: 2px; }
+			.wpab-ed__filechip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--ed-accent-soft); border: 1px solid rgba(99,102,241,.2); color: var(--ed-accent); font-size: 11.5px; font-weight: 600; }
+			.wpab-ed__editdone + .wpab-ed__chips2 + .wpab-ed__undo, .wpab-ed__chips2 + .wpab-ed__undo { margin-top: 10px; }
 		</style>
 		<?php
 		self::print_app_script( $config );
@@ -1001,10 +1014,34 @@ final class WPAB_Editor {
 				if (!fr) { return; }
 				try { fr.contentWindow.location.reload(); } catch (e) { fr.src = fr.src; }
 			}
-			function addUndoMessage(summary) {
-				var wrap = addMessage('assistant', '✓ ' + (summary || 'Theme updated.'));
+			function addUndoMessage(summary, files) {
+				var wrap = addMessage('assistant', '');
 				var mbody = wrap.querySelector('.wpab-msg__body');
-				if (mbody && cfg.restUndoEdit) {
+				if (!mbody) { return; }
+				var head = document.createElement('div');
+				head.className = 'wpab-ed__editdone';
+				head.textContent = '✓ ' + (summary || 'Theme updated.');
+				mbody.appendChild(head);
+				if (files && files.length) {
+					var chips = document.createElement('div');
+					chips.className = 'wpab-ed__chips2';
+					var lead = document.createElement('span');
+					lead.className = 'wpab-ed__chipslead'; lead.textContent = 'Edited';
+					chips.appendChild(lead);
+					var seen = {};
+					for (var i = 0; i < files.length; i++) {
+						var p = files[i];
+						if (!p || seen[p]) { continue; }
+						seen[p] = 1;
+						var c = document.createElement('span');
+						c.className = 'wpab-ed__filechip';
+						c.textContent = friendlyName(p);
+						c.title = p;
+						chips.appendChild(c);
+					}
+					mbody.appendChild(chips);
+				}
+				if (cfg.restUndoEdit) {
 					var b = document.createElement('button');
 					b.type = 'button'; b.className = 'wpab-ed__undo'; b.textContent = 'Undo';
 					b.addEventListener('click', function () {
@@ -1014,7 +1051,6 @@ final class WPAB_Editor {
 							else { b.disabled = false; b.textContent = (u.data && (u.data.message || u.data.error)) || 'Undo failed'; }
 						}).catch(function () { b.disabled = false; b.textContent = 'Undo failed'; });
 					});
-					mbody.appendChild(document.createElement('br'));
 					mbody.appendChild(b);
 				}
 			}
@@ -1027,7 +1063,7 @@ final class WPAB_Editor {
 						addMessage('assistant', (out.data && (out.data.message || out.data.error)) || 'Could not apply the change.');
 						return;
 					}
-					addUndoMessage(out.data.summary);
+					addUndoMessage(out.data.summary, out.data.files);
 					reloadPreview();
 				}).catch(function () {
 					typing.remove();
