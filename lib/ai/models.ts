@@ -13,7 +13,7 @@
  * Set OPENAI_MODEL_FAST to a cheaper model to actually reduce spend.
  */
 
-const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6";
+const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
 
 export const FAST_MODEL = process.env.OPENAI_MODEL_FAST ?? DEFAULT_MODEL;
 export const SMART_MODEL = process.env.OPENAI_MODEL_SMART ?? DEFAULT_MODEL;
