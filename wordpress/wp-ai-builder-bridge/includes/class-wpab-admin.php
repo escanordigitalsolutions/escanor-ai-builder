@@ -21,6 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class WPAB_Admin {
 
 	private const MENU_SLUG      = 'wp-ai-builder';
+	private const BRIDGE_SLUG    = 'wp-ai-builder-bridge';
 	private const SNAPSHOTS_SLUG = 'wp-ai-builder-snapshots';
 	private const LOG_SLUG       = 'wp-ai-builder-log';
 
@@ -36,7 +37,7 @@ final class WPAB_Admin {
 	}
 
 	public static function action_links( $links ) {
-		$url = admin_url( 'admin.php?page=' . self::MENU_SLUG );
+		$url = admin_url( 'admin.php?page=' . self::BRIDGE_SLUG );
 
 		array_unshift( $links, '<a href="' . esc_url( $url ) . '">Settings</a>' );
 
@@ -44,22 +45,67 @@ final class WPAB_Admin {
 	}
 
 	public static function register_menu(): void {
+		// Top level is the ESCANOR dashboard (the base Chat + Content module),
+		// not the bridge settings. Bridge settings move to their own submenu so
+		// the landing screen is the launchpad, and the submenu parents used by
+		// Cloud / Snapshots / Log / Editor (all 'wp-ai-builder') stay intact.
 		add_menu_page(
-			'AI Builder',
-			'AI Builder',
+			'ESCANOR AI Builder',
+			'ESCANOR',
 			'manage_options',
 			self::MENU_SLUG,
-			array( __CLASS__, 'render_main' ),
+			array( 'WPAB_Dashboard', 'render' ),
 			'dashicons-superhero',
 			58
 		);
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			'AI Builder — Bridge',
-			'Bridge',
+			'ESCANOR — Dashboard',
+			'Dashboard',
 			'manage_options',
 			self::MENU_SLUG,
+			array( 'WPAB_Dashboard', 'render' )
+		);
+
+		// Module sub-pages. Content is the base module (always present); SEO
+		// appears only when the project is licensed for it; Insights is a
+		// read-only AI scan available whenever connected.
+		add_submenu_page(
+			self::MENU_SLUG,
+			'ESCANOR — Content',
+			'Content',
+			'manage_options',
+			'wp-ai-builder-content',
+			array( 'WPAB_Dashboard', 'render_content' )
+		);
+
+		if ( WPAB_Modules::is_enabled( 'seo' ) ) {
+			add_submenu_page(
+				self::MENU_SLUG,
+				'ESCANOR — SEO',
+				'SEO',
+				'manage_options',
+				'wp-ai-builder-seo',
+				array( 'WPAB_Dashboard', 'render_seo' )
+			);
+		}
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'ESCANOR — Insights',
+			'Insights',
+			'manage_options',
+			'wp-ai-builder-insights',
+			array( 'WPAB_Dashboard', 'render_insights' )
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'AI Builder — Bridge',
+			'Bridge settings',
+			'manage_options',
+			self::BRIDGE_SLUG,
 			array( __CLASS__, 'render_main' )
 		);
 
@@ -141,7 +187,7 @@ final class WPAB_Admin {
 
 		WPAB_Log::add( $existing ? 'token_regenerated' : 'token_generated' );
 
-		self::back( self::MENU_SLUG, $existing ? 'token_regenerated' : 'token_generated' );
+		self::back( self::BRIDGE_SLUG, $existing ? 'token_regenerated' : 'token_generated' );
 	}
 
 	public static function handle_revoke_token(): void {
@@ -150,7 +196,7 @@ final class WPAB_Admin {
 		WPAB_Auth::revoke_token();
 		WPAB_Log::add( 'token_revoked' );
 
-		self::back( self::MENU_SLUG, 'token_revoked' );
+		self::back( self::BRIDGE_SLUG, 'token_revoked' );
 	}
 
 	public static function handle_save_settings(): void {
@@ -183,7 +229,7 @@ final class WPAB_Admin {
 			)
 		);
 
-		self::back( self::MENU_SLUG, 'settings_saved' );
+		self::back( self::BRIDGE_SLUG, 'settings_saved' );
 	}
 
 	public static function handle_rollback(): void {

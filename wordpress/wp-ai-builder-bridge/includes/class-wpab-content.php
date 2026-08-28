@@ -420,6 +420,21 @@ final class WPAB_Content {
 	}
 
 	/**
+	 * Sanitise a block-markup body without destroying it.
+	 *
+	 * Gutenberg stores content as blocks delimited by HTML comments
+	 * (<!-- wp:heading -->). This mirrors WordPress core: an administrator with
+	 * the unfiltered_html capability (the wp-admin caller here) saves the block
+	 * markup verbatim, exactly as the native editor would; anyone else falls
+	 * back to wp_kses_post (which still keeps block delimiters but filters
+	 * tags/attributes). Passing raw block markup through wp_kses_post
+	 * unconditionally is what flattens h1/paragraph/button blocks.
+	 */
+	private static function sanitize_block_content( string $content ): string {
+		return current_user_can( 'unfiltered_html' ) ? $content : wp_kses_post( $content );
+	}
+
+	/**
 	 * Apply a set of field changes to one content item. $fields may contain any
 	 * of: title, content, excerpt, status, and (products only) a product map of
 	 * regular_price / sale_price / sku / stock_status. Returns before/after so
@@ -460,7 +475,7 @@ final class WPAB_Content {
 			if ( strlen( $content ) > 200000 ) {
 				return new WP_Error( 'wpab_content_too_long', 'The new content is too large.', array( 'status' => 400 ) );
 			}
-			$postarr['post_content'] = wp_kses_post( $content );
+			$postarr['post_content'] = self::sanitize_block_content( $content );
 		}
 
 		if ( array_key_exists( 'excerpt', $fields ) ) {
@@ -545,6 +560,104 @@ final class WPAB_Content {
 			'revision_id' => $revision_id,
 			'before'      => $before,
 			'after'       => $after,
+		);
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Creating (Content module) — a new item, always as a safe draft.
+	 *
+	 * The AI drafts the title and body; this inserts a NEW page/post/product
+	 * (or public CPT) as an unpublished draft so nothing goes live without the
+	 * administrator reviewing it in wp-admin. Menus and media are never created
+	 * here. Content is run through wp_kses_post exactly like an edit.
+	 * ------------------------------------------------------------------ */
+
+	public static function create( string $type, array $fields ) {
+		$type = trim( $type );
+
+		if ( ! self::is_editable_type( $type ) ) {
+			return new WP_Error( 'wpab_content_not_creatable', 'This content type cannot be created here.', array( 'status' => 400 ) );
+		}
+
+		$title = isset( $fields['title'] ) ? sanitize_text_field( substr( (string) $fields['title'], 0, 400 ) ) : '';
+
+		if ( '' === $title ) {
+			return new WP_Error( 'wpab_content_no_title', 'A title is required to create content.', array( 'status' => 400 ) );
+		}
+
+		$content = isset( $fields['content'] ) ? (string) $fields['content'] : '';
+
+		if ( strlen( $content ) > 200000 ) {
+			return new WP_Error( 'wpab_content_too_long', 'The new content is too large.', array( 'status' => 400 ) );
+		}
+
+		$excerpt = isset( $fields['excerpt'] ) ? (string) $fields['excerpt'] : '';
+
+		// New items are always created unpublished. A caller may ask for another
+		// non-public review status, but never 'publish' straight from creation.
+		$status = 'draft';
+
+		if ( isset( $fields['status'] ) ) {
+			$requested = sanitize_key( (string) $fields['status'] );
+			if ( in_array( $requested, array( 'draft', 'pending', 'private' ), true ) ) {
+				$status = $requested;
+			}
+		}
+
+		$postarr = array(
+			'post_type'    => $type,
+			'post_title'   => $title,
+			'post_content' => self::sanitize_block_content( $content ),
+			'post_excerpt' => wp_kses_post( substr( $excerpt, 0, 20000 ) ),
+			'post_status'  => $status,
+		);
+
+		$result = wp_insert_post( wp_slash( $postarr ), true );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$id = (int) $result;
+
+		// Product-specific fields, via WooCommerce so pricing/stock land correctly.
+		if ( 'product' === $type && self::woocommerce_active() && isset( $fields['product'] ) && is_array( $fields['product'] ) && function_exists( 'wc_get_product' ) ) {
+			$p       = $fields['product'];
+			$product = wc_get_product( $id );
+
+			if ( $product ) {
+				try {
+					if ( array_key_exists( 'regular_price', $p ) ) {
+						$product->set_regular_price( wc_format_decimal( (string) $p['regular_price'] ) );
+					}
+					if ( array_key_exists( 'sku', $p ) && '' !== trim( (string) $p['sku'] ) ) {
+						$product->set_sku( sanitize_text_field( (string) $p['sku'] ) );
+					}
+					$product->save();
+				} catch ( Exception $e ) {
+					// The draft exists; a product-field problem is non-fatal.
+					WPAB_Log::add( 'content_create_product_warning', array( 'id' => $id, 'error' => $e->getMessage() ) );
+				}
+			}
+		}
+
+		WPAB_Log::add(
+			'content_created',
+			array(
+				'type'   => $type,
+				'id'     => $id,
+				'status' => $status,
+			)
+		);
+
+		return array(
+			'success'  => true,
+			'type'     => $type,
+			'id'       => $id,
+			'title'    => (string) get_the_title( $id ),
+			'status'   => $status,
+			'url'      => (string) get_permalink( $id ),
+			'edit_url' => (string) get_edit_post_link( $id, 'raw' ),
 		);
 	}
 }

@@ -158,6 +158,83 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Content module (Dashboard): its own focused chat (mode=content) and a
+		// one-click "create this draft" apply. The chat is proxied to the SaaS
+		// agent in content mode; create is applied locally (the model already
+		// supplied the body, so no cloud round-trip is needed to write it).
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/content/chat',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_content_chat' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/content/create',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_content_create' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		// SEO module: read current SEO fields, draft optimized values (proxied to
+		// the SaaS model) and write them into the active SEO plugin (Yoast /
+		// Rank Math). Gated on the seo entitlement inside each handler.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/seo/get',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_seo_get' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/seo/propose',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_seo_propose' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/seo/apply',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_seo_apply' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/seo/audit',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_seo_audit' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/seo/site',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_seo_site' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Analysis: /analyze is computed locally (instant, no AI); /recommend is
 		// proxied to the SaaS model which reads the same audit.
 		register_rest_route(
@@ -359,6 +436,189 @@ final class WPAB_Editor {
 		}
 
 		$result = WPAB_Cloud::request( 'agent/chat', $body, 60 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/**
+	 * Content module chat: the same SaaS agent, asked to run in content mode
+	 * (read / create draft / edit, no code, no build). Kept as its own route so
+	 * the Dashboard module has its own chat surface, separate from the Studio.
+	 */
+	public static function rest_content_chat( WP_REST_Request $request ) {
+		$params  = self::json_params( $request );
+		$message = isset( $params['message'] ) ? trim( (string) $params['message'] ) : '';
+
+		if ( '' === $message ) {
+			return new WP_Error( 'wpab_editor_empty', 'Message is required.', array( 'status' => 400 ) );
+		}
+		if ( strlen( $message ) > 6000 ) {
+			return new WP_Error( 'wpab_editor_too_long', 'Message is too long.', array( 'status' => 400 ) );
+		}
+
+		$body = array(
+			'message' => $message,
+			'mode'    => 'content',
+		);
+
+		$conversation_id = isset( $params['conversationId'] ) ? trim( (string) $params['conversationId'] ) : '';
+		if ( '' !== $conversation_id ) {
+			$body['conversationId'] = $conversation_id;
+		}
+
+		$run_id = isset( $params['runId'] ) ? trim( (string) $params['runId'] ) : '';
+		if ( '' !== $run_id ) {
+			$body['runId'] = substr( $run_id, 0, 80 );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/chat', $body, 60 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/**
+	 * Create a new content item as a draft. The model already produced the body
+	 * (returned to the browser as contentCreateRequest); this writes it locally
+	 * through WPAB_Content::create — always unpublished.
+	 */
+	public static function rest_content_create( WP_REST_Request $request ) {
+		$params  = self::json_params( $request );
+		$type    = isset( $params['type'] ) ? trim( (string) $params['type'] ) : '';
+		$title   = isset( $params['title'] ) ? (string) $params['title'] : '';
+		$content = isset( $params['content'] ) ? (string) $params['content'] : '';
+		$excerpt = isset( $params['excerpt'] ) ? (string) $params['excerpt'] : '';
+
+		if ( '' === $type || '' === trim( $title ) ) {
+			return new WP_Error( 'wpab_editor_bad_create', 'type and title are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Content::create(
+			$type,
+			array(
+				'title'   => $title,
+				'content' => $content,
+				'excerpt' => $excerpt,
+			)
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/**
+	 * Entitlement gate for module routes. Returns a WP_Error when the project is
+	 * not licensed for the module, null when it is. The SaaS enforces the same
+	 * lock server-side; this keeps the plugin from calling a module it should
+	 * not offer.
+	 */
+	private static function require_module( string $key ) {
+		if ( ! WPAB_Modules::is_enabled( $key ) ) {
+			return new WP_Error(
+				'wpab_module_locked',
+				'The ' . $key . ' module is not enabled on your plan.',
+				array( 'status' => 403 )
+			);
+		}
+
+		return null;
+	}
+
+	public static function rest_seo_get( WP_REST_Request $request ) {
+		$gate = self::require_module( 'seo' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$result = WPAB_Seo::get_item(
+			(string) $request->get_param( 'type' ),
+			(int) $request->get_param( 'id' )
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_seo_propose( WP_REST_Request $request ) {
+		$gate = self::require_module( 'seo' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+		$type   = isset( $params['type'] ) ? trim( (string) $params['type'] ) : '';
+		$id     = isset( $params['id'] ) ? (int) $params['id'] : 0;
+
+		if ( '' === $type || $id < 1 ) {
+			return new WP_Error( 'wpab_editor_bad_seo', 'type and id are required.', array( 'status' => 400 ) );
+		}
+
+		// Read the current SEO locally so the model can improve on it, and pass
+		// it to the SaaS which also fetches the page body for context.
+		$current = WPAB_Seo::get_item( $type, $id );
+
+		if ( is_wp_error( $current ) ) {
+			return $current;
+		}
+
+		$result = WPAB_Cloud::request(
+			'agent/seo-propose',
+			array(
+				'type'    => $type,
+				'id'      => $id,
+				'current' => array(
+					'title'           => $current['title'],
+					'slug'            => $current['slug'],
+					'url'             => $current['url'],
+					'plugin'          => $current['plugin'],
+					'metaTitle'       => $current['metaTitle'],
+					'metaDescription' => $current['metaDescription'],
+					'focusKeyword'    => $current['focusKeyword'],
+				),
+			),
+			55
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_seo_audit( WP_REST_Request $request ) {
+		$gate = self::require_module( 'seo' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$limit  = (int) $request->get_param( 'limit' );
+		$result = WPAB_Seo::audit(
+			(string) $request->get_param( 'type' ),
+			$limit > 0 ? $limit : 100
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_seo_site( WP_REST_Request $request ) {
+		$gate = self::require_module( 'seo' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		return new WP_REST_Response( WPAB_Seo::site(), 200 );
+	}
+
+	public static function rest_seo_apply( WP_REST_Request $request ) {
+		$gate = self::require_module( 'seo' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+		$type   = isset( $params['type'] ) ? trim( (string) $params['type'] ) : '';
+		$id     = isset( $params['id'] ) ? (int) $params['id'] : 0;
+		$fields = isset( $params['fields'] ) && is_array( $params['fields'] ) ? $params['fields'] : array();
+
+		if ( '' === $type || $id < 1 || empty( $fields ) ) {
+			return new WP_Error( 'wpab_editor_bad_seo', 'type, id and fields are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Seo::apply( $type, $id, $fields );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
