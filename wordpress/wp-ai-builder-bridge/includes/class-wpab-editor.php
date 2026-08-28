@@ -257,6 +257,36 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Builder multi-step: plan the site map (fast), generate one page at a
+		// time (progress), then finalize (home page, menu, patterns).
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/plan',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_plan' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/page',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_page' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/finalize',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_finalize' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Builder: generate ONE on-brand image (proxied to SaaS) and sideload it.
 		// The dashboard loops per index so no single request is slow enough to
 		// time out on the SaaS image model.
@@ -929,6 +959,146 @@ final class WPAB_Editor {
 		}
 
 		return is_wp_error( $applied ) ? $applied : new WP_REST_Response( $applied, 200 );
+	}
+
+	/** Multi-step step 1: plan the site map (fast, no page markup). */
+	public static function rest_build_plan( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+		$body   = array(
+			'brand'    => isset( $params['brand'] ) ? (string) $params['brand'] : '',
+			'tagline'  => isset( $params['tagline'] ) ? (string) $params['tagline'] : '',
+			'siteType' => isset( $params['site_type'] ) ? (string) $params['site_type'] : '',
+			'style'    => isset( $params['style'] ) ? (string) $params['style'] : '',
+			'custom'   => isset( $params['custom'] ) ? (string) $params['custom'] : '',
+		);
+
+		$started = microtime( true );
+		$result  = WPAB_Cloud::request( 'agent/build-plan', $body, 60 );
+		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
+
+		if ( is_wp_error( $result ) ) {
+			self::ai_log_add( 'plan', $body, null, $result->get_error_message(), $dur );
+			return $result;
+		}
+
+		if ( empty( $result['pages'] ) || ! is_array( $result['pages'] ) ) {
+			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The AI did not return a plan.';
+			self::ai_log_add( 'plan', $body, is_array( $result ) ? $result : null, $msg, $dur );
+			return new WP_Error( 'wpab_plan_empty', $msg, array( 'status' => 502 ) );
+		}
+
+		self::ai_log_add( 'plan', $body, $result, '', $dur );
+
+		return new WP_REST_Response( array( 'success' => true, 'pages' => $result['pages'] ), 200 );
+	}
+
+	/** Multi-step step 2: generate ONE page (proxied to SaaS) and create it. */
+	public static function rest_build_page( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+		$page   = isset( $params['page'] ) && is_array( $params['page'] ) ? $params['page'] : array();
+
+		$body = array(
+			'brand'    => isset( $params['brand'] ) ? (string) $params['brand'] : '',
+			'tagline'  => isset( $params['tagline'] ) ? (string) $params['tagline'] : '',
+			'siteType' => isset( $params['site_type'] ) ? (string) $params['site_type'] : '',
+			'style'    => isset( $params['style'] ) ? (string) $params['style'] : '',
+			'custom'   => isset( $params['custom'] ) ? (string) $params['custom'] : '',
+			'page'     => $page,
+			'slugs'    => isset( $params['slugs'] ) && is_array( $params['slugs'] ) ? $params['slugs'] : array(),
+		);
+
+		$started = microtime( true );
+		$result  = WPAB_Cloud::request( 'agent/build-page', $body, 90 );
+		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
+
+		if ( is_wp_error( $result ) ) {
+			self::ai_log_add( 'build-page', $body, null, $result->get_error_message(), $dur );
+			return $result;
+		}
+
+		if ( empty( $result['blocks'] ) ) {
+			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The AI did not return the page.';
+			self::ai_log_add( 'build-page', $body, is_array( $result ) ? $result : null, $msg, $dur );
+			return new WP_Error( 'wpab_page_empty', $msg, array( 'status' => 502 ) );
+		}
+
+		self::ai_log_add( 'build-page', $body, $result, '', $dur );
+
+		$applied = WPAB_Builder::apply_single_page(
+			array(
+				'title'  => isset( $page['title'] ) ? (string) $page['title'] : 'Page',
+				'slug'   => isset( $page['slug'] ) ? (string) $page['slug'] : '',
+				'front'  => ! empty( $page['front'] ),
+				'blocks' => (string) $result['blocks'],
+			)
+		);
+
+		return is_wp_error( $applied ) ? $applied : new WP_REST_Response( array( 'success' => true, 'page' => $applied ), 200 );
+	}
+
+	/** Multi-step final step: set home page, menu, and write patterns. */
+	public static function rest_build_finalize( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+
+		$created = array();
+		if ( isset( $params['pages'] ) && is_array( $params['pages'] ) ) {
+			foreach ( $params['pages'] as $c ) {
+				if ( is_array( $c ) && ! empty( $c['id'] ) ) {
+					$created[] = array(
+						'id'    => (int) $c['id'],
+						'title' => isset( $c['title'] ) ? (string) $c['title'] : '',
+						'slug'  => isset( $c['slug'] ) ? (string) $c['slug'] : '',
+						'url'   => isset( $c['url'] ) ? (string) $c['url'] : '',
+						'front' => ! empty( $c['front'] ),
+					);
+				}
+			}
+		}
+
+		$front_id = isset( $params['front_id'] ) ? (int) $params['front_id'] : 0;
+
+		// Optionally generate reusable patterns as the last AI step.
+		$patterns = array();
+		if ( ! empty( $params['patterns'] ) ) {
+			$body = array(
+				'brand'    => isset( $params['brand'] ) ? (string) $params['brand'] : '',
+				'tagline'  => isset( $params['tagline'] ) ? (string) $params['tagline'] : '',
+				'siteType' => isset( $params['site_type'] ) ? (string) $params['site_type'] : '',
+				'style'    => isset( $params['style'] ) ? (string) $params['style'] : '',
+			);
+
+			$started = microtime( true );
+			$pres    = WPAB_Cloud::request( 'agent/build-patterns', $body, 90 );
+			$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
+
+			if ( ! is_wp_error( $pres ) && ! empty( $pres['patterns'] ) && is_array( $pres['patterns'] ) ) {
+				$patterns = $pres['patterns'];
+				self::ai_log_add( 'build-patterns', $body, $pres, '', $dur );
+			} elseif ( is_wp_error( $pres ) ) {
+				self::ai_log_add( 'build-patterns', $body, null, $pres->get_error_message(), $dur );
+			} else {
+				self::ai_log_add( 'build-patterns', $body, is_array( $pres ) ? $pres : null, 'No patterns returned.', $dur );
+			}
+		}
+
+		$result = WPAB_Builder::finalize_site( $created, $front_id, $patterns );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
 	/**

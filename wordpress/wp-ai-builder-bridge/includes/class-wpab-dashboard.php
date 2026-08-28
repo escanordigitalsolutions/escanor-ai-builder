@@ -137,6 +137,9 @@ final class WPAB_Dashboard {
 			'restUnderstand'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/understand' ) ),
 			'restBuildTheme'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/create-theme' ) ),
 			'restBuildSite'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/generate-site' ) ),
+			'restBuildPlan'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
+			'restBuildPage'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/page' ) ),
+			'restBuildFinalize' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/finalize' ) ),
 			'restBuildImage'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/image' ) ),
 			'restBuildGallery'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/gallery' ) ),
 			'restBuildFeature'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/feature' ) ),
@@ -1301,16 +1304,10 @@ final class WPAB_Dashboard {
 					if (busy || !lastBrief) { return; }
 					var pr = $('wpab-pages-result');
 					setBusy(true); btn.disabled = true;
-					pr.innerHTML = '<p class="wpab-chat__empty"><span class="wpab-typing">Designing and creating your pages… this can take up to a minute.</span></p>';
-					api('POST', cfg.restBuildSite, lastBrief).then(function (out) {
-						if (!out.ok || !out.data || out.data.success === false) {
-							pr.innerHTML = '<div class="wpab-build__err">' + esc((out.data && (out.data.message || out.data.error)) || 'Could not generate pages.') + '</div>';
-							btn.disabled = false; return;
-						}
-						var pages = out.data.pages || [];
-						var patterns = out.data.patterns || 0;
+					pr.innerHTML = '<p class="wpab-chat__empty"><span class="wpab-typing">Planning your site\u2026</span></p>';
+					function showDone(pages, patterns) {
 						var list = pages.map(function (p) { return '<li><a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.title) + '</a>' + (p.front ? ' <em>(home)</em>' : '') + '</li>'; }).join('');
-						pr.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; ' + pages.length + ' page(s) created' + (patterns ? ' · ' + patterns + ' reusable sections added' : '') + '.</strong><ul style="margin:8px 0 0 18px">' + list + '</ul>'
+						pr.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; ' + pages.length + ' page(s) created' + (patterns ? ' \u00b7 ' + patterns + ' reusable sections added' : '') + '.</strong><ul style="margin:8px 0 0 18px">' + list + '</ul>'
 							+ '<p style="margin:10px 0 0;color:#3c434a;font-size:13px">Your home page is set' + (patterns ? ', and your on-brand sections are in the block inserter under &ldquo;Escanor&rdquo;' : '') + '. Refine any page in Content chat, or open the Site Editor.</p>'
 							+ '<div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e4e7">'
 							+ '<label style="font-weight:600;display:block;margin-bottom:6px">AI images</label>'
@@ -1324,8 +1321,44 @@ final class WPAB_Dashboard {
 						btn.textContent = 'Done';
 						var ib = $('wpab-b-images'); if (ib) { ib.addEventListener('click', function () { generateImages(ib); }); }
 						var fb = $('wpab-b-booking'); if (fb) { fb.addEventListener('click', function () { generateFeature(fb, 'booking'); }); }
-					}).catch(function () { pr.innerHTML = '<div class="wpab-build__err">Network error generating pages.</div>'; btn.disabled = false; })
-					.then(function () { setBusy(false); });
+					}
+					api('POST', cfg.restBuildPlan, lastBrief).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false || !out.data.pages || !out.data.pages.length) {
+							pr.innerHTML = '<div class="wpab-build__err">' + esc((out.data && (out.data.message || out.data.error)) || 'Could not plan the site.') + '</div>'; btn.disabled = false; setBusy(false); return;
+						}
+						var plan = out.data.pages;
+						var slugs = plan.map(function (p) { return p.slug || ''; }).filter(Boolean);
+						var created = [];
+						function renderProgress(idx, status) {
+							var rows = plan.map(function (p, i) {
+								var mark = i < idx ? '&#10003; ' : (i === idx ? '<span class="wpab-typing">\u2026</span> ' : '<span style="color:#c3c4c7">\u00b7</span> ');
+								return '<li style="margin:2px 0">' + mark + esc(p.title) + (p.front ? ' <em>(home)</em>' : '') + '</li>';
+							}).join('');
+							pr.innerHTML = '<p style="margin:0 0 8px;color:#3c434a;font-size:13px"><span class="wpab-typing">' + esc(status) + '</span></p><ul style="list-style:none;margin:0;padding:0;font-size:13px">' + rows + '</ul>';
+						}
+						renderProgress(0, 'Planned ' + plan.length + ' pages. Building\u2026');
+						var i = 0;
+						function finalize() {
+							renderProgress(plan.length, 'Finishing \u2014 setting your home page, menu and reusable sections\u2026');
+							var front = 0;
+							created.forEach(function (c) { if (c.front) { front = c.id; } });
+							var payload = { brand: lastBrief.brand, tagline: lastBrief.tagline, site_type: lastBrief.site_type, style: lastBrief.style, pages: created, front_id: front, patterns: true };
+							api('POST', cfg.restBuildFinalize, payload).then(function (fout) {
+								var patterns = (fout.data && fout.data.patterns) || 0;
+								showDone(created, patterns);
+							}).catch(function () { showDone(created, 0); }).then(function () { setBusy(false); });
+						}
+						function nextPage() {
+							if (i >= plan.length) { finalize(); return; }
+							renderProgress(i, 'Creating ' + (i + 1) + '/' + plan.length + ': ' + plan[i].title + '\u2026');
+							var payload = { brand: lastBrief.brand, tagline: lastBrief.tagline, site_type: lastBrief.site_type, style: lastBrief.style, custom: lastBrief.custom, page: plan[i], slugs: slugs };
+							api('POST', cfg.restBuildPage, payload).then(function (pout) {
+								if (pout.ok && pout.data && pout.data.page) { created.push(pout.data.page); }
+								i++; nextPage();
+							}).catch(function () { i++; nextPage(); });
+						}
+						nextPage();
+					}).catch(function () { pr.innerHTML = '<div class="wpab-build__err">Network error planning the site.</div>'; btn.disabled = false; setBusy(false); });
 				}
 						function generateFeature(btn, feature) {
 							if (busy || !lastBrief) { return; }

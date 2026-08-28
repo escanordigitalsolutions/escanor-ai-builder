@@ -530,6 +530,110 @@ final class WPAB_Builder {
 		);
 	}
 
+	/**
+	 * Multi-step generation: create ONE published page from its block markup.
+	 * The dashboard calls this once per page so progress is visible and no
+	 * single request is slow. Returns the created page info or a WP_Error.
+	 */
+	public static function apply_single_page( array $p ) {
+		$title  = trim( sanitize_text_field( (string) ( $p['title'] ?? '' ) ) );
+		$blocks = (string) ( $p['blocks'] ?? '' );
+
+		if ( '' === $title || '' === trim( $blocks ) ) {
+			return new WP_Error( 'wpab_page_empty', 'The page had no title or content.', array( 'status' => 400 ) );
+		}
+
+		if ( strlen( $blocks ) > 200000 ) {
+			$blocks = substr( $blocks, 0, 200000 );
+		}
+
+		$content = current_user_can( 'unfiltered_html' ) ? $blocks : wp_kses_post( $blocks );
+		$slug    = ( isset( $p['slug'] ) && '' !== trim( (string) $p['slug'] ) ) ? sanitize_title( (string) $p['slug'] ) : sanitize_title( $title );
+
+		$id = wp_insert_post(
+			wp_slash(
+				array(
+					'post_type'    => 'page',
+					'post_title'   => $title,
+					'post_name'    => $slug,
+					'post_content' => $content,
+					'post_status'  => 'publish',
+				)
+			),
+			true
+		);
+
+		if ( is_wp_error( $id ) ) {
+			return $id;
+		}
+
+		$id = (int) $id;
+
+		return array(
+			'id'    => $id,
+			'title' => (string) get_the_title( $id ),
+			'slug'  => (string) get_post_field( 'post_name', $id ),
+			'url'   => (string) get_permalink( $id ),
+			'front' => ! empty( $p['front'] ),
+		);
+	}
+
+	/**
+	 * Multi-step generation: after all pages exist, set the home page, wire the
+	 * menu, point the front-page template at page content, and write any
+	 * reusable patterns. $created is the list of apply_single_page() results.
+	 */
+	public static function finalize_site( array $created, int $front_id = 0, array $patterns = array() ) {
+		$created = array_values(
+			array_filter(
+				$created,
+				static function ( $c ) {
+					return is_array( $c ) && ! empty( $c['id'] );
+				}
+			)
+		);
+
+		if ( empty( $created ) ) {
+			return new WP_Error( 'wpab_finalize_empty', 'No pages to finalize.', array( 'status' => 400 ) );
+		}
+
+		if ( ! $front_id ) {
+			foreach ( $created as $c ) {
+				if ( ! empty( $c['front'] ) ) {
+					$front_id = (int) $c['id'];
+					break;
+				}
+			}
+		}
+		if ( ! $front_id ) {
+			$front_id = (int) $created[0]['id'];
+		}
+
+		update_option( 'show_on_front', 'page' );
+		update_option( 'page_on_front', $front_id );
+
+		self::front_page_template_to_content();
+		self::build_navigation( $created );
+
+		$pattern_count = self::write_patterns( $patterns );
+
+		WPAB_Log::add(
+			'site_generated',
+			array(
+				'pages'    => count( $created ),
+				'patterns' => $pattern_count,
+				'mode'     => 'multi-step',
+			)
+		);
+
+		return array(
+			'success'  => true,
+			'front_id' => $front_id,
+			'patterns' => $pattern_count,
+			'home_url' => home_url( '/' ),
+		);
+	}
+
 	/* ---------------------------------------------------------------------
 	 * Images (B1d): sideload AI-generated images into the media library and
 	 * place a gallery on the home page.
