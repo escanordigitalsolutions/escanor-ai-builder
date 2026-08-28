@@ -281,6 +281,17 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Builder: generate + activate a companion feature plugin (booking).
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/feature',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_feature' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Analysis: /analyze is computed locally (instant, no AI); /recommend is
 		// proxied to the SaaS model which reads the same audit.
 		register_rest_route(
@@ -812,6 +823,32 @@ final class WPAB_Editor {
 			$result = WPAB_Builder::place_gallery( $ids );
 		} catch ( \Throwable $e ) {
 			return new WP_Error( 'wpab_build_gallery_error', 'Placing the gallery failed: ' . $e->getMessage(), array( 'status' => 500 ) );
+		}
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/**
+	 * Generate + activate a companion feature plugin (booking for now) and give
+	 * it a home page. Runs entirely locally from a fixed template — no AI call.
+	 */
+	public static function rest_build_feature( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+
+		$spec = array(
+			'feature' => isset( $params['feature'] ) ? (string) $params['feature'] : 'booking',
+			'brand'   => isset( $params['brand'] ) ? (string) $params['brand'] : '',
+		);
+
+		try {
+			$result = WPAB_Builder::scaffold_feature_plugin( $spec );
+		} catch ( \Throwable $e ) {
+			return new WP_Error( 'wpab_feature_error', 'Generating the feature failed: ' . $e->getMessage(), array( 'status' => 500 ) );
 		}
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );

@@ -139,6 +139,7 @@ final class WPAB_Dashboard {
 			'restBuildSite'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/generate-site' ) ),
 			'restBuildImage'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/image' ) ),
 			'restBuildGallery'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/gallery' ) ),
+			'restBuildFeature'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/feature' ) ),
 			'seoEnabled'        => ! empty( $modules['seo'] ),
 			'nonce'            => wp_create_nonce( 'wp_rest' ),
 			'studioUrl'        => esc_url_raw( $studio ),
@@ -1281,12 +1282,38 @@ final class WPAB_Dashboard {
 							+ '<label style="font-weight:600;display:block;margin-bottom:6px">AI images</label>'
 							+ '<select id="wpab-img-count" style="margin-right:8px"><option value="2">2 images</option><option value="3">3 images</option><option value="4" selected>4 images</option></select>'
 							+ '<button type="button" class="button button-primary" id="wpab-b-images">Generate images</button> <span class="wpab-build__note">On-brand photos, saved to your media library and placed as a gallery on the home page.</span>'
-							+ '<div id="wpab-images-result" style="margin-top:12px"></div></div></div>';
+							+ '<div id="wpab-images-result" style="margin-top:12px"></div></div>'
+							+ '<div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e4e7">'
+							+ '<label style="font-weight:600;display:block;margin-bottom:6px">Booking</label>'
+							+ '<button type="button" class="button button-primary" id="wpab-b-booking">Add booking</button> <span class="wpab-build__note">Adds a booking form, a &ldquo;Book&rdquo; page, stores requests as Bookings, and emails you on each one.</span>'
+							+ '<div id="wpab-feature-result" style="margin-top:12px"></div></div></div>';
 						btn.textContent = 'Done';
 						var ib = $('wpab-b-images'); if (ib) { ib.addEventListener('click', function () { generateImages(ib); }); }
+						var fb = $('wpab-b-booking'); if (fb) { fb.addEventListener('click', function () { generateFeature(fb, 'booking'); }); }
 					}).catch(function () { pr.innerHTML = '<div class="wpab-build__err">Network error generating pages.</div>'; btn.disabled = false; })
 					.then(function () { setBusy(false); });
 				}
+						function generateFeature(btn, feature) {
+							if (busy || !lastBrief) { return; }
+							var fr = $('wpab-feature-result');
+							setBusy(true); btn.disabled = true;
+							fr.innerHTML = '<p class="wpab-chat__empty"><span class="wpab-typing">Setting up booking\u2026 creating the plugin and a Book page.</span></p>';
+							api('POST', cfg.restBuildFeature, { feature: feature, brand: lastBrief.brand }).then(function (out) {
+								if (!out.ok || !out.data || out.data.success === false) {
+									fr.innerHTML = '<div class="wpab-build__err">' + esc((out.data && (out.data.message || out.data.error)) || 'Could not add booking.') + '</div>';
+									btn.disabled = false; return;
+								}
+								var d = out.data;
+								fr.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; Booking is live.</strong>'
+									+ '<div style="margin-top:8px">'
+									+ (d.page_url ? '<a class="button" href="' + esc(d.page_url) + '" target="_blank" rel="noopener">View booking page</a> ' : '')
+									+ (d.admin_url ? '<a class="button" href="' + esc(d.admin_url) + '">See bookings</a>' : '')
+									+ '</div>'
+									+ '<p style="margin:10px 0 0;color:#3c434a;font-size:13px">A companion plugin (' + esc(d.plugin_name || 'ESCANOR Features') + ') was created and activated. Add the form anywhere with the [escanor_booking] shortcode. Requests arrive under Bookings and by email.</p></div>';
+								btn.textContent = 'Done';
+							}).catch(function () { fr.innerHTML = '<div class="wpab-build__err">Network error adding booking.</div>'; btn.disabled = false; })
+							.then(function () { setBusy(false); });
+						}
 					function generateImages(btn) {
 						if (busy || !lastBrief) { return; }
 						var ir = $('wpab-images-result');

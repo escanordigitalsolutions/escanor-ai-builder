@@ -639,4 +639,334 @@ final class WPAB_Builder {
 			'home_url' => home_url( '/' ),
 		);
 	}
+
+	/* ---------------------------------------------------------------------
+	 * Features (B1c): scaffold a per-site companion plugin. The first feature
+	 * is a booking system (custom post type + public form + email on submit).
+	 * The plugin is generated from a fixed, safe template — never from anything
+	 * received over the wire — activated, and registered as the approved
+	 * companion scope so it can be refined later through the normal write
+	 * pipeline (nonce + entitlement gated at the REST layer).
+	 * ------------------------------------------------------------------ */
+
+	private static function unique_plugin_slug( string $base ): string {
+		$base = sanitize_title( $base );
+		if ( '' === $base ) {
+			$base = 'escanor-features';
+		}
+		$slug = $base;
+		$n    = 2;
+
+		while ( is_dir( WP_PLUGIN_DIR . '/' . $slug ) ) {
+			$slug = $base . '-' . $n;
+			$n++;
+			if ( $n > 50 ) {
+				$slug = $base . '-' . wp_generate_password( 5, false, false );
+				break;
+			}
+		}
+
+		return $slug;
+	}
+
+	/**
+	 * Generate + activate a per-site companion plugin providing one feature.
+	 * Returns feature info or a WP_Error.
+	 */
+	public static function scaffold_feature_plugin( array $spec ) {
+		$feature = isset( $spec['feature'] ) ? sanitize_key( (string) $spec['feature'] ) : 'booking';
+
+		if ( 'booking' !== $feature ) {
+			return new WP_Error( 'wpab_feature_unknown', 'Only the booking feature is available so far.', array( 'status' => 400 ) );
+		}
+
+		$fs = self::fs();
+		if ( ! $fs ) {
+			return new WP_Error( 'wpab_feature_fs', 'WordPress could not get filesystem access to create the plugin on this host.', array( 'status' => 500 ) );
+		}
+
+		$brand = trim( sanitize_text_field( (string) ( $spec['brand'] ?? '' ) ) );
+		if ( '' === $brand ) {
+			$brand = (string) wp_get_theme()->get( 'Name' );
+		}
+		if ( '' === $brand ) {
+			$brand = 'My Site';
+		}
+		$brand = str_replace( array( '*/', '<', '>' ), '', mb_substr( $brand, 0, 60 ) );
+
+		$theme_slug = get_stylesheet();
+		$base_slug  = ( 0 === strpos( $theme_slug, 'escanor-' ) ? $theme_slug : 'escanor-' . sanitize_title( $brand ) ) . '-features';
+		$slug       = self::unique_plugin_slug( $base_slug );
+
+		$dir  = WP_PLUGIN_DIR . '/' . $slug;
+		$file = $slug . '/' . $slug . '.php';
+		$path = $dir . '/' . $slug . '.php';
+
+		if ( ! $fs->is_dir( $dir ) && ! $fs->mkdir( $dir, FS_CHMOD_DIR ) ) {
+			return new WP_Error( 'wpab_feature_mkdir', 'Could not create the plugin folder.', array( 'status' => 500 ) );
+		}
+
+		$source = self::booking_plugin_source( $brand, $slug );
+
+		if ( ! $fs->put_contents( $path, $source, FS_CHMOD_FILE ) ) {
+			return new WP_Error( 'wpab_feature_write', 'Could not write the plugin file.', array( 'status' => 500 ) );
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		wp_clean_plugins_cache();
+
+		$activated = activate_plugin( $file );
+		if ( is_wp_error( $activated ) ) {
+			return new WP_Error( 'wpab_feature_activate', 'The plugin was created but could not be activated: ' . $activated->get_error_message(), array( 'status' => 500 ) );
+		}
+
+		// Register it as the approved companion scope so later chat edits can
+		// refine it through the normal snapshotted write pipeline.
+		update_option( WPAB_Scopes::PLUGIN_OPTION, $file );
+
+		// Give the feature an immediate home: a published page with the form.
+		$page_id = self::ensure_booking_page();
+
+		WPAB_Log::add( 'feature_plugin_generated', array( 'slug' => $slug, 'feature' => $feature ) );
+
+		$result = array(
+			'success'     => true,
+			'feature'     => $feature,
+			'plugin_slug' => $slug,
+			'plugin_name' => 'ESCANOR Features — ' . $brand,
+			'admin_url'   => admin_url( 'edit.php?post_type=esk_booking' ),
+		);
+
+		if ( $page_id ) {
+			$result['page_url'] = (string) get_permalink( $page_id );
+		}
+
+		return $result;
+	}
+
+	/** Create (once) a published "Book" page carrying the booking shortcode. */
+	private static function ensure_booking_page(): int {
+		$existing = get_page_by_path( 'book' );
+		if ( $existing instanceof WP_Post ) {
+			return (int) $existing->ID;
+		}
+
+		$content  = '<!-- wp:heading {"textAlign":"center","level":1} --><h1 class="wp-block-heading has-text-align-center">Book now</h1><!-- /wp:heading -->' . "\n";
+		$content .= '<!-- wp:paragraph {"align":"center"} --><p class="has-text-align-center">Fill in the form below and we will get back to you.</p><!-- /wp:paragraph -->' . "\n";
+		$content .= '<!-- wp:shortcode -->[escanor_booking]<!-- /wp:shortcode -->';
+
+		$id = wp_insert_post(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_title'   => 'Book',
+				'post_name'    => 'book',
+				'post_content' => $content,
+			),
+			true
+		);
+
+		return is_wp_error( $id ) ? 0 : (int) $id;
+	}
+
+	/** The booking companion plugin's source, from a fixed template. */
+	private static function booking_plugin_source( string $brand, string $slug ): string {
+		$template = <<<'ESKPLUGIN'
+<?php
+/**
+ * Plugin Name: {{PLUGIN_NAME}}
+ * Description: Custom booking feature generated for {{BRAND}} by the ESCANOR AI Builder. Adds a booking form, stores requests as Bookings, and emails you on each new one.
+ * Version: 1.0.0
+ * Author: ESCANOR AI Builder
+ * Author URI: https://escanor.lt
+ * Text Domain: {{SLUG}}
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+final class Escanor_Features {
+
+	const CPT = 'esk_booking';
+	const NS  = 'escanor/v1';
+
+	public static function init() {
+		add_action( 'init', array( __CLASS__, 'register_cpt' ) );
+		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
+		add_shortcode( 'escanor_booking', array( __CLASS__, 'form_shortcode' ) );
+		add_filter( 'manage_' . self::CPT . '_posts_columns', array( __CLASS__, 'columns' ) );
+		add_action( 'manage_' . self::CPT . '_posts_custom_column', array( __CLASS__, 'render_column' ), 10, 2 );
+	}
+
+	public static function register_cpt() {
+		register_post_type(
+			self::CPT,
+			array(
+				'labels'          => array(
+					'name'          => 'Bookings',
+					'singular_name' => 'Booking',
+					'menu_name'     => 'Bookings',
+				),
+				'public'          => false,
+				'show_ui'         => true,
+				'show_in_menu'    => true,
+				'menu_icon'       => 'dashicons-calendar-alt',
+				'supports'        => array( 'title' ),
+				'capability_type' => 'post',
+				'map_meta_cap'    => true,
+			)
+		);
+	}
+
+	public static function register_routes() {
+		register_rest_route(
+			self::NS,
+			'/book',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( __CLASS__, 'handle_booking' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+	}
+
+	public static function handle_booking( WP_REST_Request $req ) {
+		// Honeypot: real visitors never fill a hidden field.
+		if ( '' !== trim( (string) $req->get_param( 'company' ) ) ) {
+			return new WP_REST_Response( array( 'success' => true, 'message' => 'Thank you! Your request has been received.' ), 200 );
+		}
+
+		$name    = sanitize_text_field( (string) $req->get_param( 'name' ) );
+		$email   = sanitize_email( (string) $req->get_param( 'email' ) );
+		$date    = sanitize_text_field( (string) $req->get_param( 'date' ) );
+		$message = sanitize_textarea_field( (string) $req->get_param( 'message' ) );
+
+		if ( '' === $name || ! is_email( $email ) ) {
+			return new WP_Error( 'esk_book_invalid', 'Please enter your name and a valid email address.', array( 'status' => 400 ) );
+		}
+
+		$title = $name . ( '' !== $date ? ' - ' . $date : '' );
+
+		$post_id = wp_insert_post(
+			array(
+				'post_type'   => self::CPT,
+				'post_status' => 'publish',
+				'post_title'  => $title,
+			),
+			true
+		);
+
+		if ( is_wp_error( $post_id ) ) {
+			return new WP_Error( 'esk_book_save', 'Your request could not be saved. Please try again.', array( 'status' => 500 ) );
+		}
+
+		update_post_meta( $post_id, '_esk_name', $name );
+		update_post_meta( $post_id, '_esk_email', $email );
+		update_post_meta( $post_id, '_esk_date', $date );
+		update_post_meta( $post_id, '_esk_message', $message );
+		update_post_meta( $post_id, '_esk_status', 'new' );
+
+		$to      = get_option( 'admin_email' );
+		$subject = 'New booking - ' . wp_specialchars_decode( (string) get_bloginfo( 'name' ) );
+		$body    = "You have a new booking request.\n\n";
+		$body   .= 'Name: ' . $name . "\n";
+		$body   .= 'Email: ' . $email . "\n";
+		$body   .= 'Preferred date: ' . ( '' !== $date ? $date : '(none given)' ) . "\n\n";
+		$body   .= "Message:\n" . ( '' !== $message ? $message : '(none)' ) . "\n";
+
+		wp_mail( $to, $subject, $body );
+
+		return new WP_REST_Response(
+			array( 'success' => true, 'message' => 'Thank you! Your request has been received.' ),
+			200
+		);
+	}
+
+	public static function form_shortcode( $atts = array() ) {
+		$endpoint = esc_url( rest_url( self::NS . '/book' ) );
+		$uid      = 'esk-book-' . wp_rand( 1000, 9999 );
+		$a        = esc_attr( $uid );
+
+		$css = '<style>'
+			. '.esk-book{max-width:560px;margin:0 auto;display:grid;gap:14px}'
+			. '.esk-book label{display:block;font-weight:600;margin-bottom:4px}'
+			. '.esk-book input,.esk-book textarea{width:100%;padding:11px 13px;border:1px solid var(--wp--preset--color--border,#d9dce1);border-radius:10px;background:var(--wp--preset--color--surface,#fff);color:inherit;font:inherit;box-sizing:border-box}'
+			. '.esk-book textarea{min-height:120px;resize:vertical}'
+			. '.esk-book__hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}'
+			. '.esk-book__btn{appearance:none;border:0;border-radius:10px;padding:13px 22px;font:inherit;font-weight:600;cursor:pointer;background:var(--wp--preset--color--primary,#3a5bff);color:#fff}'
+			. '.esk-book__btn:disabled{opacity:.6;cursor:default}'
+			. '.esk-book__msg{padding:12px 14px;border-radius:10px;font-size:14px}'
+			. '.esk-book__msg.is-ok{background:rgba(46,160,67,.12);color:#1a7f37}'
+			. '.esk-book__msg.is-err{background:rgba(207,34,46,.1);color:#cf222e}'
+			. '</style>';
+
+		$form  = '<form class="esk-book" id="' . $a . '" data-endpoint="' . $endpoint . '" novalidate>';
+		$form .= '<div><label for="' . $a . '-name">Name</label><input id="' . $a . '-name" name="name" type="text" required></div>';
+		$form .= '<div><label for="' . $a . '-email">Email</label><input id="' . $a . '-email" name="email" type="email" required></div>';
+		$form .= '<div><label for="' . $a . '-date">Preferred date</label><input id="' . $a . '-date" name="date" type="date"></div>';
+		$form .= '<div><label for="' . $a . '-message">Message</label><textarea id="' . $a . '-message" name="message"></textarea></div>';
+		$form .= '<div class="esk-book__hp" aria-hidden="true"><label>Company<input type="text" name="company" tabindex="-1" autocomplete="off"></label></div>';
+		$form .= '<div><button type="submit" class="esk-book__btn">Request booking</button></div>';
+		$form .= '<div class="esk-book__msg" role="status" hidden></div>';
+		$form .= '</form>';
+
+		$js  = '<script>(function(){';
+		$js .= 'var f=document.getElementById("' . esc_js( $uid ) . '");if(!f){return;}';
+		$js .= 'f.addEventListener("submit",function(e){e.preventDefault();';
+		$js .= 'var el=f.elements,msg=f.querySelector(".esk-book__msg"),btn=f.querySelector(".esk-book__btn");';
+		$js .= 'var data={name:el["name"].value,email:el["email"].value,date:el["date"].value,message:el["message"].value,company:el["company"].value};';
+		$js .= 'btn.disabled=true;msg.hidden=true;';
+		$js .= 'fetch(f.dataset.endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)})';
+		$js .= '.then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j};});})';
+		$js .= '.then(function(res){msg.hidden=false;if(res.ok&&res.j&&res.j.success){msg.className="esk-book__msg is-ok";msg.textContent=res.j.message||"Thank you!";f.reset();}else{msg.className="esk-book__msg is-err";msg.textContent=(res.j&&(res.j.message||res.j.error))||"Something went wrong. Please try again.";}})';
+		$js .= '.catch(function(){msg.hidden=false;msg.className="esk-book__msg is-err";msg.textContent="Network error. Please try again.";})';
+		$js .= '.then(function(){btn.disabled=false;});});})();</script>';
+
+		return $css . $form . $js;
+	}
+
+	public static function columns( $columns ) {
+		$new = array();
+		foreach ( $columns as $key => $label ) {
+			$new[ $key ] = $label;
+			if ( 'title' === $key ) {
+				$new['esk_email'] = 'Email';
+				$new['esk_date']  = 'Preferred date';
+			}
+		}
+		return $new;
+	}
+
+	public static function render_column( $column, $post_id ) {
+		if ( 'esk_email' === $column ) {
+			$email = (string) get_post_meta( $post_id, '_esk_email', true );
+			echo $email ? '<a href="mailto:' . esc_attr( $email ) . '">' . esc_html( $email ) . '</a>' : '&mdash;';
+		} elseif ( 'esk_date' === $column ) {
+			$date = (string) get_post_meta( $post_id, '_esk_date', true );
+			echo $date ? esc_html( $date ) : '&mdash;';
+		}
+	}
+}
+
+Escanor_Features::init();
+
+register_activation_hook(
+	__FILE__,
+	static function () {
+		Escanor_Features::register_cpt();
+		flush_rewrite_rules();
+	}
+);
+ESKPLUGIN;
+
+		return strtr(
+			$template,
+			array(
+				'{{PLUGIN_NAME}}' => 'ESCANOR Features - ' . $brand,
+				'{{SLUG}}'        => $slug,
+				'{{BRAND}}'       => $brand,
+			)
+		);
+	}
 }
