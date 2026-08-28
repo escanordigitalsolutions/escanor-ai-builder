@@ -688,8 +688,10 @@ final class WPAB_Editor {
 			return new WP_Error( 'wpab_build_empty', $msg, array( 'status' => 502 ) );
 		}
 
+		$patterns = ( isset( $result['patterns'] ) && is_array( $result['patterns'] ) ) ? $result['patterns'] : array();
+
 		try {
-			$applied = WPAB_Builder::apply_site( $result['pages'] );
+			$applied = WPAB_Builder::apply_site( $result['pages'], $patterns );
 		} catch ( \Throwable $e ) {
 			return new WP_Error( 'wpab_build_apply', 'Creating pages failed: ' . $e->getMessage(), array( 'status' => 500 ) );
 		}

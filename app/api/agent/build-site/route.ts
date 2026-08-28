@@ -34,7 +34,7 @@ const submitTool = {
     properties: {
       pages: {
         type: "array",
-        description: "3-5 pages. Exactly one page must have front=true (the home page).",
+        description: "4-8 pages. Exactly one page must have front=true (the home page).",
         items: {
           type: "object",
           properties: {
@@ -44,8 +44,23 @@ const submitTool = {
             blocks: {
               type: "string",
               description:
-                "The full page body as valid Gutenberg block markup with <!-- wp:... --> delimiters.",
+                "The full page body as valid Gutenberg block markup with <!-- wp:... --> delimiters. Compose SEVERAL distinct sections, each wrapped in a wp:group.",
             },
+          },
+          required: ["title", "blocks"],
+          additionalProperties: false,
+        },
+      },
+      patterns: {
+        type: "array",
+        description:
+          "6-10 reusable, on-brand section patterns the client can insert anywhere from the WordPress block inserter (hero, feature grid, stats, testimonial, pricing, FAQ, call-to-action, contact, team, gallery, steps). Each is one self-contained section as block markup.",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Human name shown in the inserter, e.g. 'Feature grid'." },
+            slug: { type: "string", description: "Short lowercase hyphenated id, e.g. 'feature-grid'." },
+            blocks: { type: "string", description: "The section as valid Gutenberg block markup (one wp:group root)." },
           },
           required: ["title", "blocks"],
           additionalProperties: false,
@@ -95,7 +110,11 @@ ${tagline ? `Tagline: ${tagline}` : ""}
 Site type: ${siteType}
 Style: ${style}
 
-Call submit_site with 3-5 pages appropriate to a ${siteType} site. Exactly ONE page has front=true — the home page — and it must be the richest: a hero (a large heading + a short intro paragraph + a primary button), then 3-5 more sections (e.g. services/features, about, testimonial-style quote, and a closing call-to-action). Typical extra pages for a ${siteType} site (choose what fits): About, Services (or Menu/Portfolio/Shop), Contact.
+Call submit_site with 4-8 pages appropriate to a ${siteType} site, PLUS 6-10 reusable section "patterns".
+
+Pages: Exactly ONE page has front=true — the home page — and it must be the richest: a hero (a large heading + a short intro paragraph + a primary button), then 4-6 more sections (services/features grid, about, a stats or "why us" band, a testimonial-style quote, an FAQ or steps section, and a closing call-to-action). Build a FULL site — choose the pages that fit a ${siteType}: e.g. About, Services (or Menu/Portfolio/Shop), Pricing, FAQ, Gallery, Team, Blog, Contact. Every non-home page should still have 2-4 real sections, not a single block.
+
+Patterns: also return 6-10 reusable, on-brand SECTION patterns (each a single self-contained wp:group section) the client can insert anywhere from the block inserter — e.g. hero, feature grid, stats band, testimonial, pricing table, FAQ, call-to-action, contact block, team grid, gallery placeholder. Make them genuinely reusable and generic-but-branded.
 
 BLOCK MARKUP RULES — this is critical:
 - Output VALID Gutenberg block markup only: every element wrapped in its <!-- wp:... --> ... <!-- /wp:... --> delimiter comments. Never bare HTML or plain text.
@@ -130,8 +149,9 @@ Keep each page focused; the whole site should feel cohesive and on-brand for a $
       );
     }
 
-    const args = JSON.parse(call.arguments) as { pages?: unknown };
+    const args = JSON.parse(call.arguments) as { pages?: unknown; patterns?: unknown };
     const rawPages = Array.isArray(args.pages) ? args.pages : [];
+    const rawPatterns = Array.isArray(args.patterns) ? args.patterns : [];
 
     const pages = rawPages
       .map((p) => {
@@ -140,11 +160,23 @@ Keep each page focused; the whole site should feel cohesive and on-brand for a $
           title: str(page.title).trim().slice(0, 120),
           slug: str(page.slug).trim().slice(0, 80),
           front: Boolean(page.front),
-          blocks: str(page.blocks).slice(0, 60000),
+          blocks: str(page.blocks).slice(0, 80000),
         };
       })
       .filter((p) => p.title && p.blocks)
-      .slice(0, 6);
+      .slice(0, 8);
+
+    const patterns = rawPatterns
+      .map((p) => {
+        const pat = p as Record<string, unknown>;
+        return {
+          title: str(pat.title).trim().slice(0, 80),
+          slug: str(pat.slug).trim().slice(0, 60),
+          blocks: str(pat.blocks).slice(0, 40000),
+        };
+      })
+      .filter((p) => p.title && p.blocks)
+      .slice(0, 12);
 
     if (!pages.length) {
       return NextResponse.json(
@@ -161,6 +193,7 @@ Keep each page focused; the whole site should feel cohesive and on-brand for a $
     return NextResponse.json({
       success: true,
       pages,
+      patterns,
       usage: response.usage
         ? {
             inputTokens: response.usage.input_tokens,

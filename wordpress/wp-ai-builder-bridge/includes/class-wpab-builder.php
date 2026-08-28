@@ -348,7 +348,68 @@ final class WPAB_Builder {
 	 * front page, point the theme's front-page template at page content, and
 	 * build the header navigation. Returns the created pages.
 	 */
-	public static function apply_site( array $pages ) {
+	/** Write reusable section patterns into the active theme's /patterns folder. */
+	private static function write_patterns( array $patterns ): int {
+		if ( empty( $patterns ) ) {
+			return 0;
+		}
+
+		$fs = self::fs();
+		if ( ! $fs ) {
+			return 0;
+		}
+
+		$dir = get_stylesheet_directory() . '/patterns';
+		if ( ! is_dir( $dir ) ) {
+			wp_mkdir_p( $dir );
+		}
+
+		$theme = get_stylesheet();
+		$count = 0;
+
+		foreach ( $patterns as $p ) {
+			if ( ! is_array( $p ) ) {
+				continue;
+			}
+
+			$title  = trim( sanitize_text_field( (string) ( $p['title'] ?? '' ) ) );
+			$blocks = (string) ( $p['blocks'] ?? '' );
+
+			if ( '' === $title || '' === trim( $blocks ) ) {
+				continue;
+			}
+
+			// A pattern file is executed as PHP — never allow PHP tags in the body.
+			if ( false !== strpos( $blocks, '<?' ) ) {
+				continue;
+			}
+
+			$slug = sanitize_title( (string) ( $p['slug'] ?? $title ) );
+			if ( '' === $slug ) {
+				continue;
+			}
+
+			$file = $dir . '/' . $slug . '.php';
+			if ( file_exists( $file ) ) {
+				$slug .= '-' . wp_generate_password( 4, false, false );
+				$file  = $dir . '/' . $slug . '.php';
+			}
+
+			$header  = "<?php\n/**\n";
+			$header .= ' * Title: ' . $title . "\n";
+			$header .= ' * Slug: ' . $theme . '/' . $slug . "\n";
+			$header .= " * Categories: escanor\n";
+			$header .= " */\n?>\n";
+
+			if ( $fs->put_contents( $file, $header . $blocks . "\n", FS_CHMOD_FILE ) ) {
+				$count++;
+			}
+		}
+
+		return $count;
+	}
+
+	public static function apply_site( array $pages, array $patterns = array() ) {
 		$created  = array();
 		$front_id = 0;
 		$can_raw  = current_user_can( 'unfiltered_html' );
@@ -418,11 +479,20 @@ final class WPAB_Builder {
 		self::front_page_template_to_content();
 		self::build_navigation( $created );
 
-		WPAB_Log::add( 'site_generated', array( 'pages' => count( $created ) ) );
+		$pattern_count = self::write_patterns( $patterns );
+
+		WPAB_Log::add(
+			'site_generated',
+			array(
+				'pages'    => count( $created ),
+				'patterns' => $pattern_count,
+			)
+		);
 
 		return array(
 			'success'  => true,
 			'pages'    => $created,
+			'patterns' => $pattern_count,
 			'front_id' => $front_id,
 			'home_url' => home_url( '/' ),
 		);

@@ -1267,9 +1267,10 @@ final class WPAB_Dashboard {
 							btn.disabled = false; return;
 						}
 						var pages = out.data.pages || [];
+						var patterns = out.data.patterns || 0;
 						var list = pages.map(function (p) { return '<li><a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.title) + '</a>' + (p.front ? ' <em>(home)</em>' : '') + '</li>'; }).join('');
-						pr.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; ' + pages.length + ' page(s) created.</strong><ul style="margin:8px 0 0 18px">' + list + '</ul>'
-							+ '<p style="margin:10px 0 0;color:#3c434a;font-size:13px">Your home page is set. Refine any page in Content chat, or open the Site Editor. Next in the Builder: custom features (booking/forms) and AI images.</p></div>';
+						pr.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; ' + pages.length + ' page(s) created' + (patterns ? ' · ' + patterns + ' reusable sections added' : '') + '.</strong><ul style="margin:8px 0 0 18px">' + list + '</ul>'
+							+ '<p style="margin:10px 0 0;color:#3c434a;font-size:13px">Your home page is set' + (patterns ? ', and your on-brand sections are in the block inserter under &ldquo;Escanor&rdquo;' : '') + '. Refine any page in Content chat, or open the Site Editor. Next in the Builder: custom features (booking/forms) and AI images.</p></div>';
 						btn.textContent = 'Done';
 					}).catch(function () { pr.innerHTML = '<div class="wpab-build__err">Network error generating pages.</div>'; btn.disabled = false; })
 					.then(function () { setBusy(false); });
