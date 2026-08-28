@@ -1204,6 +1204,32 @@ final class WPAB_Editor {
 					for (var bi = 0; bi < rest.length; bi += 3) { batches.push(rest.slice(bi, bi + 3)); }
 					var totalB = batches.length;
 
+					// Fetch a batch resiliently: retry on failure and re-request ONLY the
+					// paths still missing (so a truncated final file never kills the run).
+					function fetchBatchFiles(wanted, bIndex, total) {
+						var collected = {};
+						function attempt(paths, left) {
+							return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: paths }).then(function (fOut) {
+								var got = (fOut && fOut.data && Array.isArray(fOut.data.files)) ? fOut.data.files : [];
+								for (var k = 0; k < got.length; k++) {
+									var f = got[k];
+									if (f && typeof f.path === 'string' && typeof f.contents === 'string') { collected[f.path] = f.contents; }
+								}
+								var missing = paths.filter(function (p) { return !collected[p]; });
+								if (!missing.length) { return; }
+								if (left > 1) { phaseProgress('build', (bIndex + 1) + '/' + total + ' · retry'); return attempt(missing, left - 1); }
+								throw new Error(errText(fOut, 'Could not generate: ' + missing.join(', ')));
+							}).catch(function (e) {
+								var missing = wanted.filter(function (p) { return !collected[p]; });
+								if (left > 1 && missing.length) { phaseProgress('build', (bIndex + 1) + '/' + total + ' · retry'); return attempt(missing, left - 1); }
+								throw e;
+							});
+						}
+						return attempt(wanted, 3).then(function () {
+							return wanted.map(function (p) { return { path: p, contents: collected[p] }; }).filter(function (x) { return x.contents; });
+						});
+					}
+
 					function runBatch(b) {
 						if (b >= totalB) {
 							stepState('build', 'done', totalB + ' batches');
@@ -1232,14 +1258,8 @@ final class WPAB_Editor {
 							});
 						}
 						phaseProgress('build', (b + 1) + '/' + totalB);
-						return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: batches[b] }).then(function (fOut) {
-							if (!fOut.ok || !fOut.data || fOut.data.success === false || !Array.isArray(fOut.data.files) || !fOut.data.files.length) {
-								throw new Error(errText(fOut, 'Could not generate a batch of files.'));
-							}
-							for (var k = 0; k < fOut.data.files.length; k++) {
-								var f = fOut.data.files[k];
-								if (f && typeof f.path === 'string' && typeof f.contents === 'string') { built.push({ path: f.path, contents: f.contents }); }
-							}
+						return fetchBatchFiles(batches[b], b, totalB).then(function (got) {
+							for (var k = 0; k < got.length; k++) { built.push(got[k]); }
 							return runBatch(b + 1);
 						});
 					}

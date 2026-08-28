@@ -96,12 +96,13 @@ type Json = Record<string, unknown>;
 
 function parseFiles(text: string): { path: string; contents: string }[] {
   const out: { path: string; contents: string }[] = [];
-  const re = /===WPAB_FILE:([^\n=]+)===\n?([\s\S]*?)\n?===WPAB_END===/g;
+  // Tolerant of stray spaces around the markers and of an accidental code fence.
+  const re = /===\s*WPAB_FILE\s*:\s*([^\n=]+?)\s*===\s*\n?([\s\S]*?)\n?===\s*WPAB_END\s*===/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
-    const path = m[1].trim();
+    const path = m[1].trim().replace(/^`+|`+$/g, "");
     let contents = m[2];
-    // Trim one leading/trailing blank line, keep internal formatting.
+    // Trim BOM + one leading/trailing blank line; keep internal formatting.
     contents = contents.replace(/^﻿/, "");
     if (path) {
       out.push({ path, contents: contents.replace(/\s+$/, "") + "\n" });
@@ -152,7 +153,7 @@ export async function POST(request: NextRequest) {
     response = await openai.responses.create({
       model: SMART_MODEL,
       instructions: INSTRUCTIONS,
-      max_output_tokens: 24000,
+      max_output_tokens: 32000,
       input:
         `Blueprint:\n${JSON.stringify(blueprint)}\n\n` +
         `Generate the complete contents of these files, in this order:\n` +
@@ -167,13 +168,25 @@ export async function POST(request: NextRequest) {
   }
 
   const files = parseFiles(response.output_text || "");
+  const truncated =
+    response.status === "incomplete" &&
+    (response.incomplete_details?.reason === "max_output_tokens" || !response.incomplete_details);
 
-  if (files.length === 0) {
-    return NextResponse.json(
-      { success: false, error: "The generator returned no files for this batch." },
-      { status: 502 }
-    );
+  // When the model runs long, the LAST file block can be cut off before its
+  // ===WPAB_END=== marker. Keep every COMPLETE file we did parse and let the
+  // WordPress side re-request only the missing paths, rather than failing hard.
+  if (files.length > 0) {
+    return NextResponse.json({ success: true, files, truncated });
   }
 
-  return NextResponse.json({ success: true, files });
+  return NextResponse.json(
+    {
+      success: false,
+      error: truncated
+        ? "This batch was too large to finish in one pass. Retrying with fewer files usually fixes it."
+        : "The generator returned no files for this batch. Please try again.",
+      truncated,
+    },
+    { status: 502 }
+  );
 }
