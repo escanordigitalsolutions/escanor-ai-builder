@@ -86,6 +86,21 @@ const tools = [
   },
   {
     type: "function" as const,
+    name: "edit_design",
+    description: "Change the THEME or companion plugin itself — anything that is not page content. Use for: colours, fonts, spacing, button shape, a sticky header, header/footer layout, dark mode, custom blocks or features in the companion plugin, CSS tweaks. These become a reviewed file change with a snapshot and automatic rollback.",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        message: { type: "string", description: "Short note to show the user." },
+        instructions: { type: "string", description: "Exactly what to change in the theme/plugin, in detail." },
+      },
+      required: ["message", "instructions"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function" as const,
     name: "add_booking",
     description: "Add a booking feature (form + Bookings + email) to the site's companion plugin.",
     strict: false,
@@ -138,6 +153,7 @@ Guidance:
 - If the user wants to change, rewrite or add to the HOME page, call edit_page with slug "home".
 - If they want to change another existing page, call edit_page with that page's slug (see pages in the project).
 - If they ask to add a single new page (Pricing, FAQ, Team…), call add_page.
+- If they want to change the THEME or plugin itself (colours, fonts, spacing, button shape, sticky header, header/footer layout, dark mode, a custom block/feature, CSS) — anything that is not the text/sections of a page — call edit_design with detailed instructions.
 - If the site has no real pages yet (only the front page id is 0 or there are no pages) and they want a site/pages, call generate_pages.
 - If they ask for booking/reservations, call add_booking. For photos/images, call generate_images.
 - If it is a question or unclear, call reply and (if unclear) ask one concise clarifying question.
@@ -182,6 +198,8 @@ Guidance:
       };
     } else if (name === "edit_page") {
       action.args = { slug: str(args.slug).slice(0, 80) || "home", instructions: str(args.instructions).slice(0, 3000) };
+    } else if (name === "edit_design") {
+      action.args = { instructions: str(args.instructions).slice(0, 3000) };
     } else if (name === "generate_images") {
       let c = Number.parseInt(String(args.count ?? 4), 10);
       if (!Number.isInteger(c) || c < 1) c = 4;
