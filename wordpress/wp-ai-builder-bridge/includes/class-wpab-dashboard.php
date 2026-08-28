@@ -322,6 +322,7 @@ final class WPAB_Dashboard {
 				<div class="wpab-panel" id="wpab-studio-panel" style="display:none">
 					<div class="wpab-panel__head">
 						<h2 class="wpab-panel__title"><span class="dashicons dashicons-format-chat"></span> Studio <span class="wpab-studio__meta" id="wpab-studio-meta"></span></h2>
+						<button type="button" class="button button-small" id="wpab-studio-new" style="margin-left:auto">New theme</button>
 					</div>
 					<div class="wpab-build__body">
 						<div class="wpab-studio__log" id="wpab-studio-log"></div>
@@ -1568,12 +1569,16 @@ final class WPAB_Dashboard {
 				var panel = $('wpab-studio-panel'); if (!panel) { return; }
 				var logEl = $('wpab-studio-log'), form = $('wpab-studio-form'), input = $('wpab-studio-input'), chipsEl = $('wpab-studio-chips'), metaEl = $('wpab-studio-meta');
 				var ctx = null, sbusy = false;
+				var wizard = document.getElementById('wpab-dash-build'), newBtn = $('wpab-studio-new');
+				function hideWizard() { if (wizard) { wizard.style.display = 'none'; } }
+				function showWizard() { if (wizard) { wizard.style.display = ''; } panel.style.display = 'none'; if (wizard) { wizard.scrollIntoView({ behavior: 'smooth' }); } }
+				if (newBtn) { newBtn.addEventListener('click', showWizard); }
 				function bubble(cls, html) { var d = document.createElement('div'); d.className = 'wpab-studio__msg ' + cls; d.innerHTML = html; logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; return d; }
 				function siteBrief(extra) { var s = (ctx && ctx.site) || {}; var t = (ctx && ctx.theme) || {}; return { brand: s.name || '', tagline: s.tagline || '', site_type: 'business', style: 'modern', custom: extra || '' }; }
 				function showMeta() { if (!ctx || !ctx.theme) { metaEl.textContent = ''; return; } var n = (ctx.pages || []).length; metaEl.textContent = '\u00b7 ' + ctx.theme.name + ' \u00b7 ' + n + ' page' + (n === 1 ? '' : 's'); }
 				function setChips(list) { chipsEl.innerHTML = list.map(function (t) { return '<button type="button" class="wpab-studio__chip">' + esc(t) + '</button>'; }).join(''); Array.prototype.forEach.call(chipsEl.querySelectorAll('.wpab-studio__chip'), function (bt) { bt.addEventListener('click', function () { input.value = bt.textContent; send(); }); }); }
 				function loadContext(cb) { api('GET', cfg.restBuildContext).then(function (out) { ctx = (out.data && out.data.context) || null; showMeta(); if (cb) { cb(); } }).catch(function () { if (cb) { cb(); } }); }
-				function reveal(greet) { panel.style.display = ''; if (greet) { var hasPages = ctx && ctx.pages && ctx.pages.some(function (p) { return p.front; }); bubble('is-bot', hasPages ? 'Your site is live. Tell me what to change \u2014 the homepage, a section, a new page, booking or images.' : 'Your theme is ready. Want me to generate the starter pages? Or tell me what to build.'); setChips(hasPages ? ['Change the homepage hero', 'Add a pricing page', 'Add booking', 'Add images'] : ['Generate starter pages', 'Add booking']); } }
+				function reveal(greet) { panel.style.display = ''; hideWizard(); if (greet) { var hasPages = ctx && ctx.pages && ctx.pages.some(function (p) { return p.front; }); bubble('is-bot', hasPages ? 'Your site is live. Tell me what to change \u2014 the homepage, a section, a new page, booking or images.' : 'Your theme is ready. Want me to generate the starter pages? Or tell me what to build.'); setChips(hasPages ? ['Change the homepage hero', 'Add a pricing page', 'Add booking', 'Add images'] : ['Generate starter pages', 'Add booking']); } }
 				function send() { var msg = (input.value || '').trim(); if (!msg || sbusy) { return; } sbusy = true; input.value = ''; bubble('is-user', esc(msg)); var thinking = bubble('is-bot', '<span class="wpab-typing">\u2026</span>'); api('POST', cfg.restStudio, { message: msg }).then(function (out) { if (!out.ok || !out.data || out.data.success === false) { thinking.innerHTML = esc((out.data && (out.data.message || out.data.error)) || 'Something went wrong.'); sbusy = false; return; } thinking.innerHTML = esc(out.data.reply || 'On it.'); var action = out.data.action; if (!action) { sbusy = false; return; } runAction(action, function () { sbusy = false; loadContext(); }); }).catch(function () { thinking.innerHTML = 'Network error.'; sbusy = false; }); }
 				function done_ok(run, html) { run.innerHTML = html; }
 				function done_err(run, d) { run.innerHTML = '<span style="color:#a00">' + esc((d && (d.message || d.error)) || 'Failed.') + '</span>'; }
