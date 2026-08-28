@@ -59,9 +59,27 @@ final class WPAB_Editor {
 			)
 		);
 
-		// Theme generation (Phase A): create + activate a new classic PHP theme
-		// via the create-only WPAB_Theme_Writer. For now it writes a minimal
-		// starter theme; the wizard + AI generation are layered on top of this.
+		// Theme generation. plan (blueprint) + file (one file at a time, proxied
+		// to the SaaS), then create-theme writes the whole set via the
+		// create-only WPAB_Theme_Writer.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/plan',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_plan' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/file',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_file' ),
+				'permission_callback' => $permission,
+			)
+		);
 		register_rest_route(
 			self::NAMESPACE,
 			'/editor/create-theme',
@@ -71,6 +89,42 @@ final class WPAB_Editor {
 				'permission_callback' => $permission,
 			)
 		);
+	}
+
+	/** Phase B: ask the SaaS for a theme blueprint from the wizard brief. */
+	public static function rest_build_plan( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$brief  = isset( $params['brief'] ) && is_array( $params['brief'] ) ? $params['brief'] : array();
+
+		if ( empty( $brief ) ) {
+			return new WP_Error( 'wpab_plan_empty', 'A brief is required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/build-plan', array( 'brief' => $brief ), 90 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Phase C: ask the SaaS to generate one theme file from the blueprint. */
+	public static function rest_build_file( WP_REST_Request $request ) {
+		$params    = self::json_params( $request );
+		$blueprint = isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ? $params['blueprint'] : array();
+		$path      = isset( $params['path'] ) ? trim( (string) $params['path'] ) : '';
+
+		if ( empty( $blueprint ) || '' === $path ) {
+			return new WP_Error( 'wpab_file_bad', 'A blueprint and a path are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request(
+			'agent/build-file',
+			array(
+				'blueprint' => $blueprint,
+				'path'      => $path,
+			),
+			90
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
 	public static function rest_create_theme( WP_REST_Request $request ) {
@@ -87,8 +141,32 @@ final class WPAB_Editor {
 			$brand = mb_substr( $brand, 0, 80 );
 		}
 
-		$files  = self::starter_classic_theme( $brand );
-		$result = WPAB_Theme_Writer::create( $brand, $files );
+		// If the caller supplied generated files, use them; otherwise fall back
+		// to the built-in starter theme. The writer re-validates everything
+		// regardless of where the files came from.
+		$files = array();
+
+		if ( isset( $params['files'] ) && is_array( $params['files'] ) ) {
+			foreach ( $params['files'] as $f ) {
+				if ( is_array( $f ) && isset( $f['path'] ) ) {
+					$files[] = array(
+						'path'     => (string) $f['path'],
+						'contents' => isset( $f['contents'] ) ? (string) $f['contents'] : '',
+					);
+				}
+			}
+		}
+
+		if ( empty( $files ) ) {
+			$files = self::starter_classic_theme( $brand );
+		}
+
+		$meta = array();
+		if ( isset( $params['description'] ) ) {
+			$meta['description'] = (string) $params['description'];
+		}
+
+		$result = WPAB_Theme_Writer::create( $brand, $files, $meta );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -334,6 +412,8 @@ final class WPAB_Editor {
 			'restChat'        => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat' ) ),
 			'restContext'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/context' ) ),
 			'restCreateTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/create-theme' ) ),
+			'restBuildPlan'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
+			'restBuildFile'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/file' ) ),
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'   => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'exitUrl'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
@@ -356,11 +436,45 @@ final class WPAB_Editor {
 
 			<div id="wpab-ed-wizard" class="wpab-ed__wizard" hidden>
 				<div class="wpab-ed__wcard">
-					<h2 class="wpab-ed__wtitle">Generate a new theme</h2>
-					<p class="wpab-ed__whint">Phase A: this creates a fresh custom classic theme and activates it. The guided wizard and AI generation come next.</p>
-					<label class="wpab-ed__wlabel" for="wpab-ed-wname">Theme name</label>
-					<input type="text" id="wpab-ed-wname" class="wpab-ed__winput" placeholder="e.g. Aurora Studio" />
+					<h2 class="wpab-ed__wtitle">Generate a custom theme</h2>
+					<p class="wpab-ed__whint">Describe your site and the AI builds a full custom classic PHP theme — templates, sections and styles — then activates it.</p>
+
+					<div id="wpab-ed-wform">
+						<label class="wpab-ed__wlabel" for="wpab-ed-wname">Site / theme name</label>
+						<input type="text" id="wpab-ed-wname" class="wpab-ed__winput" placeholder="e.g. Aurora Studio" />
+
+						<label class="wpab-ed__wlabel" for="wpab-ed-wtype">Site type</label>
+						<input type="text" id="wpab-ed-wtype" class="wpab-ed__winput" placeholder="e.g. design agency, restaurant, portfolio" />
+
+						<div class="wpab-ed__wrow">
+							<div class="wpab-ed__wcol">
+								<label class="wpab-ed__wlabel" for="wpab-ed-wstyle">Style</label>
+								<select id="wpab-ed-wstyle" class="wpab-ed__winput">
+									<option value="modern">Modern</option>
+									<option value="minimal">Minimal</option>
+									<option value="bold">Bold</option>
+									<option value="elegant">Elegant</option>
+									<option value="editorial">Editorial</option>
+									<option value="playful">Playful</option>
+								</select>
+							</div>
+							<div class="wpab-ed__wcol">
+								<label class="wpab-ed__wlabel" for="wpab-ed-wcolor">Primary color</label>
+								<input type="color" id="wpab-ed-wcolor" class="wpab-ed__wcolor" value="#3a5bff" />
+							</div>
+						</div>
+
+						<label class="wpab-ed__wlabel" for="wpab-ed-wextra">Anything else (pages, sections, tone…)</label>
+						<textarea id="wpab-ed-wextra" class="wpab-ed__winput" rows="3" placeholder="e.g. Home, Services, Pricing, About, Contact. Include a testimonials section. Friendly, confident tone."></textarea>
+					</div>
+
+					<div id="wpab-ed-wprogress" class="wpab-ed__wprogress" hidden>
+						<div class="wpab-ed__wbar"><span id="wpab-ed-wbarfill" class="wpab-ed__wbarfill"></span></div>
+						<div id="wpab-ed-wstep" class="wpab-ed__wstep"></div>
+					</div>
+
 					<div id="wpab-ed-wresult" class="wpab-ed__wresult"></div>
+
 					<div class="wpab-ed__wactions">
 						<button type="button" id="wpab-ed-wcancel" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Cancel</button>
 						<button type="button" id="wpab-ed-wgo" class="wpab-ed__wbtn">Generate theme</button>
@@ -408,7 +522,18 @@ final class WPAB_Editor {
 			.wpab-ed__newtheme { background: #3a5bff; color: #fff; border: 0; border-radius: 8px; padding: 7px 15px; font-size: 13px; font-weight: 600; cursor: pointer; }
 			.wpab-ed__newtheme:hover { background: #2f4ae0; }
 			.wpab-ed__wizard { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(8,10,13,.72); padding: 24px; }
-			.wpab-ed__wcard { width: 100%; max-width: 460px; background: #14171b; border: 1px solid #23262b; border-radius: 16px; padding: 26px; }
+			.wpab-ed__wcard { width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; background: #14171b; border: 1px solid #23262b; border-radius: 16px; padding: 26px; }
+			.wpab-ed__winput + .wpab-ed__wlabel { margin-top: 14px; }
+			.wpab-ed__wlabel { margin-top: 14px; }
+			.wpab-ed__wlabel:first-of-type { margin-top: 0; }
+			textarea.wpab-ed__winput { resize: vertical; font-family: inherit; }
+			.wpab-ed__wrow { display: flex; gap: 12px; }
+			.wpab-ed__wcol { flex: 1 1 0; }
+			.wpab-ed__wcolor { width: 100%; height: 42px; background: #0e1013; border: 1px solid #2c3037; border-radius: 10px; padding: 4px; cursor: pointer; }
+			.wpab-ed__wprogress { margin-top: 16px; }
+			.wpab-ed__wbar { height: 8px; background: #23262b; border-radius: 999px; overflow: hidden; }
+			.wpab-ed__wbarfill { display: block; height: 100%; width: 0; background: #3a5bff; transition: width .3s ease; }
+			.wpab-ed__wstep { margin-top: 8px; font-size: 12px; color: #9aa1ac; }
 			.wpab-ed__wtitle { margin: 0 0 6px; font-size: 19px; font-weight: 600; color: #f4f5f7; }
 			.wpab-ed__whint { margin: 0 0 18px; font-size: 13px; color: #9aa1ac; line-height: 1.55; }
 			.wpab-ed__wlabel { display: block; font-size: 12px; color: #9aa1ac; margin-bottom: 6px; }
@@ -575,59 +700,126 @@ final class WPAB_Editor {
 					.catch(function () {});
 			}
 
-			// ---- New theme (Phase A): create + activate a starter classic theme ----
+			// ---- New theme (Phase B+C): plan -> generate each file -> write ----
 			var wizard = $('wpab-ed-wizard');
 			var wName = $('wpab-ed-wname');
+			var wType = $('wpab-ed-wtype');
+			var wStyle = $('wpab-ed-wstyle');
+			var wColor = $('wpab-ed-wcolor');
+			var wExtra = $('wpab-ed-wextra');
 			var wGo = $('wpab-ed-wgo');
 			var wCancel = $('wpab-ed-wcancel');
 			var wResult = $('wpab-ed-wresult');
 			var wOpen = $('wpab-ed-newtheme');
+			var wForm = $('wpab-ed-wform');
+			var wProgress = $('wpab-ed-wprogress');
+			var wBarFill = $('wpab-ed-wbarfill');
+			var wStep = $('wpab-ed-wstep');
+			var MAX_FILES = 60;
 
 			function openWizard() {
 				if (!wizard) { return; }
 				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = ''; }
-				if (wGo) { wGo.disabled = false; }
+				if (wProgress) { wProgress.hidden = true; }
+				if (wBarFill) { wBarFill.style.width = '0'; }
+				if (wForm) { wForm.style.display = ''; }
+				if (wGo) { wGo.disabled = false; wGo.textContent = 'Generate theme'; }
 				wizard.hidden = false;
 				if (wName) { wName.focus(); }
 			}
-			function closeWizard() { if (wizard) { wizard.hidden = true; } }
+			function closeWizard() { if (wizard && (!wGo || !wGo.disabled)) { wizard.hidden = true; } }
 
 			if (wOpen) { wOpen.addEventListener('click', openWizard); }
 			if (wCancel) { wCancel.addEventListener('click', closeWizard); }
 			if (wizard) {
-				wizard.addEventListener('click', function (e) { if (e.target === wizard) { closeWizard(); } });
+				wizard.addEventListener('click', function (e) { if (e.target === wizard && (!wGo || !wGo.disabled)) { closeWizard(); } });
 			}
 
-			function generateTheme() {
-				if (!wGo || !cfg.restCreateTheme) { return; }
-				var brand = wName ? (wName.value || '').trim() : '';
-				wGo.disabled = true;
-				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = 'Creating theme…'; }
-				fetch(cfg.restCreateTheme, {
+			function wpost(url, payload) {
+				return fetch(url, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce, 'Accept': 'application/json' },
 					credentials: 'same-origin',
-					body: JSON.stringify({ brand: brand })
-				}).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, data: j }; }); })
-					.then(function (out) {
-						if (!out.ok || !out.data || out.data.success === false) {
-							if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = (out.data && (out.data.message || out.data.error)) || 'Could not create the theme.'; }
-							wGo.disabled = false;
-							return;
+					body: JSON.stringify(payload || {})
+				}).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, data: j }; }); });
+			}
+			function setProgress(done, total, label) {
+				if (wBarFill && total) { wBarFill.style.width = Math.round((done / total) * 100) + '%'; }
+				if (wStep) { wStep.textContent = label || ''; }
+			}
+			function errText(out, fallback) {
+				return (out && out.data && (out.data.message || out.data.error)) || fallback;
+			}
+
+			function generateTheme() {
+				if (!wGo || !cfg.restBuildPlan) { return; }
+				var brand = wName ? (wName.value || '').trim() : '';
+				if (!brand) { if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = 'Please enter a site / theme name.'; } return; }
+
+				var brief = {
+					name: brand,
+					type: wType ? (wType.value || '').trim() : '',
+					style: wStyle ? wStyle.value : 'modern',
+					primaryColor: wColor ? wColor.value : '#3a5bff',
+					extra: wExtra ? (wExtra.value || '').trim() : ''
+				};
+
+				wGo.disabled = true;
+				wGo.textContent = 'Generating…';
+				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = ''; }
+				if (wForm) { wForm.style.display = 'none'; }
+				if (wProgress) { wProgress.hidden = false; }
+				setProgress(0, 1, 'Planning your theme…');
+
+				wpost(cfg.restBuildPlan, { brief: brief }).then(function (out) {
+					if (!out.ok || !out.data || out.data.success === false || !out.data.blueprint) {
+						throw new Error(errText(out, 'Could not plan the theme.'));
+					}
+					var blueprint = out.data.blueprint;
+					var files = (blueprint.files || []).filter(function (p) { return typeof p === 'string' && p; });
+					if (!files.length) { throw new Error('The plan returned no files.'); }
+					if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
+
+					var built = [];
+					var total = files.length;
+
+					function next(i) {
+						if (i >= total) {
+							setProgress(total, total, 'Writing theme…');
+							return wpost(cfg.restCreateTheme, {
+								brand: brand,
+								description: (blueprint.theme && blueprint.theme.description) || '',
+								files: built
+							}).then(function (cOut) {
+								if (!cOut.ok || !cOut.data || cOut.data.success === false) {
+									throw new Error(errText(cOut, 'Could not write the theme.'));
+								}
+								if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + (cOut.data.name || brand) + '” created (' + (cOut.data.files_written || built.length) + ' files) and activated. Reloading…'; }
+								setTimeout(function () { location.reload(); }, 1200);
+							});
 						}
-						if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + (out.data.name || 'Theme') + '” created (' + (out.data.files_written || 0) + ' files) and activated. Reloading…'; }
-						setTimeout(function () { location.reload(); }, 1100);
-					})
-					.catch(function () {
-						if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = 'Network error creating the theme.'; }
-						wGo.disabled = false;
-					});
+						var path = files[i];
+						setProgress(i, total, 'Generating ' + path + ' (' + (i + 1) + '/' + total + ')');
+						return wpost(cfg.restBuildFile, { blueprint: blueprint, path: path }).then(function (fOut) {
+							if (!fOut.ok || !fOut.data || fOut.data.success === false || typeof fOut.data.contents !== 'string') {
+								throw new Error(errText(fOut, 'Could not generate ' + path + '.'));
+							}
+							built.push({ path: path, contents: fOut.data.contents });
+							return next(i + 1);
+						});
+					}
+
+					return next(0);
+				}).catch(function (err) {
+					if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = (err && err.message) || 'Theme generation failed.'; }
+					if (wForm) { wForm.style.display = ''; }
+					if (wProgress) { wProgress.hidden = true; }
+					wGo.disabled = false;
+					wGo.textContent = 'Generate theme';
+				});
 			}
 
 			if (wGo) { wGo.addEventListener('click', generateTheme); }
-			if (wName) {
-				wName.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); generateTheme(); } });
-			}
 		})();
 		</script>
 		<?php
