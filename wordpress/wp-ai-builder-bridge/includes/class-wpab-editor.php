@@ -184,59 +184,6 @@ final class WPAB_Editor {
 			)
 		);
 
-		// SEO module: read current SEO fields, draft optimized values (proxied to
-		// the SaaS model) and write them into the active SEO plugin (Yoast /
-		// Rank Math). Gated on the seo entitlement inside each handler.
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/seo/get',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( __CLASS__, 'rest_seo_get' ),
-				'permission_callback' => $permission,
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/seo/propose',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_seo_propose' ),
-				'permission_callback' => $permission,
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/seo/apply',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_seo_apply' ),
-				'permission_callback' => $permission,
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/seo/audit',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( __CLASS__, 'rest_seo_audit' ),
-				'permission_callback' => $permission,
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/seo/site',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( __CLASS__, 'rest_seo_site' ),
-				'permission_callback' => $permission,
-			)
-		);
-
 		// Builder: generate a standalone per-site theme from a wizard brief.
 		register_rest_route(
 			self::NAMESPACE,
@@ -244,17 +191,6 @@ final class WPAB_Editor {
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( __CLASS__, 'rest_build_create_theme' ),
-				'permission_callback' => $permission,
-			)
-		);
-
-		// Builder: generate the site's pages (AI, proxied to SaaS) and create them.
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/build/generate-site',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_build_generate_site' ),
 				'permission_callback' => $permission,
 			)
 		);
@@ -289,23 +225,14 @@ final class WPAB_Editor {
 			)
 		);
 
-		// Studio: project context (the generated theme, its pages, companion
-		// plugin and recent actions) + the conversational router + page edits.
+		// Project context: the generated theme, its pages, features and recent
+		// actions — read by the editor to understand the site.
 		register_rest_route(
 			self::NAMESPACE,
 			'/editor/build/context',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( __CLASS__, 'rest_build_context' ),
-				'permission_callback' => $permission,
-			)
-		);
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/studio',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_studio' ),
 				'permission_callback' => $permission,
 			)
 		);
@@ -378,38 +305,6 @@ final class WPAB_Editor {
 					'callback'            => array( __CLASS__, 'rest_ai_log_clear' ),
 					'permission_callback' => $permission,
 				),
-			)
-		);
-
-		// Analysis: /analyze is computed locally (instant, no AI); /recommend is
-		// proxied to the SaaS model which reads the same audit.
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/analyze',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( __CLASS__, 'rest_analyze' ),
-				'permission_callback' => $permission,
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/recommend',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_recommend' ),
-				'permission_callback' => $permission,
-			)
-		);
-
-		register_rest_route(
-			self::NAMESPACE,
-			'/editor/understand',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rest_understand' ),
-				'permission_callback' => $permission,
 			)
 		);
 
@@ -489,22 +384,6 @@ final class WPAB_Editor {
 			),
 			55
 		);
-
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
-	public static function rest_analyze( WP_REST_Request $request ) {
-		return new WP_REST_Response( WPAB_Analysis::audit(), 200 );
-	}
-
-	public static function rest_recommend( WP_REST_Request $request ) {
-		$result = WPAB_Cloud::request( 'agent/recommend', array(), 55 );
-
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
-	public static function rest_understand( WP_REST_Request $request ) {
-		$result = WPAB_Cloud::request( 'agent/understand', array(), 55 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -840,92 +719,6 @@ final class WPAB_Editor {
 		return new WP_REST_Response( array( 'success' => true ), 200 );
 	}
 
-	public static function rest_seo_get( WP_REST_Request $request ) {
-		$gate = self::require_module( 'seo' );
-		if ( is_wp_error( $gate ) ) {
-			return $gate;
-		}
-
-		$result = WPAB_Seo::get_item(
-			(string) $request->get_param( 'type' ),
-			(int) $request->get_param( 'id' )
-		);
-
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
-	public static function rest_seo_propose( WP_REST_Request $request ) {
-		$gate = self::require_module( 'seo' );
-		if ( is_wp_error( $gate ) ) {
-			return $gate;
-		}
-
-		$params = self::json_params( $request );
-		$type   = isset( $params['type'] ) ? trim( (string) $params['type'] ) : '';
-		$id     = isset( $params['id'] ) ? (int) $params['id'] : 0;
-
-		if ( '' === $type || $id < 1 ) {
-			return new WP_Error( 'wpab_editor_bad_seo', 'type and id are required.', array( 'status' => 400 ) );
-		}
-
-		// Read the current SEO locally so the model can improve on it, and pass
-		// it to the SaaS which also fetches the page body for context.
-		$current = WPAB_Seo::get_item( $type, $id );
-
-		if ( is_wp_error( $current ) ) {
-			return $current;
-		}
-
-		$result = WPAB_Cloud::request(
-			'agent/seo-propose',
-			array(
-				'type'    => $type,
-				'id'      => $id,
-				'current' => array(
-					'title'           => $current['title'],
-					'slug'            => $current['slug'],
-					'url'             => $current['url'],
-					'plugin'          => $current['plugin'],
-					'metaTitle'       => $current['metaTitle'],
-					'metaDescription' => $current['metaDescription'],
-					'focusKeyword'    => $current['focusKeyword'],
-				),
-			),
-			55
-		);
-
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
-	public static function rest_seo_audit( WP_REST_Request $request ) {
-		$gate = self::require_module( 'seo' );
-		if ( is_wp_error( $gate ) ) {
-			return $gate;
-		}
-
-		$limit = (int) $request->get_param( 'limit' );
-
-		try {
-			$result = WPAB_Seo::audit(
-				(string) $request->get_param( 'type' ),
-				$limit > 0 ? $limit : 100
-			);
-		} catch ( \Throwable $e ) {
-			return new WP_Error( 'wpab_seo_audit_error', 'Audit failed: ' . $e->getMessage(), array( 'status' => 500 ) );
-		}
-
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
-	public static function rest_seo_site( WP_REST_Request $request ) {
-		$gate = self::require_module( 'seo' );
-		if ( is_wp_error( $gate ) ) {
-			return $gate;
-		}
-
-		return new WP_REST_Response( WPAB_Seo::site(), 200 );
-	}
-
 	public static function rest_build_create_theme( WP_REST_Request $request ) {
 		$gate = self::require_module( 'build' );
 		if ( is_wp_error( $gate ) ) {
@@ -955,51 +748,6 @@ final class WPAB_Editor {
 		}
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
-	public static function rest_build_generate_site( WP_REST_Request $request ) {
-		$gate = self::require_module( 'build' );
-		if ( is_wp_error( $gate ) ) {
-			return $gate;
-		}
-
-		$params = self::json_params( $request );
-
-		$body = array(
-			'brand'    => isset( $params['brand'] ) ? (string) $params['brand'] : '',
-			'tagline'  => isset( $params['tagline'] ) ? (string) $params['tagline'] : '',
-			'siteType' => isset( $params['site_type'] ) ? (string) $params['site_type'] : '',
-			'style'    => isset( $params['style'] ) ? (string) $params['style'] : '',
-			'primary'  => isset( $params['primary'] ) ? (string) $params['primary'] : '',
-			'custom'   => isset( $params['custom'] ) ? (string) $params['custom'] : '',
-		);
-
-		$started = microtime( true );
-		$result  = WPAB_Cloud::request( 'agent/build-site', $body, 120 );
-		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
-
-		if ( is_wp_error( $result ) ) {
-			self::ai_log_add( 'generate-site', $body, null, $result->get_error_message(), $dur );
-			return $result;
-		}
-
-		if ( empty( $result['pages'] ) || ! is_array( $result['pages'] ) ) {
-			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The AI did not return any pages.';
-			self::ai_log_add( 'generate-site', $body, is_array( $result ) ? $result : null, $msg, $dur );
-			return new WP_Error( 'wpab_build_empty', $msg, array( 'status' => 502 ) );
-		}
-
-		$patterns = ( isset( $result['patterns'] ) && is_array( $result['patterns'] ) ) ? $result['patterns'] : array();
-
-		self::ai_log_add( 'generate-site', $body, $result, '', $dur );
-
-		try {
-			$applied = WPAB_Builder::apply_site( $result['pages'], $patterns );
-		} catch ( \Throwable $e ) {
-			return new WP_Error( 'wpab_build_apply', 'Creating pages failed: ' . $e->getMessage(), array( 'status' => 500 ) );
-		}
-
-		return is_wp_error( $applied ) ? $applied : new WP_REST_Response( $applied, 200 );
 	}
 
 	/** Multi-step step 1: plan the site map (fast, no page markup). */
@@ -1256,49 +1004,6 @@ final class WPAB_Editor {
 			return $gate;
 		}
 		return new WP_REST_Response( array( 'success' => true, 'context' => self::project_context() ), 200 );
-	}
-
-	/** The Studio router: decide which action a plain-language request maps to. */
-	public static function rest_studio( WP_REST_Request $request ) {
-		$gate = self::require_module( 'build' );
-		if ( is_wp_error( $gate ) ) {
-			return $gate;
-		}
-
-		$params  = self::json_params( $request );
-		$message = isset( $params['message'] ) ? trim( (string) $params['message'] ) : '';
-
-		if ( '' === $message ) {
-			return new WP_Error( 'wpab_studio_empty', 'Type what you want to build or change.', array( 'status' => 400 ) );
-		}
-		if ( strlen( $message ) > 4000 ) {
-			return new WP_Error( 'wpab_studio_long', 'That message is too long.', array( 'status' => 400 ) );
-		}
-
-		$body = array(
-			'message' => $message,
-			'context' => self::project_context(),
-		);
-
-		$started = microtime( true );
-		$result  = WPAB_Cloud::request( 'agent/studio', $body, 60 );
-		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
-
-		if ( is_wp_error( $result ) ) {
-			self::ai_log_add( 'studio', array( 'message' => $message ), null, $result->get_error_message(), $dur );
-			return $result;
-		}
-
-		self::ai_log_add( 'studio', array( 'message' => $message ), $result, '', $dur );
-
-		return new WP_REST_Response(
-			array(
-				'success' => true,
-				'reply'   => isset( $result['reply'] ) ? (string) $result['reply'] : '',
-				'action'  => isset( $result['action'] ) && is_array( $result['action'] ) ? $result['action'] : null,
-			),
-			200
-		);
 	}
 
 	/** Edit one existing page: rewrite/extend its blocks per instructions. */
@@ -1570,26 +1275,6 @@ final class WPAB_Editor {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
-	public static function rest_seo_apply( WP_REST_Request $request ) {
-		$gate = self::require_module( 'seo' );
-		if ( is_wp_error( $gate ) ) {
-			return $gate;
-		}
-
-		$params = self::json_params( $request );
-		$type   = isset( $params['type'] ) ? trim( (string) $params['type'] ) : '';
-		$id     = isset( $params['id'] ) ? (int) $params['id'] : 0;
-		$fields = isset( $params['fields'] ) && is_array( $params['fields'] ) ? $params['fields'] : array();
-
-		if ( '' === $type || $id < 1 || empty( $fields ) ) {
-			return new WP_Error( 'wpab_editor_bad_seo', 'type, id and fields are required.', array( 'status' => 400 ) );
-		}
-
-		$result = WPAB_Seo::apply( $type, $id, $fields );
-
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
 	public static function rest_propose( WP_REST_Request $request ) {
 		$params = self::json_params( $request );
 		$prompt = isset( $params['prompt'] ) ? trim( (string) $params['prompt'] ) : '';
@@ -1680,9 +1365,6 @@ final class WPAB_Editor {
 			'restContentGet'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/get' ) ),
 			'restContentPropose' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/propose' ) ),
 			'restContentApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/content/apply' ) ),
-			'restAnalyze'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/analyze' ) ),
-			'restRecommend' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/recommend' ) ),
-			'restUnderstand' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/understand' ) ),
 			'restBuildContext' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/context' ) ),
 			'restBuildTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/create-theme' ) ),
 			'restBuildPlan'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
@@ -1759,37 +1441,6 @@ final class WPAB_Editor {
 							</div>
 						</div>
 
-						<div id="wpab-pane-seo" class="wpab-pane" hidden>
-							<div class="wpab-pane__bar">
-								<span class="wpab-pane__hint">SEO signals across your published pages.</span>
-								<button type="button" id="wpab-seo-refresh" class="wpab-textbtn">Refresh</button>
-							</div>
-							<div id="wpab-seo-body"><p class="wpab-empty">Loading…</p></div>
-						</div>
-
-						<div id="wpab-pane-insights" class="wpab-pane" hidden>
-							<div class="wpab-pane__bar">
-								<span class="wpab-pane__hint">What is on your site right now.</span>
-								<button type="button" id="wpab-insights-refresh" class="wpab-textbtn">Refresh</button>
-							</div>
-							<div class="wpab-understand">
-								<div class="wpab-understand__head">
-									<span class="wpab-understand__title">AI read of this site</span>
-									<button type="button" id="wpab-understand-run" class="wpab-btn">Scan site</button>
-								</div>
-								<div id="wpab-understand-body" class="wpab-understand__body"><p class="wpab-empty">Click &ldquo;Scan site&rdquo; for an AI biography &mdash; what this site is, who it is for, the problem it solves, its objective, standpoint and economic outlook.</p></div>
-							</div>
-							<div id="wpab-insights-body"><p class="wpab-empty">Loading…</p></div>
-						</div>
-
-						<div id="wpab-pane-recs" class="wpab-pane" hidden>
-							<div class="wpab-pane__bar">
-								<span class="wpab-pane__hint">AI recommendations from your site data.</span>
-								<button type="button" id="wpab-recs-run" class="wpab-textbtn">Generate</button>
-							</div>
-							<div id="wpab-recs-body"><p class="wpab-empty">Click Generate to analyze your site and get prioritized recommendations.</p></div>
-						</div>
-
 						<div id="wpab-pane-visual" class="wpab-pane" hidden>
 							<p id="wpab-visual-hint" class="wpab-empty">Click any element in the preview to target it.</p>
 							<div id="wpab-visual-panel" class="wpab-visual__panel" hidden>
@@ -1848,11 +1499,7 @@ final class WPAB_Editor {
 							<button type="button" class="wpab-dd__item" data-tool="build">History</button>
 						</div>
 					</div>
-					<div class="wpab-anlz__group">
-						<button type="button" class="wpab-anlz" data-view="seo" title="SEO audit"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.6" y2="16.6"></line></svg><span class="wpab-anlz__label">SEO</span></button>
-						<button type="button" class="wpab-anlz" data-view="insights" title="Insights"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="21" x2="5" y2="11"></line><line x1="12" y1="21" x2="12" y2="4"></line><line x1="19" y1="21" x2="19" y2="14"></line></svg><span class="wpab-anlz__label">Insights</span></button>
-						<button type="button" class="wpab-anlz" data-view="recs" title="AI recommendations"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"></path><path d="M10 21h4"></path><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.2 1 2.5h6c0-1.3.3-1.8 1-2.5A6 6 0 0 0 12 3z"></path></svg><span class="wpab-anlz__label">Recs</span></button>
-					</div>
+					<button type="button" id="wpab-newtheme" class="wpab-anlz" title="Generate a new custom theme"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="M5 12h14"></path></svg><span class="wpab-anlz__label">New theme</span></button>
 					<button type="button" id="wpab-context" class="wpab-bar__context" hidden></button>
 					<form id="wpab-editor-form" class="wpab-bar__form" autocomplete="off">
 						<textarea id="wpab-editor-input" class="wpab-bar__input" rows="1" placeholder="Ask anything, or describe a change…"></textarea>
@@ -2197,11 +1844,11 @@ final class WPAB_Editor {
 			}
 
 			/* ---- Tools (dropdown-driven) + sheet ---- */
-			var TOOL_LABELS = { chat: 'Chat', content: 'Content', visual: 'Inspect', build: 'History', seo: 'SEO', insights: 'Insights', recs: 'Recommendations' };
+			var TOOL_LABELS = { chat: 'Chat', content: 'Content', visual: 'Inspect', build: 'History' };
 			var currentTool = 'chat';
 			function openSheet() { var sh = $('wpab-sheet'), dk = $('wpab-dock'); if (sh) { sh.hidden = false; } if (dk) { dk.classList.add('is-open'); } }
 			function closeSheet() { var sh = $('wpab-sheet'), dk = $('wpab-dock'); if (sh) { sh.hidden = true; } if (dk) { dk.classList.remove('is-open'); } }
-			var ALL_PANES = ['chat', 'build', 'content', 'visual', 'seo', 'insights', 'recs'];
+			var ALL_PANES = ['chat', 'build', 'content', 'visual'];
 			function showPane(name) {
 				for (var pi = 0; pi < ALL_PANES.length; pi++) { var pel = $('wpab-pane-' + ALL_PANES[pi]); if (pel) { pel.hidden = (ALL_PANES[pi] !== name); } }
 			}
@@ -2717,125 +2364,10 @@ final class WPAB_Editor {
 				vFrame.src = cfg.siteUrl;
 			}
 
-			/* ---- Analysis: SEO / Insights / Recommendations ---- */
-			var auditData = null, auditLoading = false, recsData = null;
-			var SPIN = '<p class="wpab-empty">Loading…</p>';
-			var ISSUE_LABELS = { missing_meta: 'Missing meta description', short_title: 'Title too short', long_title: 'Title too long', thin_content: 'Thin content (<300 words)', images_no_alt: 'Images missing alt', multi_h1: 'Multiple H1s' };
-			function loadAudit(cb) {
-				if (auditData) { cb(auditData); return; }
-				if (auditLoading) { return; }
-				auditLoading = true;
-				api('GET', cfg.restAnalyze).then(function (out) {
-					auditLoading = false;
-					if (out.ok && out.data && out.data.success !== false) { auditData = out.data; cb(auditData); } else { cb(null); }
-				}).catch(function () { auditLoading = false; cb(null); });
-			}
-			function chk(ok, label, failmsg) {
-				return '<div class="wpab-check ' + (ok ? 'is-ok' : 'is-bad') + '"><span class="wpab-check__i">' + (ok ? '\u2713' : '!') + '</span><span class="wpab-check__l">' + escapeHtml(label) + '</span>' + (ok ? '' : '<span class="wpab-check__m">' + escapeHtml(failmsg) + '</span>') + '</div>';
-			}
-			function renderSeo(audit) {
-				var body = $('wpab-seo-body'); if (!body) { return; }
-				if (!audit || !audit.seo) { body.innerHTML = '<p class="wpab-empty">Could not run the audit.</p>'; return; }
-				var s = audit.site || {}, seo = audit.seo || {};
-				var checks = '<div class="wpab-checks">' +
-					chk(!s.permalink_plain, 'Pretty permalinks', 'Using plain ?p= URLs — switch to a post-name permalink structure.') +
-					chk(!!s.https, 'HTTPS', 'The site is not served over HTTPS.') +
-					chk(!!s.search_indexable, 'Search engines allowed', 'WordPress is set to discourage search engines.') +
-					chk(!s.tagline_default && !s.tagline_empty, 'Tagline set', s.tagline_default ? 'Still the default tagline.' : 'Tagline is empty.') +
-					chk(!!seo.seo_plugin, 'SEO plugin', 'No SEO plugin detected (Yoast / Rank Math / AIOSEO).') +
-					'</div>';
-				var issues = seo.issues || {}, chips = '';
-				Object.keys(issues).forEach(function (k) { if (issues[k] > 0) { chips += '<span class="wpab-issue">' + escapeHtml(ISSUE_LABELS[k] || k) + ' \u00b7 ' + issues[k] + '</span>'; } });
-				var issuesHtml = chips ? '<h3 class="wpab-col__title">Issues found (' + (seo.checked || 0) + ' pages checked)</h3><div class="wpab-issues">' + chips + '</div>' : '<p class="wpab-empty" style="margin-top:10px">No SEO issues in the ' + (seo.checked || 0) + ' pages checked.</p>';
-				var itemsHtml = '';
-				(seo.items || []).forEach(function (it) {
-					var fl = (it.flags || []).map(function (f) { return '<span class="wpab-issue wpab-issue--sm">' + escapeHtml(ISSUE_LABELS[f] || f) + '</span>'; }).join('');
-					itemsHtml += '<div class="wpab-crow"><div class="wpab-crow__top"><span class="wpab-crow__title">' + escapeHtml(it.title || '(no title)') + '</span><span class="wpab-cstatus">' + escapeHtml(it.type) + '</span></div><div class="wpab-crow__meta">' + fl + '</div></div>';
-				});
-				if (itemsHtml) { itemsHtml = '<h3 class="wpab-col__title">Pages to improve</h3>' + itemsHtml; }
-				body.innerHTML = checks + issuesHtml + itemsHtml + '<div class="wpab-anlz-foot"><button type="button" class="wpab-btn" id="wpab-seo-torecs">Get AI recommendations \u2192</button></div>';
-				var b = $('wpab-seo-torecs'); if (b) { b.addEventListener('click', function () { openTool('recs'); }); }
-			}
-			function statTile(label, n) { return '<div class="wpab-stat"><div class="wpab-stat__n">' + (n || 0) + '</div><div class="wpab-stat__l">' + escapeHtml(label) + '</div></div>'; }
-			function renderInsights(audit) {
-				var body = $('wpab-insights-body'); if (!body) { return; }
-				if (!audit || !audit.inventory) { body.innerHTML = '<p class="wpab-empty">Could not load insights.</p>'; return; }
-				var inv = audit.inventory;
-				var max = 1; (inv.types || []).forEach(function (t) { if (t.total > max) { max = t.total; } });
-				var bars = (inv.types || []).map(function (t) {
-					var pct = Math.round((t.total / max) * 100);
-					return '<div class="wpab-bar"><div class="wpab-bar__top"><span>' + escapeHtml(t.label) + '</span><span class="wpab-bar__n">' + t.total + '</span></div><div class="wpab-bar__track"><span style="width:' + pct + '%"></span></div><div class="wpab-bar__sub">' + t.published + ' published \u00b7 ' + t.draft + ' draft</div></div>';
-				}).join('');
-				var stats = '<div class="wpab-stats">' + statTile('Media', inv.media) + statTile('Menus', inv.menus) + (inv.products ? statTile('In stock', inv.products.instock) + statTile('Out of stock', inv.products.outofstock) : '') + '</div>';
-				var recent = (inv.recent || []).map(function (r) { return '<div class="wpab-crow"><div class="wpab-crow__top"><span class="wpab-crow__title">' + escapeHtml(r.title || '(no title)') + '</span><span class="wpab-cstatus wpab-cstatus--' + escapeHtml(r.status) + '">' + escapeHtml(r.status) + '</span></div><div class="wpab-crow__meta">' + escapeHtml(r.type) + '</div></div>'; }).join('');
-				body.innerHTML = stats + '<h3 class="wpab-col__title">Content by type</h3>' + bars + (recent ? '<h3 class="wpab-col__title">Recently updated</h3>' + recent : '');
-			}
-			function renderRecs(data) {
-				var body = $('wpab-recs-body'); if (!body) { return; }
-				var recs = data.recommendations || [];
-				if (!recs.length) { body.innerHTML = '<p class="wpab-empty">' + escapeHtml(data.summary || 'The site looks good — no recommendations.') + '</p>'; return; }
-				var order = { high: 0, medium: 1, low: 2 };
-				recs.sort(function (a, b) { return (order[a.priority] == null ? 3 : order[a.priority]) - (order[b.priority] == null ? 3 : order[b.priority]); });
-				var cards = recs.map(function (r) {
-					return '<div class="wpab-rec"><div class="wpab-rec__top"><span class="wpab-pri wpab-pri--' + escapeHtml(r.priority || 'low') + '">' + escapeHtml(r.priority || 'low') + '</span><span class="wpab-rec__title">' + escapeHtml(r.title || '') + '</span><span class="wpab-rec__area">' + escapeHtml(r.area || '') + '</span></div><div class="wpab-rec__detail">' + escapeHtml(r.detail || '') + '</div></div>';
-				}).join('');
-				body.innerHTML = '<p class="wpab-recs-summary">' + escapeHtml(data.summary || '') + '</p>' + cards + '<div class="wpab-anlz-foot"><button type="button" class="wpab-btn" id="wpab-recs-copy">Copy as report</button><button type="button" class="wpab-btn" id="wpab-recs-regen">Regenerate</button></div>';
-				var cp = $('wpab-recs-copy'); if (cp) { cp.addEventListener('click', function () { copyRecs(data); }); }
-				var rg = $('wpab-recs-regen'); if (rg) { rg.addEventListener('click', function () { runRecs(); }); }
-			}
-			function copyRecs(data) {
-				var nl = String.fromCharCode(10);
-				var lines = ['Site recommendations', '', (data.summary || '')];
-				(data.recommendations || []).forEach(function (r) { lines.push('- [' + (r.priority || '') + '] ' + (r.title || '') + ' - ' + (r.detail || '')); });
-				try { navigator.clipboard.writeText(lines.join(nl)); wpToast('Report copied to clipboard.'); } catch (e) { wpToast('Copy is not available here.', 'error'); }
-			}
-			function runRecs() {
-				var body = $('wpab-recs-body'); if (body) { body.innerHTML = '<p class="wpab-typing">Analyzing your site and drafting recommendations…</p>'; }
-				setBusy(true);
-				api('POST', cfg.restRecommend, {}).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml((out.data && (out.data.error || out.data.message)) || 'Could not generate recommendations.') + '</div>'; } return; }
-					recsData = out.data; renderRecs(out.data);
-				}).catch(function () { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed. If your site is large it may take a moment — try again.</div>'; } })
-				.then(function () { setBusy(false); });
-			}
-			function renderUnderstanding(u) {
-				var body = $('wpab-understand-body'); if (!body || !u) { return; }
-				function field(label, val) { return val ? '<div class="wpab-uf"><div class="wpab-uf__l">' + escapeHtml(label) + '</div><div class="wpab-uf__v">' + escapeHtml(val) + '</div></div>' : ''; }
-				function chips(arr, cls) { return (arr || []).map(function (x) { return '<span class="wpab-uchip ' + cls + '">' + escapeHtml(x) + '</span>'; }).join(''); }
-				var html = '<p class="wpab-bio">' + escapeHtml(u.biography || '') + '</p>';
-				html += '<div class="wpab-ufs">' + field('Identity', u.identity) + field('Audience', u.audience) + field('Objective', u.objective) + field('Problem it solves', u.problem_solved) + field('Standpoint', u.positioning) + field('Economic outlook', u.economic_outlook) + '</div>';
-				if ((u.strengths && u.strengths.length) || (u.risks && u.risks.length)) {
-					html += '<div class="wpab-ucols">';
-					if (u.strengths && u.strengths.length) { html += '<div><div class="wpab-col__title">Strengths</div><div class="wpab-uchips">' + chips(u.strengths, 'is-good') + '</div></div>'; }
-					if (u.risks && u.risks.length) { html += '<div><div class="wpab-col__title">Risks</div><div class="wpab-uchips">' + chips(u.risks, 'is-warn') + '</div></div>'; }
-					html += '</div>';
-				}
-				html += '<div class="wpab-anlz-foot"><button type="button" class="wpab-btn" id="wpab-understand-regen">Rescan</button></div>';
-				body.innerHTML = html;
-				var rg = $('wpab-understand-regen'); if (rg) { rg.addEventListener('click', function () { runUnderstand(); }); }
-			}
-			function runUnderstand() {
-				var body = $('wpab-understand-body'); if (body) { body.innerHTML = '<p class="wpab-typing">Scanning your site and forming an understanding…</p>'; }
-				setBusy(true);
-				api('POST', cfg.restUnderstand, {}).then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + escapeHtml((out.data && (out.data.error || out.data.message)) || 'Could not scan the site.') + '</div>'; } return; }
-					renderUnderstanding(out.data.understanding || {});
-				}).catch(function () { if (body) { body.innerHTML = '<div class="wpab-deploy wpab-deploy--err">Network request failed. Try again.</div>'; } })
-				.then(function () { setBusy(false); });
-			}
-			function seoLoad() { var b = $('wpab-seo-body'); if (b) { b.innerHTML = SPIN; } loadAudit(renderSeo); }
-			function insightsLoad() { var b = $('wpab-insights-body'); if (b) { b.innerHTML = SPIN; } loadAudit(renderInsights); }
+			/* ---- New theme button -> opens the theme generation wizard ---- */
 			(function () {
-				var g = document.querySelectorAll('.wpab-anlz');
-				for (var i = 0; i < g.length; i++) { g[i].addEventListener('click', function () {
-					var v = this.getAttribute('data-view');
-					openTool(v);
-					if (v === 'seo') { seoLoad(); } else if (v === 'insights') { insightsLoad(); }
-				}); }
-				var sr = $('wpab-seo-refresh'); if (sr) { sr.addEventListener('click', function () { auditData = null; seoLoad(); }); }
-				var ir = $('wpab-insights-refresh'); if (ir) { ir.addEventListener('click', function () { auditData = null; insightsLoad(); }); }
-				var rr = $('wpab-recs-run'); if (rr) { rr.addEventListener('click', function () { runRecs(); }); }
-				var ub = $('wpab-understand-run'); if (ub) { ub.addEventListener('click', function () { runUnderstand(); }); }
+				var nt = $('wpab-newtheme');
+				if (nt) { nt.addEventListener('click', function () { if (window.wpabOpenWizard) { window.wpabOpenWizard(); } }); }
 			})();
 
 			/* ---- Init ---- */
