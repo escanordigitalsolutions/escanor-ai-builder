@@ -678,168 +678,14 @@ final class WPAB_Editor {
 				<div class="wpab-ed__wcard">
 					<div class="wpab-ed__whead">
 						<h2 class="wpab-ed__wtitle">Generate a custom theme</h2>
-						<div id="wpab-ed-wdots" class="wpab-ed__wdots"></div>
 					</div>
 
 					<div id="wpab-ed-wform">
-						<!-- Step 1: Basics -->
-						<div class="wpab-ed__step" data-step="1">
-							<p class="wpab-ed__whint">Tell us about your site.</p>
-							<label class="wpab-ed__wlabel" for="wpab-ed-name">Site / theme name</label>
-							<input type="text" id="wpab-ed-name" class="wpab-ed__winput" placeholder="e.g. Aurora Studio" />
-							<label class="wpab-ed__wlabel" for="wpab-ed-tagline">Tagline (optional)</label>
-							<input type="text" id="wpab-ed-tagline" class="wpab-ed__winput" placeholder="e.g. Design that moves people" />
-							<label class="wpab-ed__wlabel" for="wpab-ed-type">Business / site type</label>
-							<input type="text" id="wpab-ed-type" class="wpab-ed__winput" placeholder="e.g. design agency, restaurant, portfolio" />
-							<div class="wpab-ed__wrow">
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-goal">Primary goal</label>
-									<select id="wpab-ed-goal" class="wpab-ed__winput">
-										<option value="leads">Generate leads</option>
-										<option value="sell">Sell products</option>
-										<option value="showcase">Showcase work</option>
-										<option value="book">Take bookings</option>
-										<option value="inform">Inform / content</option>
-									</select>
-								</div>
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-audience">Audience (optional)</label>
-									<input type="text" id="wpab-ed-audience" class="wpab-ed__winput" placeholder="e.g. small businesses" />
-								</div>
-							</div>
-						</div>
-
-						<!-- Step 2: Design -->
-						<div class="wpab-ed__step" data-step="2" hidden>
-							<p class="wpab-ed__whint">Pick the look and feel.</p>
-							<label class="wpab-ed__wlabel">Style</label>
-							<div id="wpab-ed-styles" class="wpab-ed__chips">
-								<button type="button" class="wpab-ed__chip is-on" data-style="modern">Modern</button>
-								<button type="button" class="wpab-ed__chip" data-style="minimal">Minimal</button>
-								<button type="button" class="wpab-ed__chip" data-style="bold">Bold</button>
-								<button type="button" class="wpab-ed__chip" data-style="elegant">Elegant</button>
-								<button type="button" class="wpab-ed__chip" data-style="editorial">Editorial</button>
-								<button type="button" class="wpab-ed__chip" data-style="playful">Playful</button>
-							</div>
-							<div class="wpab-ed__wrow">
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-color">Primary color</label>
-									<input type="color" id="wpab-ed-color" class="wpab-ed__wcolor" value="#3a5bff" />
-								</div>
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-accent">Accent (optional)</label>
-									<input type="color" id="wpab-ed-accent" class="wpab-ed__wcolor" value="#12b981" />
-								</div>
-							</div>
-							<div class="wpab-ed__wrow">
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-base">Base</label>
-									<select id="wpab-ed-base" class="wpab-ed__winput">
-										<option value="light">Light</option>
-										<option value="dark">Dark</option>
-									</select>
-								</div>
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-font">Typography</label>
-									<select id="wpab-ed-font" class="wpab-ed__winput">
-										<option value="sans">Modern sans</option>
-										<option value="serif">Classic serif</option>
-										<option value="editorial">Editorial serif + sans</option>
-										<option value="rounded">Rounded sans</option>
-										<option value="mono">Technical / mono</option>
-									</select>
-								</div>
-							</div>
-						</div>
-
-						<!-- Step 3: Pages -->
-						<div class="wpab-ed__step" data-step="3" hidden>
-							<p class="wpab-ed__whint">Which pages do you need? Each becomes its own template.</p>
-							<div id="wpab-ed-pages" class="wpab-ed__checks">
-								<label><input type="checkbox" value="Home" checked> Home</label>
-								<label><input type="checkbox" value="About" checked> About</label>
-								<label><input type="checkbox" value="Services" checked> Services</label>
-								<label><input type="checkbox" value="Pricing"> Pricing</label>
-								<label><input type="checkbox" value="Contact" checked> Contact</label>
-								<label><input type="checkbox" value="Blog"> Blog</label>
-								<label><input type="checkbox" value="Portfolio"> Portfolio</label>
-								<label><input type="checkbox" value="Team"> Team</label>
-								<label><input type="checkbox" value="FAQ"> FAQ</label>
-								<label><input type="checkbox" value="Testimonials"> Testimonials</label>
-								<label><input type="checkbox" value="Gallery"> Gallery</label>
-								<label><input type="checkbox" value="Shop"> Shop</label>
-							</div>
-							<label class="wpab-ed__wlabel" for="wpab-ed-custompages">Custom pages (one per line: Title — purpose)</label>
-							<textarea id="wpab-ed-custompages" class="wpab-ed__winput" rows="2" placeholder="Case Studies — showcase client results&#10;Careers — open positions"></textarea>
-							<label class="wpab-ed__wlabel" for="wpab-ed-sections">Sections you want (optional)</label>
-							<textarea id="wpab-ed-sections" class="wpab-ed__winput" rows="2" placeholder="hero, features grid, testimonials, pricing table, stats, logos, CTA"></textarea>
-						</div>
-
-						<!-- Step 4: Features -->
-						<div class="wpab-ed__step" data-step="4" hidden>
-							<p class="wpab-ed__whint">Functionality to build into the theme.</p>
-							<div id="wpab-ed-features" class="wpab-ed__checks">
-								<label><input type="checkbox" value="contact form" checked> Contact form</label>
-								<label><input type="checkbox" value="booking"> Booking</label>
-								<label><input type="checkbox" value="newsletter signup"> Newsletter</label>
-								<label><input type="checkbox" value="gallery"> Gallery</label>
-								<label><input type="checkbox" value="testimonials"> Testimonials</label>
-								<label><input type="checkbox" value="stats counters"> Stats</label>
-								<label><input type="checkbox" value="client logos"> Client logos</label>
-								<label><input type="checkbox" value="WooCommerce support"> WooCommerce</label>
-							</div>
-							<label class="wpab-ed__wlabel" for="wpab-ed-cpt">Custom post type (optional: Name — fields)</label>
-							<input type="text" id="wpab-ed-cpt" class="wpab-ed__winput" placeholder="e.g. Projects — title, image, client, year" />
-							<div class="wpab-ed__wrow">
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-email">Contact email</label>
-									<input type="text" id="wpab-ed-email" class="wpab-ed__winput" placeholder="hello@example.com" />
-								</div>
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-phone">Phone</label>
-									<input type="text" id="wpab-ed-phone" class="wpab-ed__winput" placeholder="+370…" />
-								</div>
-							</div>
-							<label class="wpab-ed__wlabel" for="wpab-ed-social">Social links (optional)</label>
-							<input type="text" id="wpab-ed-social" class="wpab-ed__winput" placeholder="instagram.com/…, linkedin.com/…" />
-						</div>
-
-						<!-- Step 5: Content & tone -->
-						<div class="wpab-ed__step" data-step="5" hidden>
-							<p class="wpab-ed__whint">Voice and content.</p>
-							<div class="wpab-ed__wrow">
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-voice">Brand voice</label>
-									<select id="wpab-ed-voice" class="wpab-ed__winput">
-										<option value="professional">Professional</option>
-										<option value="friendly">Friendly</option>
-										<option value="confident">Confident</option>
-										<option value="playful">Playful</option>
-										<option value="luxury">Luxury</option>
-										<option value="technical">Technical</option>
-									</select>
-								</div>
-								<div class="wpab-ed__wcol">
-									<label class="wpab-ed__wlabel" for="wpab-ed-lang">Language</label>
-									<input type="text" id="wpab-ed-lang" class="wpab-ed__winput" placeholder="English, Lietuvių…" />
-								</div>
-							</div>
-							<label class="wpab-ed__wlabel" for="wpab-ed-logo">Logo text (optional)</label>
-							<input type="text" id="wpab-ed-logo" class="wpab-ed__winput" placeholder="Defaults to the site name" />
-							<label class="wpab-ed__wcheck"><input type="checkbox" id="wpab-ed-realcopy" checked> Write real, on-topic copy (not lorem ipsum)</label>
-						</div>
-
-						<!-- Step 6: Advanced -->
-						<div class="wpab-ed__step" data-step="6" hidden>
-							<p class="wpab-ed__whint">Anything else — integrations, must-have sections, references, special requirements.</p>
-							<textarea id="wpab-ed-extra" class="wpab-ed__winput" rows="6" placeholder="e.g. Match the vibe of stripe.com. Include a pricing comparison table. Add a sticky header. Use large rounded cards."></textarea>
-						</div>
-
-						<!-- Step 7: Review -->
-						<div class="wpab-ed__step" data-step="7" hidden>
-							<p class="wpab-ed__whint">Review and generate. This creates a brand-new custom classic PHP theme and activates it.</p>
-							<div id="wpab-ed-review" class="wpab-ed__review"></div>
-						</div>
+						<p class="wpab-ed__whint">Describe the website you want — what it's for, the vibe, colours, the pages you need and any must-haves. The more detail you give, the better the result.</p>
+						<label class="wpab-ed__wlabel" for="wpab-ed-prompt">Describe your website</label>
+						<textarea id="wpab-ed-prompt" class="wpab-ed__winput wpab-ed__wprompt" rows="8" placeholder="e.g. A modern site for Aurora Studio, a boutique design agency for tech startups. Clean and minimal with lots of whitespace and a deep-indigo accent. Pages: Home, Work, Services, About, Contact. Include a hero, a logo strip, a case-study grid, testimonials and a bold call to action. Confident, professional voice."></textarea>
+						<label class="wpab-ed__wlabel" for="wpab-ed-name">Site / theme name <span class="wpab-ed__wopt">— optional, AI names it if left blank</span></label>
+						<input type="text" id="wpab-ed-name" class="wpab-ed__winput" placeholder="e.g. Aurora Studio" />
 					</div>
 
 					<div id="wpab-ed-wprogress" class="wpab-ed__wprogress" hidden>
@@ -851,11 +697,7 @@ final class WPAB_Editor {
 
 					<div class="wpab-ed__wactions">
 						<button type="button" id="wpab-ed-wcancel" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Cancel</button>
-						<div class="wpab-ed__wnav">
-							<button type="button" id="wpab-ed-wback" class="wpab-ed__wbtn wpab-ed__wbtn--ghost" hidden>Back</button>
-							<button type="button" id="wpab-ed-wnext" class="wpab-ed__wbtn">Next</button>
-							<button type="button" id="wpab-ed-wgo" class="wpab-ed__wbtn" hidden>Generate theme</button>
-						</div>
+						<button type="button" id="wpab-ed-wgo" class="wpab-ed__wbtn">Generate theme</button>
 					</div>
 				</div>
 			</div>
@@ -930,6 +772,8 @@ final class WPAB_Editor {
 			.wpab-ed__wlabel { display: block; font-size: 12px; color: #9aa1ac; margin-bottom: 6px; }
 			.wpab-ed__winput { width: 100%; box-sizing: border-box; background: #0e1013; border: 1px solid #2c3037; border-radius: 10px; color: #f4f5f7; font-size: 14px; padding: 11px 13px; }
 			.wpab-ed__winput:focus { outline: none; border-color: #3a5bff; }
+			.wpab-ed__wprompt { resize: vertical; min-height: 150px; line-height: 1.55; }
+			.wpab-ed__wopt { color: #6f757e; font-weight: 400; }
 			.wpab-ed__wresult { font-size: 13px; margin-top: 12px; min-height: 18px; color: #9aa1ac; }
 			.wpab-ed__wresult.is-err { color: #ff9d9d; }
 			.wpab-ed__wresult.is-ok { color: #7fd6a3; }
@@ -1151,100 +995,22 @@ final class WPAB_Editor {
 				});
 			}
 
-			// ---- New theme wizard (Phase D): multi-step form -> plan -> files -> write ----
+			// ---- New theme wizard: single prompt -> plan -> files -> write ----
 			var wizard = $('wpab-ed-wizard');
 			var wForm = $('wpab-ed-wform');
-			var wDots = $('wpab-ed-wdots');
-			var wBack = $('wpab-ed-wback');
-			var wNext = $('wpab-ed-wnext');
 			var wGo = $('wpab-ed-wgo');
 			var wCancel = $('wpab-ed-wcancel');
 			var wResult = $('wpab-ed-wresult');
 			var wProgress = $('wpab-ed-wprogress');
 			var wBarFill = $('wpab-ed-wbarfill');
 			var wStepEl = $('wpab-ed-wstep');
-			var wReview = $('wpab-ed-review');
-			var steps = wForm ? wForm.querySelectorAll('.wpab-ed__step') : [];
-			var TOTAL_STEPS = steps.length || 1;
-			var current = 1;
 			var busy = false;
-			var styleChoice = 'modern';
 			var MAX_FILES = 60;
 
 			function val(id) { var e = $(id); return e ? (e.value || '').trim() : ''; }
-			function pick(id, dflt) { var e = $(id); return e ? e.value : (dflt || ''); }
-			function boxChecked(id) { var out = []; var c = $(id); if (c) { var ins = c.querySelectorAll('input[type=checkbox]'); for (var i = 0; i < ins.length; i++) { if (ins[i].checked) { out.push(ins[i].value); } } } return out; }
-			function esc(str) { return String(str == null ? '' : str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
-			if (wDots && TOTAL_STEPS) { var dh = ''; for (var d = 0; d < TOTAL_STEPS; d++) { dh += '<span></span>'; } wDots.innerHTML = dh; }
-			function renderDots() {
-				if (!wDots) { return; }
-				var sp = wDots.querySelectorAll('span');
-				for (var i = 0; i < sp.length; i++) { sp[i].className = (i + 1 < current ? 'is-done' : (i + 1 === current ? 'is-on' : '')); }
-			}
-			function showStep(n) {
-				current = Math.max(1, Math.min(TOTAL_STEPS, n));
-				for (var i = 0; i < steps.length; i++) { steps[i].hidden = (parseInt(steps[i].getAttribute('data-step'), 10) !== current); }
-				if (wBack) { wBack.hidden = (current === 1); }
-				if (wNext) { wNext.hidden = (current === TOTAL_STEPS); }
-				if (wGo) { wGo.hidden = (current !== TOTAL_STEPS); }
-				if (current === TOTAL_STEPS) { renderReview(); }
-				renderDots();
-			}
-
-			(function () {
-				var box = $('wpab-ed-styles');
-				if (!box) { return; }
-				var chips = box.querySelectorAll('.wpab-ed__chip');
-				for (var i = 0; i < chips.length; i++) {
-					chips[i].addEventListener('click', function () {
-						for (var k = 0; k < chips.length; k++) { chips[k].classList.remove('is-on'); }
-						this.classList.add('is-on');
-						styleChoice = this.getAttribute('data-style') || 'modern';
-					});
-				}
-			})();
 
 			function collectBrief() {
-				return {
-					name: val('wpab-ed-name'),
-					tagline: val('wpab-ed-tagline'),
-					type: val('wpab-ed-type'),
-					goal: pick('wpab-ed-goal', 'leads'),
-					audience: val('wpab-ed-audience'),
-					design: {
-						style: styleChoice,
-						primaryColor: pick('wpab-ed-color', '#3a5bff'),
-						accentColor: pick('wpab-ed-accent', ''),
-						base: pick('wpab-ed-base', 'light'),
-						typography: pick('wpab-ed-font', 'sans')
-					},
-					pages: boxChecked('wpab-ed-pages'),
-					customPages: val('wpab-ed-custompages'),
-					sections: val('wpab-ed-sections'),
-					features: boxChecked('wpab-ed-features'),
-					customPostType: val('wpab-ed-cpt'),
-					contact: { email: val('wpab-ed-email'), phone: val('wpab-ed-phone') },
-					social: val('wpab-ed-social'),
-					voice: pick('wpab-ed-voice', 'professional'),
-					language: val('wpab-ed-lang'),
-					realCopy: (function () { var e = $('wpab-ed-realcopy'); return e ? !!e.checked : true; })(),
-					logoText: val('wpab-ed-logo'),
-					extra: val('wpab-ed-extra')
-				};
-			}
-
-			function renderReview() {
-				if (!wReview) { return; }
-				var b = collectBrief();
-				var rows = [];
-				rows.push('<b>Name:</b> ' + esc(b.name || '—'));
-				if (b.type) { rows.push('<b>Type:</b> ' + esc(b.type)); }
-				rows.push('<b>Style:</b> ' + esc(b.design.style) + ' · ' + esc(b.design.base) + ' · ' + esc(b.design.typography));
-				rows.push('<b>Pages:</b> ' + esc((b.pages || []).join(', ') || '—'));
-				if (b.features.length) { rows.push('<b>Features:</b> ' + esc(b.features.join(', '))); }
-				if (b.voice) { rows.push('<b>Voice:</b> ' + esc(b.voice)); }
-				wReview.innerHTML = rows.join('<br>');
+				return { name: val('wpab-ed-name'), prompt: val('wpab-ed-prompt') };
 			}
 
 			function openWizard() {
@@ -1254,11 +1020,9 @@ final class WPAB_Editor {
 				if (wProgress) { wProgress.hidden = true; }
 				if (wBarFill) { wBarFill.style.width = '0'; }
 				if (wForm) { wForm.style.display = ''; }
-				if (wGo) { wGo.disabled = false; wGo.textContent = 'Generate theme'; }
-				if (wNext) { wNext.disabled = false; }
+				if (wGo) { wGo.disabled = false; wGo.hidden = false; wGo.textContent = 'Generate theme'; }
 				wizard.hidden = false;
-				showStep(1);
-				var n = $('wpab-ed-name'); if (n) { n.focus(); }
+				var p = $('wpab-ed-prompt'); if (p) { p.focus(); }
 			}
 			function closeWizard() { if (wizard && !busy) { wizard.hidden = true; } }
 
@@ -1268,17 +1032,6 @@ final class WPAB_Editor {
 			if (wOpen2) { wOpen2.addEventListener('click', openWizard); }
 			if (wCancel) { wCancel.addEventListener('click', closeWizard); }
 			if (wizard) { wizard.addEventListener('click', function (e) { if (e.target === wizard) { closeWizard(); } }); }
-			if (wBack) { wBack.addEventListener('click', function () { showStep(current - 1); }); }
-			if (wNext) {
-				wNext.addEventListener('click', function () {
-					if (current === 1 && !val('wpab-ed-name')) {
-						if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = 'Please enter a site / theme name.'; }
-						return;
-					}
-					if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = ''; }
-					showStep(current + 1);
-				});
-			}
 
 			function wpost(url, payload) {
 				return fetch(url, {
@@ -1297,15 +1050,17 @@ final class WPAB_Editor {
 			function generateTheme() {
 				if (!wGo || !cfg.restBuildPlan) { return; }
 				var brief = collectBrief();
-				var brand = brief.name;
-				if (!brand) { showStep(1); if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = 'Please enter a site / theme name.'; } return; }
+				if (!brief.prompt) {
+					if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = 'Please describe the website you want.'; }
+					var pf = $('wpab-ed-prompt'); if (pf) { pf.focus(); }
+					return;
+				}
 
 				busy = true;
 				wGo.disabled = true;
 				wGo.textContent = 'Generating…';
 				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = ''; }
 				if (wForm) { wForm.style.display = 'none'; }
-				if (wBack) { wBack.hidden = true; }
 				if (wProgress) { wProgress.hidden = false; }
 				setProgress(0, 1, 'Planning your theme…');
 
@@ -1314,14 +1069,20 @@ final class WPAB_Editor {
 						throw new Error(errText(out, 'Could not plan the theme.'));
 					}
 					var blueprint = out.data.blueprint;
+					var brand = brief.name || (blueprint.theme && blueprint.theme.name) || 'Custom Theme';
 					var files = (blueprint.files || []).filter(function (pp) { return typeof pp === 'string' && pp; });
 					if (!files.length) { throw new Error('The plan returned no files.'); }
 					if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
 
 					var built = [];
-					// Group files into small batches so generation takes a few steps, not many.
+					// Big, critical files each get their own batch so they never share a
+					// token budget and get truncated; everything else is chunked by 3.
+					var SOLO = { 'assets/css/main.css': 1, 'assets/js/main.js': 1, 'functions.php': 1 };
+					var solo = [], rest = [];
+					for (var fi = 0; fi < files.length; fi++) { (SOLO[files[fi]] ? solo : rest).push(files[fi]); }
 					var batches = [];
-					for (var bi = 0; bi < files.length; bi += 3) { batches.push(files.slice(bi, bi + 3)); }
+					for (var si = 0; si < solo.length; si++) { batches.push([solo[si]]); }
+					for (var bi = 0; bi < rest.length; bi += 3) { batches.push(rest.slice(bi, bi + 3)); }
 					var totalB = batches.length;
 
 					function runBatch(b) {
@@ -1364,7 +1125,6 @@ final class WPAB_Editor {
 					if (wProgress) { wProgress.hidden = true; }
 					wGo.disabled = false;
 					wGo.textContent = 'Generate theme';
-					showStep(TOTAL_STEPS);
 				});
 			}
 
