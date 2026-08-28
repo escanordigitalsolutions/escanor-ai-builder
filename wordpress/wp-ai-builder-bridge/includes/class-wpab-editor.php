@@ -257,6 +257,30 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Builder: generate ONE on-brand image (proxied to SaaS) and sideload it.
+		// The dashboard loops per index so no single request is slow enough to
+		// time out on the SaaS image model.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/image',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_image' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		// Builder: place the sideloaded images as a gallery on the front page.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/gallery',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_gallery' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Analysis: /analyze is computed locally (instant, no AI); /recommend is
 		// proxied to the SaaS model which reads the same audit.
 		register_rest_route(
@@ -509,19 +533,23 @@ final class WPAB_Editor {
 		$title   = isset( $params['title'] ) ? (string) $params['title'] : '';
 		$content = isset( $params['content'] ) ? (string) $params['content'] : '';
 		$excerpt = isset( $params['excerpt'] ) ? (string) $params['excerpt'] : '';
+		$status  = isset( $params['status'] ) ? sanitize_key( (string) $params['status'] ) : '';
 
 		if ( '' === $type || '' === trim( $title ) ) {
 			return new WP_Error( 'wpab_editor_bad_create', 'type and title are required.', array( 'status' => 400 ) );
 		}
 
-		$result = WPAB_Content::create(
-			$type,
-			array(
-				'title'   => $title,
-				'content' => $content,
-				'excerpt' => $excerpt,
-			)
+		$fields = array(
+			'title'   => $title,
+			'content' => $content,
+			'excerpt' => $excerpt,
 		);
+
+		if ( 'publish' === $status || 'draft' === $status ) {
+			$fields['status'] = $status;
+		}
+
+		$result = WPAB_Content::create( $type, $fields );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -697,6 +725,96 @@ final class WPAB_Editor {
 		}
 
 		return is_wp_error( $applied ) ? $applied : new WP_REST_Response( $applied, 200 );
+	}
+
+	/**
+	 * Generate a single on-brand image (proxied to SaaS) and sideload it.
+	 *
+	 * The dashboard drives one request per image, passing an `index`, so no
+	 * single request stalls on the image model long enough to time out.
+	 */
+	public static function rest_build_image( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+
+		$index = isset( $params['index'] ) ? max( 0, (int) $params['index'] ) : 0;
+
+		$body = array(
+			'brand'    => isset( $params['brand'] ) ? (string) $params['brand'] : '',
+			'tagline'  => isset( $params['tagline'] ) ? (string) $params['tagline'] : '',
+			'siteType' => isset( $params['site_type'] ) ? (string) $params['site_type'] : '',
+			'style'    => isset( $params['style'] ) ? (string) $params['style'] : '',
+			'index'    => $index,
+		);
+
+		$result = WPAB_Cloud::request( 'agent/build-images', $body, 120 );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		if ( empty( $result['images'] ) || ! is_array( $result['images'] ) ) {
+			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'No image was generated.';
+			return new WP_Error( 'wpab_build_image_empty', $msg, array( 'status' => 502 ) );
+		}
+
+		$first = $result['images'][0];
+		$b64   = isset( $first['b64'] ) ? (string) $first['b64'] : '';
+		$alt   = isset( $first['alt'] ) ? (string) $first['alt'] : '';
+
+		if ( '' === $b64 ) {
+			return new WP_Error( 'wpab_build_image_empty', 'The generated image was empty.', array( 'status' => 502 ) );
+		}
+
+		try {
+			$image = WPAB_Builder::sideload_b64( $b64, $alt );
+		} catch ( \Throwable $e ) {
+			return new WP_Error( 'wpab_build_image_sideload', 'Saving the image failed: ' . $e->getMessage(), array( 'status' => 500 ) );
+		}
+
+		if ( is_wp_error( $image ) ) {
+			return $image;
+		}
+
+		return new WP_REST_Response( array( 'success' => true, 'image' => $image ), 200 );
+	}
+
+	/**
+	 * Place already-sideloaded images as a gallery on the front page.
+	 */
+	public static function rest_build_gallery( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+
+		$ids = array();
+		if ( isset( $params['ids'] ) && is_array( $params['ids'] ) ) {
+			foreach ( $params['ids'] as $id ) {
+				$id = (int) $id;
+				if ( $id > 0 ) {
+					$ids[] = $id;
+				}
+			}
+		}
+
+		if ( empty( $ids ) ) {
+			return new WP_Error( 'wpab_build_gallery_empty', 'No image ids were provided.', array( 'status' => 400 ) );
+		}
+
+		try {
+			$result = WPAB_Builder::place_gallery( $ids );
+		} catch ( \Throwable $e ) {
+			return new WP_Error( 'wpab_build_gallery_error', 'Placing the gallery failed: ' . $e->getMessage(), array( 'status' => 500 ) );
+		}
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
 	public static function rest_seo_apply( WP_REST_Request $request ) {

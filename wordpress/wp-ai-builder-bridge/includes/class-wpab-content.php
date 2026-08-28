@@ -593,13 +593,14 @@ final class WPAB_Content {
 
 		$excerpt = isset( $fields['excerpt'] ) ? (string) $fields['excerpt'] : '';
 
-		// New items are always created unpublished. A caller may ask for another
-		// non-public review status, but never 'publish' straight from creation.
+		// New items default to draft, but the caller (an authenticated admin
+		// acting through the bridge) may explicitly ask to publish, or for a
+		// review status.
 		$status = 'draft';
 
 		if ( isset( $fields['status'] ) ) {
 			$requested = sanitize_key( (string) $fields['status'] );
-			if ( in_array( $requested, array( 'draft', 'pending', 'private' ), true ) ) {
+			if ( in_array( $requested, array( 'draft', 'pending', 'private', 'publish' ), true ) ) {
 				$status = $requested;
 			}
 		}

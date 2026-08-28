@@ -497,4 +497,146 @@ final class WPAB_Builder {
 			'home_url' => home_url( '/' ),
 		);
 	}
+
+	/* ---------------------------------------------------------------------
+	 * Images (B1d): sideload AI-generated images into the media library and
+	 * place a gallery on the home page.
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Decode a base64 image, store it in the media library and return a compact
+	 * descriptor { id, url, alt }. Returns WP_Error on any failure so the caller
+	 * (the per-image loop) can surface a precise reason.
+	 */
+	public static function sideload_b64( string $b64, string $alt ) {
+		$alt  = trim( sanitize_text_field( $alt ) );
+		$data = base64_decode( $b64, true );
+
+		if ( false === $data || '' === $data ) {
+			return new WP_Error( 'wpab_img_decode', 'The image data could not be decoded.', array( 'status' => 502 ) );
+		}
+
+		$name   = 'escanor-' . wp_generate_password( 8, false, false ) . '.png';
+		$upload = wp_upload_bits( $name, null, $data );
+
+		if ( ! empty( $upload['error'] ) || empty( $upload['file'] ) ) {
+			$msg = ! empty( $upload['error'] ) ? (string) $upload['error'] : 'The upload directory is not writable.';
+			return new WP_Error( 'wpab_img_upload', $msg, array( 'status' => 500 ) );
+		}
+
+		$file     = $upload['file'];
+		$filetype = wp_check_filetype( basename( $file ), null );
+
+		$attach_id = wp_insert_attachment(
+			array(
+				'post_mime_type' => $filetype['type'] ? $filetype['type'] : 'image/png',
+				'post_title'     => '' !== $alt ? $alt : 'ESCANOR image',
+				'post_content'   => '',
+				'post_status'    => 'inherit',
+			),
+			$file
+		);
+
+		if ( is_wp_error( $attach_id ) || ! $attach_id ) {
+			return is_wp_error( $attach_id ) ? $attach_id : new WP_Error( 'wpab_img_attach', 'The image could not be attached.', array( 'status' => 500 ) );
+		}
+
+		require_once ABSPATH . 'wp-admin/includes/image.php';
+
+		$meta = wp_generate_attachment_metadata( (int) $attach_id, $file );
+		wp_update_attachment_metadata( (int) $attach_id, $meta );
+
+		if ( '' !== $alt ) {
+			update_post_meta( (int) $attach_id, '_wp_attachment_image_alt', $alt );
+		}
+
+		return array(
+			'id'  => (int) $attach_id,
+			'url' => (string) wp_get_attachment_url( (int) $attach_id ),
+			'alt' => $alt,
+		);
+	}
+
+	private static function append_gallery_to_page( int $id, array $images ): void {
+		$post = get_post( $id );
+		if ( ! $post ) {
+			return;
+		}
+
+		$cols  = min( 3, max( 1, count( $images ) ) );
+		$inner = '';
+
+		foreach ( $images as $im ) {
+			$inner .= '<!-- wp:image {"id":' . (int) $im['id'] . ',"sizeSlug":"large","linkDestination":"none"} -->' . "\n";
+			$inner .= '<figure class="wp-block-image size-large"><img src="' . esc_url( $im['url'] ) . '" alt="' . esc_attr( $im['alt'] ) . '" class="wp-image-' . (int) $im['id'] . '"/></figure>' . "\n";
+			$inner .= '<!-- /wp:image -->' . "\n";
+		}
+
+		$section  = "\n\n" . '<!-- wp:group {"tagName":"section","align":"full","style":{"spacing":{"padding":{"top":"var:preset|spacing|50","bottom":"var:preset|spacing|50"}}},"layout":{"type":"constrained"}} -->' . "\n";
+		$section .= '<section class="wp-block-group alignfull" style="padding-top:var(--wp--preset--spacing--50);padding-bottom:var(--wp--preset--spacing--50)">' . "\n";
+		$section .= '<!-- wp:heading {"textAlign":"center"} --><h2 class="wp-block-heading has-text-align-center">Gallery</h2><!-- /wp:heading -->' . "\n";
+		$section .= '<!-- wp:gallery {"columns":' . $cols . ',"linkTo":"none"} -->' . "\n";
+		$section .= '<figure class="wp-block-gallery has-nested-images columns-' . $cols . ' is-cropped">' . "\n" . $inner . '</figure>' . "\n";
+		$section .= '<!-- /wp:gallery -->' . "\n";
+		$section .= '</section>' . "\n";
+		$section .= '<!-- /wp:group -->' . "\n";
+
+		wp_update_post(
+			wp_slash(
+				array(
+					'ID'           => $id,
+					'post_content' => (string) $post->post_content . $section,
+				)
+			)
+		);
+	}
+
+	/**
+	 * Place already-sideloaded attachments as a gallery on the front page.
+	 *
+	 * Used by the per-image loop: the dashboard sideloads each image on its own
+	 * request, then calls this once with the collected attachment ids.
+	 */
+	public static function place_gallery( array $ids ) {
+		$images = array();
+
+		foreach ( $ids as $id ) {
+			$id = (int) $id;
+			if ( $id < 1 ) {
+				continue;
+			}
+
+			$url = (string) wp_get_attachment_url( $id );
+			if ( '' === $url ) {
+				continue;
+			}
+
+			$alt = (string) get_post_meta( $id, '_wp_attachment_image_alt', true );
+
+			$images[] = array(
+				'id'  => $id,
+				'url' => $url,
+				'alt' => $alt,
+			);
+		}
+
+		if ( empty( $images ) ) {
+			return new WP_Error( 'wpab_build_gallery', 'None of the given images were found.', array( 'status' => 400 ) );
+		}
+
+		$front = (int) get_option( 'page_on_front' );
+		if ( ! $front ) {
+			return new WP_Error( 'wpab_build_gallery_nofront', 'There is no front page to place the gallery on. Generate the site first.', array( 'status' => 409 ) );
+		}
+
+		self::append_gallery_to_page( $front, $images );
+
+		WPAB_Log::add( 'gallery_placed', array( 'count' => count( $images ) ) );
+
+		return array(
+			'success'  => true,
+			'placed'   => count( $images ),
+			'home_url' => home_url( '/' ),
+		);
+	}
 }

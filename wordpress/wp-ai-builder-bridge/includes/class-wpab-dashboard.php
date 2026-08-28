@@ -137,6 +137,8 @@ final class WPAB_Dashboard {
 			'restUnderstand'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/understand' ) ),
 			'restBuildTheme'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/create-theme' ) ),
 			'restBuildSite'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/generate-site' ) ),
+			'restBuildImage'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/image' ) ),
+			'restBuildGallery'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/gallery' ) ),
 			'seoEnabled'        => ! empty( $modules['seo'] ),
 			'nonce'            => wp_create_nonce( 'wp_rest' ),
 			'studioUrl'        => esc_url_raw( $studio ),
@@ -658,37 +660,41 @@ final class WPAB_Dashboard {
 				var box = document.createElement('div');
 				box.className = 'wpab-msg__handoff';
 				var typeLabel = esc(req.type);
-				box.innerHTML = 'Ready to create a new <strong>' + typeLabel + '</strong> draft: &ldquo;' + esc(req.title) + '&rdquo;.'
-					+ '<br><button type="button" class="button button-primary wpab-create-go">Create draft</button>'
+				box.innerHTML = 'Ready to create a new <strong>' + typeLabel + '</strong>: &ldquo;' + esc(req.title) + '&rdquo;.'
+					+ '<br><button type="button" class="button button-primary wpab-create-pub">Create &amp; publish</button>'
+					+ ' <button type="button" class="button wpab-create-go">Create draft</button>'
 					+ ' <button type="button" class="button wpab-create-skip">Not now</button>'
 					+ '<div class="wpab-create-status"></div>';
 				mount.appendChild(box);
 				var statusEl = box.querySelector('.wpab-create-status');
 				var goBtn = box.querySelector('.wpab-create-go');
+				var pubBtn = box.querySelector('.wpab-create-pub');
 				var skipBtn = box.querySelector('.wpab-create-skip');
 				skipBtn.addEventListener('click', function () { box.remove(); });
-				goBtn.addEventListener('click', function () {
-					goBtn.disabled = true; skipBtn.disabled = true;
-					statusEl.textContent = 'Creating draft…';
+				function doCreate(status) {
+					goBtn.disabled = true; pubBtn.disabled = true; skipBtn.disabled = true;
+					statusEl.textContent = status === 'publish' ? 'Publishing…' : 'Creating draft…';
 					api('POST', cfg.restContentCreate, {
-						type: req.type, title: req.title, content: req.content || '', excerpt: req.excerpt || ''
+						type: req.type, title: req.title, content: req.content || '', excerpt: req.excerpt || '', status: status
 					}).then(function (out) {
 						if (!out.ok || !out.data || out.data.success === false) {
-							statusEl.innerHTML = '<span style="color:#b32d2e">' + esc((out.data && (out.data.message || out.data.error)) || 'Could not create the draft.') + '</span>';
-							goBtn.disabled = false; skipBtn.disabled = false;
+							statusEl.innerHTML = '<span style="color:#b32d2e">' + esc((out.data && (out.data.message || out.data.error)) || 'Could not create the page.') + '</span>';
+							goBtn.disabled = false; pubBtn.disabled = false; skipBtn.disabled = false;
 							return;
 						}
 						var it = out.data;
-						goBtn.remove(); skipBtn.remove();
-						statusEl.innerHTML = '<span style="color:#00733f">&#10003; Draft created.</span> '
+						goBtn.remove(); pubBtn.remove(); skipBtn.remove();
+						statusEl.innerHTML = '<span style="color:#00733f">&#10003; ' + (status === 'publish' ? 'Published' : 'Draft created') + '.</span> '
 							+ (it.edit_url ? '<a class="button" href="' + esc(it.edit_url) + '" target="_blank" rel="noopener">Edit in WP</a> ' : '')
-							+ (it.url ? '<a class="button" href="' + esc(it.url) + '" target="_blank" rel="noopener">Preview</a>' : '');
+							+ (it.url ? '<a class="button" href="' + esc(it.url) + '" target="_blank" rel="noopener">View</a>' : '');
 						loadTypes();
 					}).catch(function () {
-						statusEl.innerHTML = '<span style="color:#b32d2e">Network error creating the draft.</span>';
-						goBtn.disabled = false; skipBtn.disabled = false;
+						statusEl.innerHTML = '<span style="color:#b32d2e">Network error creating the page.</span>';
+						goBtn.disabled = false; pubBtn.disabled = false; skipBtn.disabled = false;
 					});
-				});
+				}
+				goBtn.addEventListener('click', function () { doCreate('draft'); });
+				pubBtn.addEventListener('click', function () { doCreate('publish'); });
 			}
 			/* ---- Inline content editing (propose → review → apply) ---- */
 			function ceTrunc(t, nn) { t = String(t == null ? '' : t); return t.length > nn ? t.slice(0, nn) + '…' : t; }
@@ -1270,11 +1276,80 @@ final class WPAB_Dashboard {
 						var patterns = out.data.patterns || 0;
 						var list = pages.map(function (p) { return '<li><a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.title) + '</a>' + (p.front ? ' <em>(home)</em>' : '') + '</li>'; }).join('');
 						pr.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; ' + pages.length + ' page(s) created' + (patterns ? ' · ' + patterns + ' reusable sections added' : '') + '.</strong><ul style="margin:8px 0 0 18px">' + list + '</ul>'
-							+ '<p style="margin:10px 0 0;color:#3c434a;font-size:13px">Your home page is set' + (patterns ? ', and your on-brand sections are in the block inserter under &ldquo;Escanor&rdquo;' : '') + '. Refine any page in Content chat, or open the Site Editor. Next in the Builder: custom features (booking/forms) and AI images.</p></div>';
+							+ '<p style="margin:10px 0 0;color:#3c434a;font-size:13px">Your home page is set' + (patterns ? ', and your on-brand sections are in the block inserter under &ldquo;Escanor&rdquo;' : '') + '. Refine any page in Content chat, or open the Site Editor.</p>'
+							+ '<div style="margin-top:12px;padding-top:12px;border-top:1px solid #e2e4e7">'
+							+ '<label style="font-weight:600;display:block;margin-bottom:6px">AI images</label>'
+							+ '<select id="wpab-img-count" style="margin-right:8px"><option value="2">2 images</option><option value="3">3 images</option><option value="4" selected>4 images</option></select>'
+							+ '<button type="button" class="button button-primary" id="wpab-b-images">Generate images</button> <span class="wpab-build__note">On-brand photos, saved to your media library and placed as a gallery on the home page.</span>'
+							+ '<div id="wpab-images-result" style="margin-top:12px"></div></div></div>';
 						btn.textContent = 'Done';
+						var ib = $('wpab-b-images'); if (ib) { ib.addEventListener('click', function () { generateImages(ib); }); }
 					}).catch(function () { pr.innerHTML = '<div class="wpab-build__err">Network error generating pages.</div>'; btn.disabled = false; })
 					.then(function () { setBusy(false); });
 				}
+					function generateImages(btn) {
+						if (busy || !lastBrief) { return; }
+						var ir = $('wpab-images-result');
+						var sel = $('wpab-img-count');
+						var count = sel ? (parseInt(sel.value, 10) || 4) : 4;
+						if (count < 1) { count = 1; } if (count > 4) { count = 4; }
+						setBusy(true); btn.disabled = true; if (sel) { sel.disabled = true; }
+						var thumbs = new Array(count);
+						var ids = [];
+						function render(status) {
+							var cells = '';
+							for (var j = 0; j < count; j++) {
+								var t = thumbs[j];
+								if (t === 'ok') {
+									cells += '<div style="width:96px;height:96px;border-radius:8px;overflow:hidden;background:#f0f0f1"><img src="' + esc((ids[j] && ids[j].url) || '') + '" alt="" style="width:100%;height:100%;object-fit:cover"/></div>';
+								} else if (t === 'fail') {
+									cells += '<div style="width:96px;height:96px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fcebea;color:#a00;font-size:20px">&times;</div>';
+								} else {
+									cells += '<div style="width:96px;height:96px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:#f0f0f1;color:#787c82"><span class="wpab-typing">&hellip;</span></div>';
+								}
+							}
+							ir.innerHTML = '<p style="margin:0 0 8px;color:#3c434a;font-size:13px">' + esc(status) + '</p><div style="display:flex;gap:8px;flex-wrap:wrap">' + cells + '</div>';
+						}
+						render('Generating image 1 of ' + count + '\u2026 this can take a moment each.');
+						var i = 0;
+						function next() {
+							if (i >= count) {
+								var goodIds = [];
+								for (var k = 0; k < ids.length; k++) { if (ids[k] && ids[k].id) { goodIds.push(ids[k].id); } }
+								if (!goodIds.length) {
+									ir.innerHTML = '<div class="wpab-build__err">No images could be generated. Check the image model is available on your account.</div>';
+									btn.disabled = false; if (sel) { sel.disabled = false; } setBusy(false); return;
+								}
+								render('Placing your gallery on the home page\u2026');
+								api('POST', cfg.restBuildGallery, { ids: goodIds }).then(function (gout) {
+									var ok = gout.ok && gout.data && gout.data.success !== false;
+									var home = (gout.data && gout.data.home_url) || '';
+									ir.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; ' + goodIds.length + ' image(s) added to your media library' + (ok ? ' and placed as a gallery on your home page' : '') + '.</strong>'
+										+ (ok && home ? '<div style="margin-top:8px"><a class="button" href="' + esc(home) + '" target="_blank" rel="noopener">View home page</a></div>' : '')
+										+ (!ok ? '<p style="margin:8px 0 0;color:#a00;font-size:13px">The images were saved but the gallery could not be placed automatically \u2014 add them from the media library.</p>' : '')
+										+ '</div>';
+									btn.textContent = 'Done';
+								}).catch(function () {
+									ir.innerHTML = '<div class="wpab-build__err">Images were saved, but placing the gallery failed. Add them from the media library.</div>';
+								}).then(function () { if (sel) { sel.disabled = false; } setBusy(false); });
+								return;
+							}
+							render('Generating image ' + (i + 1) + ' of ' + count + '\u2026 this can take a moment each.');
+							var payload = {
+								brand: lastBrief.brand, tagline: lastBrief.tagline,
+								site_type: lastBrief.site_type, style: lastBrief.style, index: i
+							};
+							api('POST', cfg.restBuildImage, payload).then(function (out) {
+								if (out.ok && out.data && out.data.success !== false && out.data.image) {
+									ids[i] = out.data.image; thumbs[i] = 'ok';
+								} else {
+									ids[i] = null; thumbs[i] = 'fail';
+								}
+							}).catch(function () { ids[i] = null; thumbs[i] = 'fail'; })
+							.then(function () { render('Generated ' + (i + 1) + ' of ' + count + '\u2026'); i++; next(); });
+						}
+						next();
+					}
 				var bColor = $('wpab-b-color'), bColorHex = $('wpab-b-colorhex');
 				if (bColor && bColorHex) {
 					bColor.addEventListener('input', function () { bColorHex.value = bColor.value; });
