@@ -287,6 +287,45 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Studio: project context (the generated theme, its pages, companion
+		// plugin and recent actions) + the conversational router + page edits.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/context',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_build_context' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/studio',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_studio' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/edit-page',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_edit_page' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/add-page',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_add_page' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Builder: generate ONE on-brand image (proxied to SaaS) and sideload it.
 		// The dashboard loops per index so no single request is slow enough to
 		// time out on the SaaS image model.
@@ -1099,6 +1138,318 @@ final class WPAB_Editor {
 		$result = WPAB_Builder::finalize_site( $created, $front_id, $patterns );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Studio: a conversational layer over the Builder. The chat knows the
+	 * current project (theme, pages, companion plugin, recent actions) and
+	 * routes plain-language requests to the operations we already have.
+	 * ------------------------------------------------------------------ */
+
+	private static function list_dir_files( string $dir ): array {
+		$out = array();
+		if ( ! is_dir( $dir ) ) {
+			return $out;
+		}
+		$items = scandir( $dir );
+		if ( ! is_array( $items ) ) {
+			return $out;
+		}
+		foreach ( $items as $f ) {
+			if ( '.' === $f || '..' === $f || 'index.php' === $f ) {
+				continue;
+			}
+			$out[] = $f;
+		}
+		sort( $out );
+		return $out;
+	}
+
+	/** Build the project snapshot the Studio chat is grounded in. */
+	public static function project_context(): array {
+		$slug  = get_stylesheet();
+		$theme = wp_get_theme();
+		$dir   = get_stylesheet_directory();
+
+		$palette = array();
+		$tj      = $dir . '/theme.json';
+		if ( file_exists( $tj ) ) {
+			$json = json_decode( (string) file_get_contents( $tj ), true );
+			if ( isset( $json['settings']['color']['palette'] ) && is_array( $json['settings']['color']['palette'] ) ) {
+				foreach ( $json['settings']['color']['palette'] as $p ) {
+					$palette[] = array(
+						'slug'  => isset( $p['slug'] ) ? (string) $p['slug'] : '',
+						'color' => isset( $p['color'] ) ? (string) $p['color'] : '',
+					);
+				}
+			}
+		}
+
+		$front = (int) get_option( 'page_on_front' );
+		$pages = array();
+		$posts = get_posts(
+			array(
+				'post_type'   => 'page',
+				'numberposts' => 50,
+				'post_status' => 'publish',
+				'orderby'     => 'menu_order title',
+				'order'       => 'asc',
+			)
+		);
+		foreach ( $posts as $pg ) {
+			$pages[] = array(
+				'id'    => (int) $pg->ID,
+				'title' => (string) get_the_title( $pg->ID ),
+				'slug'  => (string) $pg->post_name,
+				'front' => ( (int) $pg->ID === $front ),
+				'url'   => (string) get_permalink( $pg->ID ),
+			);
+		}
+
+		$companion = WPAB_Scopes::plugin();
+		$features  = array();
+		if ( ! empty( $companion['slug'] ) ) {
+			$features = self::list_dir_files( WP_PLUGIN_DIR . '/' . $companion['slug'] . '/features' );
+		}
+
+		$recent = array();
+		$log    = get_option( self::AI_LOG_OPTION, array() );
+		if ( is_array( $log ) ) {
+			foreach ( array_slice( $log, 0, 10 ) as $e ) {
+				$recent[] = array(
+					'action'      => isset( $e['action'] ) ? (string) $e['action'] : '',
+					'ok'          => ! isset( $e['ok'] ) || (bool) $e['ok'],
+					'time'        => isset( $e['time'] ) ? (string) $e['time'] : '',
+					'duration_ms' => isset( $e['duration_ms'] ) ? (int) $e['duration_ms'] : 0,
+				);
+			}
+		}
+
+		return array(
+			'theme'     => array(
+				'name'      => (string) $theme->get( 'Name' ),
+				'slug'      => $slug,
+				'generated' => ( 0 === strpos( $slug, 'escanor-' ) ),
+				'palette'   => $palette,
+				'templates' => self::list_dir_files( $dir . '/templates' ),
+				'parts'     => self::list_dir_files( $dir . '/parts' ),
+				'patterns'  => self::list_dir_files( $dir . '/patterns' ),
+			),
+			'front'     => array(
+				'mode'          => (string) get_option( 'show_on_front' ),
+				'page_on_front' => $front,
+			),
+			'pages'     => $pages,
+			'companion' => array(
+				'slug'     => isset( $companion['slug'] ) ? (string) $companion['slug'] : '',
+				'active'   => ! empty( $companion['active'] ),
+				'features' => $features,
+			),
+			'recent'    => $recent,
+			'site'      => array(
+				'name'    => (string) get_bloginfo( 'name' ),
+				'tagline' => (string) get_bloginfo( 'description' ),
+				'url'     => home_url( '/' ),
+			),
+		);
+	}
+
+	public static function rest_build_context( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+		return new WP_REST_Response( array( 'success' => true, 'context' => self::project_context() ), 200 );
+	}
+
+	/** The Studio router: decide which action a plain-language request maps to. */
+	public static function rest_studio( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params  = self::json_params( $request );
+		$message = isset( $params['message'] ) ? trim( (string) $params['message'] ) : '';
+
+		if ( '' === $message ) {
+			return new WP_Error( 'wpab_studio_empty', 'Type what you want to build or change.', array( 'status' => 400 ) );
+		}
+		if ( strlen( $message ) > 4000 ) {
+			return new WP_Error( 'wpab_studio_long', 'That message is too long.', array( 'status' => 400 ) );
+		}
+
+		$body = array(
+			'message' => $message,
+			'context' => self::project_context(),
+		);
+
+		$started = microtime( true );
+		$result  = WPAB_Cloud::request( 'agent/studio', $body, 60 );
+		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
+
+		if ( is_wp_error( $result ) ) {
+			self::ai_log_add( 'studio', array( 'message' => $message ), null, $result->get_error_message(), $dur );
+			return $result;
+		}
+
+		self::ai_log_add( 'studio', array( 'message' => $message ), $result, '', $dur );
+
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'reply'   => isset( $result['reply'] ) ? (string) $result['reply'] : '',
+				'action'  => isset( $result['action'] ) && is_array( $result['action'] ) ? $result['action'] : null,
+			),
+			200
+		);
+	}
+
+	/** Edit one existing page: rewrite/extend its blocks per instructions. */
+	public static function rest_build_edit_page( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params       = self::json_params( $request );
+		$slug         = isset( $params['slug'] ) ? sanitize_title( (string) $params['slug'] ) : '';
+		$instructions = isset( $params['instructions'] ) ? trim( (string) $params['instructions'] ) : '';
+
+		if ( '' === $instructions ) {
+			return new WP_Error( 'wpab_edit_empty', 'Describe the change first.', array( 'status' => 400 ) );
+		}
+
+		$page = null;
+		if ( '' !== $slug ) {
+			$page = get_page_by_path( $slug );
+		}
+		if ( ! $page ) {
+			$front = (int) get_option( 'page_on_front' );
+			if ( $front ) {
+				$page = get_post( $front );
+			}
+		}
+		if ( ! $page ) {
+			return new WP_Error( 'wpab_edit_nopage', 'Could not find that page. Generate the pages first.', array( 'status' => 404 ) );
+		}
+
+		$body = array(
+			'brand'        => (string) get_bloginfo( 'name' ),
+			'tagline'      => (string) get_bloginfo( 'description' ),
+			'title'        => (string) get_the_title( $page->ID ),
+			'current'      => (string) $page->post_content,
+			'instructions' => $instructions,
+		);
+
+		$started = microtime( true );
+		$result  = WPAB_Cloud::request( 'agent/edit-page', $body, 90 );
+		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
+
+		if ( is_wp_error( $result ) ) {
+			self::ai_log_add( 'edit-page', $body, null, $result->get_error_message(), $dur );
+			return $result;
+		}
+
+		if ( empty( $result['blocks'] ) ) {
+			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The AI did not return the edited page.';
+			self::ai_log_add( 'edit-page', $body, is_array( $result ) ? $result : null, $msg, $dur );
+			return new WP_Error( 'wpab_edit_empty', $msg, array( 'status' => 502 ) );
+		}
+
+		self::ai_log_add( 'edit-page', $body, $result, '', $dur );
+
+		$blocks  = (string) $result['blocks'];
+		$content = current_user_can( 'unfiltered_html' ) ? $blocks : wp_kses_post( $blocks );
+
+		$updated = wp_update_post(
+			wp_slash(
+				array(
+					'ID'           => (int) $page->ID,
+					'post_content' => $content,
+				)
+			),
+			true
+		);
+
+		if ( is_wp_error( $updated ) ) {
+			return $updated;
+		}
+
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'page'    => array(
+					'id'    => (int) $page->ID,
+					'title' => (string) get_the_title( $page->ID ),
+					'slug'  => (string) get_post_field( 'post_name', $page->ID ),
+					'url'   => (string) get_permalink( $page->ID ),
+				),
+			),
+			200
+		);
+	}
+
+	/** Add one new page (proxied to build-page), then add it to the menu. */
+	public static function rest_build_add_page( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params  = self::json_params( $request );
+		$title   = isset( $params['title'] ) ? trim( (string) $params['title'] ) : '';
+		$purpose = isset( $params['purpose'] ) ? (string) $params['purpose'] : '';
+		$sections = isset( $params['sections'] ) && is_array( $params['sections'] ) ? array_map( 'strval', $params['sections'] ) : array();
+
+		if ( '' === $title ) {
+			return new WP_Error( 'wpab_addpage_notitle', 'A page title is required.', array( 'status' => 400 ) );
+		}
+
+		$body = array(
+			'brand'    => (string) get_bloginfo( 'name' ),
+			'tagline'  => (string) get_bloginfo( 'description' ),
+			'page'     => array(
+				'title'    => $title,
+				'slug'     => sanitize_title( $title ),
+				'front'    => false,
+				'purpose'  => $purpose,
+				'sections' => $sections,
+			),
+		);
+
+		$started = microtime( true );
+		$result  = WPAB_Cloud::request( 'agent/build-page', $body, 90 );
+		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
+
+		if ( is_wp_error( $result ) ) {
+			self::ai_log_add( 'add-page', $body, null, $result->get_error_message(), $dur );
+			return $result;
+		}
+		if ( empty( $result['blocks'] ) ) {
+			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The AI did not return the page.';
+			self::ai_log_add( 'add-page', $body, is_array( $result ) ? $result : null, $msg, $dur );
+			return new WP_Error( 'wpab_addpage_empty', $msg, array( 'status' => 502 ) );
+		}
+
+		self::ai_log_add( 'add-page', $body, $result, '', $dur );
+
+		$applied = WPAB_Builder::apply_single_page(
+			array(
+				'title'  => $title,
+				'slug'   => sanitize_title( $title ),
+				'front'  => false,
+				'blocks' => (string) $result['blocks'],
+			)
+		);
+
+		if ( is_wp_error( $applied ) ) {
+			return $applied;
+		}
+
+		WPAB_Builder::add_to_navigation( $applied );
+
+		return new WP_REST_Response( array( 'success' => true, 'page' => $applied ), 200 );
 	}
 
 	/**

@@ -140,6 +140,10 @@ final class WPAB_Dashboard {
 			'restBuildPlan'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
 			'restBuildPage'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/page' ) ),
 			'restBuildFinalize' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/finalize' ) ),
+			'restBuildContext'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/context' ) ),
+			'restStudio'        => esc_url_raw( rest_url( self::NAMESPACE . '/editor/studio' ) ),
+			'restBuildEditPage' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/edit-page' ) ),
+			'restBuildAddPage'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/add-page' ) ),
 			'restBuildImage'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/image' ) ),
 			'restBuildGallery'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/gallery' ) ),
 			'restBuildFeature'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/feature' ) ),
@@ -314,6 +318,21 @@ final class WPAB_Dashboard {
 			<?php endif; ?>
 
 			<?php if ( 'build' === $view ) : ?>
+				<?php if ( $connected && ! empty( $modules['build'] ) ) : ?>
+				<div class="wpab-panel" id="wpab-studio-panel" style="display:none">
+					<div class="wpab-panel__head">
+						<h2 class="wpab-panel__title"><span class="dashicons dashicons-format-chat"></span> Studio <span class="wpab-studio__meta" id="wpab-studio-meta"></span></h2>
+					</div>
+					<div class="wpab-build__body">
+						<div class="wpab-studio__log" id="wpab-studio-log"></div>
+						<div class="wpab-studio__chips" id="wpab-studio-chips"></div>
+						<form class="wpab-studio__form" id="wpab-studio-form">
+							<input type="text" id="wpab-studio-input" placeholder="Ask to build or change something — e.g. &ldquo;change the homepage hero&rdquo;, &ldquo;add a pricing page&rdquo;, &ldquo;add booking&rdquo;&hellip;" autocomplete="off" />
+							<button type="submit" class="button button-primary" id="wpab-studio-send">Send</button>
+						</form>
+					</div>
+				</div>
+				<?php endif; ?>
 				<div class="wpab-panel" id="wpab-dash-build">
 					<div class="wpab-panel__head">
 						<h2 class="wpab-panel__title"><span class="dashicons dashicons-art"></span> Create your site</h2>
@@ -541,6 +560,21 @@ final class WPAB_Dashboard {
 		#wpab-dash .wpab-log__body { padding:0 12px 12px; border-top:1px solid #f0f0f1; }
 		#wpab-dash .wpab-log__body h4 { margin:12px 0 4px; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:#787c82; }
 		#wpab-dash .wpab-log__pre { margin:0; background:#1d2327; color:#e6e7e8; padding:10px 12px; border-radius:7px; font-size:12px; line-height:1.5; white-space:pre-wrap; word-break:break-word; max-height:320px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+		#wpab-dash .wpab-studio__meta { font-size:12px; font-weight:400; color:#787c82; margin-left:8px; }
+		#wpab-dash .wpab-studio__log { max-height:420px; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding:4px 2px; }
+		#wpab-dash .wpab-studio__msg { max-width:80%; padding:10px 13px; border-radius:12px; font-size:13px; line-height:1.55; }
+		#wpab-dash .wpab-studio__msg.is-user { align-self:flex-end; background:#2271b1; color:#fff; border-bottom-right-radius:4px; }
+		#wpab-dash .wpab-studio__msg.is-bot { align-self:flex-start; background:#f0f0f1; color:#1d2327; border-bottom-left-radius:4px; }
+		#wpab-dash .wpab-studio__msg.is-run { align-self:flex-start; background:#fff; border:1px solid #e2e4e7; color:#1d2327; width:80%; }
+		#wpab-dash .wpab-studio__msg a { color:inherit; }
+		#wpab-dash .wpab-studio__msg.is-user a { color:#fff; }
+		#wpab-dash .wpab-studio__form { display:flex; gap:8px; margin-top:12px; }
+		#wpab-dash .wpab-studio__form input { flex:1; font-size:13px; padding:9px 12px; border:1px solid #dcdcde; border-radius:8px; }
+		#wpab-dash .wpab-studio__chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+		#wpab-dash .wpab-studio__chip { font-size:12px; padding:5px 11px; border:1px solid #dcdcde; border-radius:20px; background:#fff; cursor:pointer; color:#2c3338; }
+		#wpab-dash .wpab-studio__chip:hover { background:#f6f7f7; border-color:#2271b1; }
+		#wpab-dash .wpab-studio__plan { list-style:none; margin:8px 0 0; padding:0; font-size:12px; }
+		#wpab-dash .wpab-studio__plan li { margin:2px 0; }
 		#wpab-dash .wpab-build__actions { margin-top:18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 		#wpab-dash .wpab-build__note { font-size:12px; color:#8c8f94; }
 		#wpab-dash .wpab-build__result { margin-top:16px; max-width:820px; }
@@ -1483,6 +1517,7 @@ final class WPAB_Dashboard {
 							+ '<div id="wpab-pages-result" style="margin-top:12px"></div></div>';
 						bGen.textContent = 'Generate another';
 						var pb = $('wpab-b-pages'); if (pb) { pb.addEventListener('click', function () { generateSite(pb); }); }
+						if (window.wpabStudioReveal) { window.wpabStudioReveal(); }
 					}).catch(function () { result.innerHTML = '<div class="wpab-build__err">Network error generating the theme.</div>'; bGen.disabled = false; })
 					.then(function () { setBusy(false); });
 				});
@@ -1529,7 +1564,59 @@ final class WPAB_Dashboard {
 			initPicker();
 			initSeo();
 			initGlance();
+			function initStudio() {
+				var panel = $('wpab-studio-panel'); if (!panel) { return; }
+				var logEl = $('wpab-studio-log'), form = $('wpab-studio-form'), input = $('wpab-studio-input'), chipsEl = $('wpab-studio-chips'), metaEl = $('wpab-studio-meta');
+				var ctx = null, sbusy = false;
+				function bubble(cls, html) { var d = document.createElement('div'); d.className = 'wpab-studio__msg ' + cls; d.innerHTML = html; logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; return d; }
+				function siteBrief(extra) { var s = (ctx && ctx.site) || {}; var t = (ctx && ctx.theme) || {}; return { brand: s.name || '', tagline: s.tagline || '', site_type: 'business', style: 'modern', custom: extra || '' }; }
+				function showMeta() { if (!ctx || !ctx.theme) { metaEl.textContent = ''; return; } var n = (ctx.pages || []).length; metaEl.textContent = '\u00b7 ' + ctx.theme.name + ' \u00b7 ' + n + ' page' + (n === 1 ? '' : 's'); }
+				function setChips(list) { chipsEl.innerHTML = list.map(function (t) { return '<button type="button" class="wpab-studio__chip">' + esc(t) + '</button>'; }).join(''); Array.prototype.forEach.call(chipsEl.querySelectorAll('.wpab-studio__chip'), function (bt) { bt.addEventListener('click', function () { input.value = bt.textContent; send(); }); }); }
+				function loadContext(cb) { api('GET', cfg.restBuildContext).then(function (out) { ctx = (out.data && out.data.context) || null; showMeta(); if (cb) { cb(); } }).catch(function () { if (cb) { cb(); } }); }
+				function reveal(greet) { panel.style.display = ''; if (greet) { var hasPages = ctx && ctx.pages && ctx.pages.some(function (p) { return p.front; }); bubble('is-bot', hasPages ? 'Your site is live. Tell me what to change \u2014 the homepage, a section, a new page, booking or images.' : 'Your theme is ready. Want me to generate the starter pages? Or tell me what to build.'); setChips(hasPages ? ['Change the homepage hero', 'Add a pricing page', 'Add booking', 'Add images'] : ['Generate starter pages', 'Add booking']); } }
+				function send() { var msg = (input.value || '').trim(); if (!msg || sbusy) { return; } sbusy = true; input.value = ''; bubble('is-user', esc(msg)); var thinking = bubble('is-bot', '<span class="wpab-typing">\u2026</span>'); api('POST', cfg.restStudio, { message: msg }).then(function (out) { if (!out.ok || !out.data || out.data.success === false) { thinking.innerHTML = esc((out.data && (out.data.message || out.data.error)) || 'Something went wrong.'); sbusy = false; return; } thinking.innerHTML = esc(out.data.reply || 'On it.'); var action = out.data.action; if (!action) { sbusy = false; return; } runAction(action, function () { sbusy = false; loadContext(); }); }).catch(function () { thinking.innerHTML = 'Network error.'; sbusy = false; }); }
+				function done_ok(run, html) { run.innerHTML = html; }
+				function done_err(run, d) { run.innerHTML = '<span style="color:#a00">' + esc((d && (d.message || d.error)) || 'Failed.') + '</span>'; }
+				function runAction(action, done) {
+					var name = action.name, aa = action.args || {};
+					if (name === 'add_booking') { var r = bubble('is-run', '<span class="wpab-typing">Adding booking\u2026</span>'); api('POST', cfg.restBuildFeature, { feature: 'booking', brand: (ctx && ctx.site ? ctx.site.name : '') }).then(function (o) { var d = o.data || {}; if (o.ok && d.success !== false) { done_ok(r, '&#10003; Booking added.' + (d.page_url ? ' <a href="' + esc(d.page_url) + '" target="_blank" rel="noopener">View booking page</a>' : '')); } else { done_err(r, d); } }).catch(function () { done_err(r, null); }).then(done); return; }
+					if (name === 'edit_page') { var slug = aa.slug || 'home'; var r2 = bubble('is-run', '<span class="wpab-typing">Editing ' + esc(slug) + '\u2026</span>'); api('POST', cfg.restBuildEditPage, { slug: slug, instructions: aa.instructions || '' }).then(function (o) { var d = o.data || {}; if (o.ok && d.success !== false && d.page) { done_ok(r2, '&#10003; Updated \u201c' + esc(d.page.title) + '\u201d. <a href="' + esc(d.page.url) + '" target="_blank" rel="noopener">View</a>'); } else { done_err(r2, d); } }).catch(function () { done_err(r2, null); }).then(done); return; }
+					if (name === 'add_page') { var r3 = bubble('is-run', '<span class="wpab-typing">Creating \u201c' + esc(aa.title || 'page') + '\u201d\u2026</span>'); api('POST', cfg.restBuildAddPage, { title: aa.title || '', purpose: aa.purpose || '', sections: aa.sections || [] }).then(function (o) { var d = o.data || {}; if (o.ok && d.success !== false && d.page) { done_ok(r3, '&#10003; Added \u201c' + esc(d.page.title) + '\u201d. <a href="' + esc(d.page.url) + '" target="_blank" rel="noopener">View</a>'); } else { done_err(r3, d); } }).catch(function () { done_err(r3, null); }).then(done); return; }
+					if (name === 'generate_images') { studioImages(aa.count || 4, done); return; }
+					if (name === 'generate_pages') { studioPages(aa.custom || '', done); return; }
+					done();
+				}
+				function studioPages(custom, done) {
+					var run = bubble('is-run', '<span class="wpab-typing">Planning your pages\u2026</span>');
+					var brief = siteBrief(custom);
+					api('POST', cfg.restBuildPlan, brief).then(function (out) {
+						if (!out.ok || !out.data || !out.data.pages || !out.data.pages.length) { done_err(run, out.data); done(); return; }
+						var plan = out.data.pages, slugs = plan.map(function (p) { return p.slug || ''; }).filter(Boolean), created = [];
+						function prog(idx, status) { var rows = plan.map(function (p, i) { var m = i < idx ? '&#10003; ' : (i === idx ? '<span class="wpab-typing">\u2026</span> ' : '<span style="color:#c3c4c7">\u00b7</span> '); return '<li>' + m + esc(p.title) + '</li>'; }).join(''); run.innerHTML = '<div>' + esc(status) + '</div><ul class="wpab-studio__plan">' + rows + '</ul>'; }
+						prog(0, 'Building ' + plan.length + ' pages\u2026');
+						var i = 0;
+						function fin() { prog(plan.length, 'Finishing\u2026'); var front = 0; created.forEach(function (c) { if (c.front) { front = c.id; } }); api('POST', cfg.restBuildFinalize, { brand: brief.brand, tagline: brief.tagline, site_type: brief.site_type, style: brief.style, pages: created, front_id: front, patterns: true }).then(function () { done_ok(run, '&#10003; ' + created.length + ' pages created and your home page is set. <a href="' + esc(ctx && ctx.site ? ctx.site.url : '/') + '" target="_blank" rel="noopener">View site</a>'); }).catch(function () { done_ok(run, '&#10003; Pages created.'); }).then(done); }
+						function nx() { if (i >= plan.length) { fin(); return; } prog(i, 'Creating ' + (i + 1) + '/' + plan.length + ': ' + plan[i].title + '\u2026'); api('POST', cfg.restBuildPage, { brand: brief.brand, tagline: brief.tagline, site_type: brief.site_type, style: brief.style, custom: custom, page: plan[i], slugs: slugs }).then(function (po) { if (po.ok && po.data && po.data.page) { created.push(po.data.page); } i++; nx(); }).catch(function () { i++; nx(); }); }
+						nx();
+					}).catch(function () { done_err(run, null); done(); });
+				}
+				function studioImages(count, done) {
+					if (count < 1) { count = 1; } if (count > 4) { count = 4; }
+					var run = bubble('is-run', '<span class="wpab-typing">Generating ' + count + ' images\u2026</span>');
+					var ids = [], i = 0, brief = siteBrief('');
+					function nx() {
+						if (i >= count) { var good = ids.filter(Boolean).map(function (x) { return x.id; }); if (!good.length) { run.innerHTML = '<span style="color:#a00">No images generated.</span>'; done(); return; } api('POST', cfg.restBuildGallery, { ids: good }).then(function () { done_ok(run, '&#10003; ' + good.length + ' images added to the home page.'); }).catch(function () { done_ok(run, '&#10003; Images saved.'); }).then(done); return; }
+						run.innerHTML = '<span class="wpab-typing">Generating image ' + (i + 1) + '/' + count + '\u2026</span>';
+						api('POST', cfg.restBuildImage, { brand: brief.brand, site_type: brief.site_type, style: brief.style, index: i }).then(function (o) { ids.push(o.ok && o.data && o.data.image ? o.data.image : null); i++; nx(); }).catch(function () { ids.push(null); i++; nx(); });
+					}
+					nx();
+				}
+				form.addEventListener('submit', function (e) { e.preventDefault(); send(); });
+				loadContext(function () { if (ctx && ctx.theme && ctx.theme.generated) { reveal(true); } });
+				window.wpabStudioReveal = function () { loadContext(function () { reveal(true); panel.scrollIntoView({ behavior: 'smooth' }); }); };
+			}
 			initAiLog();
+			initStudio();
 		})();
 		</script>
 		<?php

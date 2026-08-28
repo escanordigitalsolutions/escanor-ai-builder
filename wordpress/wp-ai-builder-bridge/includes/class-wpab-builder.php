@@ -375,6 +375,57 @@ final class WPAB_Builder {
 		}
 	}
 
+	/** Append a single page to the existing header navigation (Studio add-page). */
+	public static function add_to_navigation( array $page ): void {
+		if ( empty( $page['id'] ) ) {
+			return;
+		}
+
+		$attrs = wp_json_encode(
+			array(
+				'label' => isset( $page['title'] ) ? (string) $page['title'] : '',
+				'type'  => 'page',
+				'id'    => (int) $page['id'],
+				'url'   => isset( $page['url'] ) ? (string) $page['url'] : '',
+				'kind'  => 'post-type',
+			)
+		);
+		if ( false === $attrs ) {
+			return;
+		}
+		$link = '<!-- wp:navigation-link ' . $attrs . ' /-->' . "\n";
+
+		$existing = get_posts(
+			array(
+				'post_type'   => 'wp_navigation',
+				'numberposts' => 1,
+				'post_status' => 'publish',
+			)
+		);
+
+		if ( $existing ) {
+			wp_update_post(
+				wp_slash(
+					array(
+						'ID'           => (int) $existing[0]->ID,
+						'post_content' => (string) $existing[0]->post_content . $link,
+					)
+				)
+			);
+		} else {
+			wp_insert_post(
+				wp_slash(
+					array(
+						'post_type'    => 'wp_navigation',
+						'post_title'   => 'Navigation',
+						'post_status'  => 'publish',
+						'post_content' => $link,
+					)
+				)
+			);
+		}
+	}
+
 	/**
 	 * Create the generated pages (published), set the home page as the static
 	 * front page, point the theme's front-page template at page content, and
