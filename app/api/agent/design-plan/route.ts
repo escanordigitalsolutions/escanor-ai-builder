@@ -33,6 +33,8 @@ Inspect the real theme with the tools (list_project_files first, then read the f
 - Imagery: are photos used as a design element (full-bleed, treated, confident), or just small boxes?
 - Layout ambition: is there asymmetry, full-bleed, overlap, negative space — or is everything centered and boxed?
 
+The theme is intentionally DEPENDENCY-FREE (vanilla JS + modern CSS only, no libraries). Never propose adding GSAP, Swiper, tsParticles, GLightbox or any CDN library — achieve every effect with CSS and small vanilla JS (IntersectionObserver, scroll-snap, requestAnimationFrame).
+
 Return the 3-6 HIGHEST-IMPACT changes that would most elevate the design. For each, name the exact file and give a CONCRETE, art-directed instruction (what to change and how, in the language of the concept) — bold but still responsive, accessible and consistent with the theme's design tokens. Order most impactful first. Prefer changes to section template-parts and main.css. Do not propose more than 6.
 
 Respond with ONLY valid JSON, no markdown, no commentary:

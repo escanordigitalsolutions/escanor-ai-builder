@@ -43,24 +43,11 @@ DESIGN BAR — express the concept with real craft:
 - Ambitious, mobile-first responsive layout: asymmetry, full-bleed sections, overlap and off-grid moments where the concept supports them — not everything boxed and centered.
 - Signature motion to plan for: scroll-triggered staggered reveals, parallax depth, an ANIMATED hero background, a sticky header that shrinks on scroll, a scroll-progress indicator, count-up stats, and modern interactive buttons. Elegant and intentional, tuned to the concept (a luxury site moves slowly; a techno site is sharp), always mindful of prefers-reduced-motion.
 
-MOTION + JS LIBRARIES — these are loaded by functions.php and MUST come from cdnjs ONLY (https://cdnjs.cloudflare.com/ajax/libs/...). Use EXACT version URLs. Choose 2-5 that the sections actually use:
-- GSAP core — gsap/3.12.5/gsap.min.js — and ScrollTrigger — gsap/3.12.5/ScrollTrigger.min.js. This is the animation backbone: reveals, parallax, pinned sections, hero motion. Include it in almost every theme for a premium feel.
-- Swiper — swiper/11.1.14/swiper-bundle.min.js (+ css) — testimonial/logo/gallery sliders.
-- GLightbox — glightbox/3.3.0/js/glightbox.min.js (+ css) — image/video lightboxes.
-- tsParticles — tsparticles/2.12.0/tsparticles.bundle.min.js — particle / constellation backgrounds.
-- typed.js — typed.js/2.1.0/typed.umd.js — typing headline effect.
-- Splitting — splitting/1.0.6/splitting.min.js (+ css) — per-character/word text animation.
-- Rellax — rellax/1.12.1/rellax.min.js — lightweight parallax (if not using GSAP for it).
-- vanilla-tilt — vanilla-tilt/1.8.1/vanilla-tilt.min.js — 3D card tilt on hover.
-- AOS — aos/2.3.4/aos.min.js (+ css) — simple scroll reveals (use only when NOT using GSAP).
-- Alpine.js — alpinejs/3.14.1/cdn.min.js — small stateful UI (tabs, accordions, mobile menu).
-Only include what the design needs, but favour a signature stack of GSAP + ScrollTrigger plus 1-2 others.
-
-LIBRARY COVERAGE (required — no orphan effects): every animation you assign to any section MUST have its library present in libraries[]. Mapping: any "typed-headline" animation -> include typed.js; "tilt-cards" -> include vanilla-tilt; any gallery/lightbox -> include GLightbox; "slider" (testimonials/logos/gallery carousels) -> include Swiper; a section background of "animated-particles" -> include tsParticles; scroll reveals/parallax/count-up/pin-scroll -> covered by GSAP + ScrollTrigger. If a library is NOT in libraries[], do NOT assign an animation that needs it. Conversely, do not list a library that no section uses.
+MOTION — NO external JS libraries or frameworks. All motion is modern CSS plus small, dependency-free vanilla JS: IntersectionObserver scroll reveals, a scroll listener for a sticky/shrinking header and a scroll-progress bar, requestAnimationFrame count-ups, a tiny scroll transform for parallax, and CSS scroll-snap for any carousel/slider. Animated backgrounds are pure CSS. Do NOT plan for GSAP, Swiper, tsParticles, GLightbox, Typed, AOS, Alpine or any CDN library — the theme is self-contained. (Google Fonts and real placeholder images are fine and expected.)
 
 IMAGERY — real photos matter; plan where the theme uses them so it never looks empty. Based on the brief, decide which sections carry PHOTOGRAPHIC imagery (typically: a hero image or side visual, a gallery/portfolio grid, an about/team portrait, feature/service cards with photos, testimonial avatars) versus SVG icons/illustrations (best for small feature icons and abstract accents). Note the intent in the relevant section's "layout" or "copy" (e.g. "split with photo", "photo gallery grid", "cards with photos"). Most sites need photos in at least the hero and one or two content sections. The engineer renders these as real on-topic placeholder images.
 
-ANIMATED BACKGROUNDS — plan at least one signature animated background for the hero (and optionally one deeper section). Pick from: animated SVG gradient/mesh, floating SVG blobs, an SVG/CSS aurora glow, a moving grid/dot field, or a tsParticles constellation. Encode the choice in design.motion.heroBackground and in the relevant section's "background".
+ANIMATED BACKGROUNDS — plan at least one signature animated background for the hero (and optionally one deeper section). Pick a PURE-CSS effect: animated gradient/mesh, floating SVG/CSS blobs, an aurora glow, or a moving grid/dot field. Encode the choice in design.motion.heroBackground and in the relevant section's "background".
 
 STRUCTURE (classic PHP theme):
 - Real .php templates using get_header()/get_footer(), the WordPress loop, get_template_part(), wp_head()/wp_footer().
@@ -74,8 +61,8 @@ SECTIONS — the top-level "sections" array describes every UNIQUE section as an
 - slug: kebab-case, unique (matches template-parts/section-{slug}.php and the .section-{slug} CSS class).
 - type: one of hero | logos | features | feature-split | stats | gallery | testimonials | pricing | faq | steps | team | cta | contact | content | statement | marquee | oversized-quote | index-list | process | full-bleed-image | split-editorial | showcase. Use the expressive types (statement, marquee, oversized-quote, index-list, full-bleed-image, split-editorial) to break the generic rhythm — at least ONE section should be a distinctive, non-standard "signature" moment that embodies the concept.
 - layout: a short hint, e.g. "split-left-image", "3-col-cards", "centered", "alternating-rows", "masonry", "logo-marquee", "two-col".
-- background: one of base | surface | gradient | dark | animated-mesh | animated-blobs | animated-aurora | animated-grid | animated-particles.
-- animation: a short hint, e.g. "stagger-reveal", "parallax", "count-up", "slider", "typed-headline", "tilt-cards", "pin-scroll".
+- background: one of base | surface | gradient | dark | animated-mesh | animated-blobs | animated-aurora | animated-grid.
+- animation: a short hint, e.g. "stagger-reveal", "parallax", "count-up", "slider" (CSS scroll-snap), "sticky-reveal".
 - copy: ONE sentence of real, on-topic copy direction for this section (never lorem ipsum).
 
 COLOUR + TYPE:
@@ -106,7 +93,6 @@ JSON schema (use EXACTLY these keys):
     "style": string,
     "motion": { "level": "subtle" | "balanced" | "bold", "heroBackground": string, "buttons": string }
   },
-  "libraries": [ { "handle": string, "css": string | null, "js": string | null, "footer": boolean } ],
   "menu": [ { "title": string, "slug": string } ],
   "frontPage": string,
   "pages": [ { "slug": string, "title": string, "template": string, "sections": [string], "purpose": string, "headline": string } ],
