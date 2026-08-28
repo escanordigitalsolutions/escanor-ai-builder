@@ -1698,6 +1698,17 @@ final class WPAB_Editor {
 			'restAnalyze'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/analyze' ) ),
 			'restRecommend' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/recommend' ) ),
 			'restUnderstand' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/understand' ) ),
+			'restBuildContext' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/context' ) ),
+			'restBuildTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/create-theme' ) ),
+			'restBuildPlan'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
+			'restBuildPage'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/page' ) ),
+			'restBuildFinalize' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/finalize' ) ),
+			'restBuildAddPage' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/add-page' ) ),
+			'restBuildEditPage' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/edit-page' ) ),
+			'restBuildFeature' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/feature' ) ),
+			'restBuildImage'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/image' ) ),
+			'restBuildGallery' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/gallery' ) ),
+			'buildEnabled'     => WPAB_Modules::is_enabled( 'build' ),
 			'nonce'         => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'snapPage'      => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-snapshots' ) ),
@@ -2257,6 +2268,7 @@ final class WPAB_Editor {
 			}
 			function sendChat(message) {
 				var pendingBuild = null;
+					var pendingBuilder = null;
 					var pendingContentEdit = null;
 					setBusy(true, true); metaEl.textContent = '';
 				var runId = genRunId();
@@ -2282,10 +2294,11 @@ final class WPAB_Editor {
 					if (d.conversation && d.conversation.id) { conversationId = d.conversation.id; }
 					addMessage('assistant', d.answer || 'Analysis completed.', d.activity);
 						if (d.buildRequest && d.buildRequest.instruction) { pendingBuild = d.buildRequest.instruction; }
+						if (d.builderRequest && d.builderRequest.action) { pendingBuilder = d.builderRequest; }
 						if (d.contentEditRequest && d.contentEditRequest.id) { pendingContentEdit = d.contentEditRequest; }
 					if (d.usage) { metaEl.textContent = (d.toolCalls || 0) + ' tool calls · ' + (d.usage.totalTokens || 0).toLocaleString() + ' tokens'; }
 				}).catch(function () { polling = false; typing.remove(); addMessage('assistant', 'Error: network request failed.'); })
-				.then(function () { setBusy(false); input.focus(); if (pendingBuild) { startInlineProposal(pendingBuild); } else if (pendingContentEdit) { startInlineContentEdit(pendingContentEdit); } });
+				.then(function () { setBusy(false); input.focus(); if (pendingBuild) { startInlineProposal(pendingBuild); } else if (pendingBuilder) { startBuilderAction(pendingBuilder); } else if (pendingContentEdit) { startInlineContentEdit(pendingContentEdit); } });
 			}
 			form.addEventListener('submit', function (e) { e.preventDefault(); if (busy) { return; } var m = input.value.trim(); if (!m) { return; } openTool('chat'); addMessage('user', m); input.value = ''; sendChat(m); });
 			input.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
@@ -2373,6 +2386,43 @@ final class WPAB_Editor {
 					var mount = wrap.querySelector('.wpab-prop-mount');
 					runProposal(instruction, mount, function (t) { if (st) { st.textContent = t; st.style.display = t ? '' : 'none'; } thread.scrollTop = thread.scrollHeight; });
 				}
+								/* ---- Builder actions (unified Studio) ---- */
+								function reloadPreview() { try { var fr = $('wpab-visual-frame'); if (fr && fr.contentWindow) { fr.contentWindow.location.reload(); } } catch (e) {} }
+								function builderBrief(cb) { api('GET', cfg.restBuildContext).then(function (o) { var s = (o.data && o.data.context && o.data.context.site) || {}; cb({ brand: s.name || '', tagline: s.tagline || '', site_type: 'business', style: 'modern' }); }).catch(function () { cb({ brand: '', tagline: '', site_type: 'business', style: 'modern' }); }); }
+								function startBuilderAction(req) {
+									openSheet();
+									var wrap = document.createElement('div'); wrap.className = 'wpab-msg wpab-msg--assistant';
+									wrap.innerHTML = '<div class="wpab-msg__role">Builder</div><div class="wpab-prop-mount"></div>';
+									thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
+									var mount = wrap.querySelector('.wpab-prop-mount');
+									var a = req.args || {}, act = req.action;
+									function esc2(s) { return escapeHtml(String(s == null ? '' : s)); }
+									function ok(html) { mount.innerHTML = html; thread.scrollTop = thread.scrollHeight; }
+									function err(d) { mount.innerHTML = '<div class="wpab-deploy wpab-deploy--err">' + esc2((d && (d.message || d.error)) || 'Failed.') + '</div>'; }
+									setBusy(true);
+									function fin() { setBusy(false); input.focus(); }
+									if (act === 'add_booking') { ok('<div class="wpab-typing">Adding booking\u2026</div>'); api('POST', cfg.restBuildFeature, { feature: 'booking' }).then(function (o) { var d = o.data || {}; if (o.ok && d.success !== false) { ok('&#10003; Booking added.' + (d.page_url ? ' <a href="' + esc2(d.page_url) + '" target="_blank" rel="noopener">View booking page</a>' : '')); reloadPreview(); } else { err(d); } }).catch(function () { err(null); }).then(fin); return; }
+									if (act === 'edit_page') { ok('<div class="wpab-typing">Editing ' + esc2(a.slug || 'home') + '\u2026</div>'); api('POST', cfg.restBuildEditPage, { slug: a.slug || 'home', instructions: a.instructions || '' }).then(function (o) { var d = o.data || {}; if (o.ok && d.success !== false && d.page) { ok('&#10003; Updated \u201c' + esc2(d.page.title) + '\u201d. <a href="' + esc2(d.page.url) + '" target="_blank" rel="noopener">View</a>'); reloadPreview(); } else { err(d); } }).catch(function () { err(null); }).then(fin); return; }
+									if (act === 'add_page') { ok('<div class="wpab-typing">Creating \u201c' + esc2(a.title || 'page') + '\u201d\u2026</div>'); api('POST', cfg.restBuildAddPage, { title: a.title || '', purpose: a.purpose || '', sections: a.sections || [] }).then(function (o) { var d = o.data || {}; if (o.ok && d.success !== false && d.page) { ok('&#10003; Added \u201c' + esc2(d.page.title) + '\u201d. <a href="' + esc2(d.page.url) + '" target="_blank" rel="noopener">View</a>'); reloadPreview(); } else { err(d); } }).catch(function () { err(null); }).then(fin); return; }
+									if (act === 'generate_images') { var count = a.count || 4; if (count < 1) { count = 1; } if (count > 4) { count = 4; } builderBrief(function (brief) { var ids = [], i = 0; function nx() { if (i >= count) { var good = ids.filter(Boolean).map(function (x) { return x.id; }); if (!good.length) { err({ message: 'No images generated.' }); fin(); return; } api('POST', cfg.restBuildGallery, { ids: good }).then(function () { ok('&#10003; ' + good.length + ' images added to the home page.'); reloadPreview(); }).catch(function () { ok('&#10003; Images saved.'); }).then(fin); return; } ok('<div class="wpab-typing">Generating image ' + (i + 1) + '/' + count + '\u2026</div>'); api('POST', cfg.restBuildImage, { brand: brief.brand, site_type: brief.site_type, style: brief.style, index: i }).then(function (o) { ids.push(o.ok && o.data && o.data.image ? o.data.image : null); i++; nx(); }).catch(function () { ids.push(null); i++; nx(); }); } nx(); }); return; }
+									if (act === 'generate_pages') {
+										builderBrief(function (brief) {
+											var custom = a.custom || '';
+											ok('<div class="wpab-typing">Planning your pages\u2026</div>');
+											api('POST', cfg.restBuildPlan, { brand: brief.brand, tagline: brief.tagline, site_type: brief.site_type, style: brief.style, custom: custom }).then(function (out) {
+												if (!out.ok || !out.data || !out.data.pages || !out.data.pages.length) { err(out.data); fin(); return; }
+												var plan = out.data.pages, slugs = plan.map(function (p) { return p.slug || ''; }).filter(Boolean), created = [];
+												function prog(k, status) { var rows = plan.map(function (p, j) { var m = j < k ? '&#10003; ' : (j === k ? '<span class="wpab-typing">\u2026</span> ' : '\u00b7 '); return '<div>' + m + esc2(p.title) + '</div>'; }).join(''); ok('<div>' + esc2(status) + '</div>' + rows); }
+												prog(0, 'Building ' + plan.length + ' pages\u2026'); var i = 0;
+												function done2() { prog(plan.length, 'Finishing\u2026'); var front = 0; created.forEach(function (c) { if (c.front) { front = c.id; } }); api('POST', cfg.restBuildFinalize, { brand: brief.brand, tagline: brief.tagline, site_type: brief.site_type, style: brief.style, pages: created, front_id: front, patterns: true }).then(function () { ok('&#10003; ' + created.length + ' pages created and your home page is set.'); reloadPreview(); }).catch(function () { ok('&#10003; Pages created.'); }).then(fin); }
+												function nx() { if (i >= plan.length) { done2(); return; } prog(i, 'Creating ' + (i + 1) + '/' + plan.length + ': ' + plan[i].title + '\u2026'); api('POST', cfg.restBuildPage, { brand: brief.brand, tagline: brief.tagline, site_type: brief.site_type, style: brief.style, custom: custom, page: plan[i], slugs: slugs }).then(function (po) { if (po.ok && po.data && po.data.page) { created.push(po.data.page); } i++; nx(); }).catch(function () { i++; nx(); }); }
+												nx();
+											}).catch(function () { err(null); fin(); });
+										});
+										return;
+									}
+									fin();
+								}
 								/* ---- Content edit (Phase 3) ---- */
 				function ceTrunc(t, nn) { t = String(t == null ? '' : t); return t.length > nn ? t.slice(0, nn) + '…' : t; }
 				function renderContentEditCard(proposal, mount) {
@@ -2846,6 +2896,78 @@ final class WPAB_Editor {
 			else { setStatus('This site is not connected to the AI Builder cloud yet. Open Cloud connection.', 'error'); }
 		})();
 		</script>
+<div id="wpab-setup" style="display:none;position:fixed;inset:0;z-index:99999;background:#0e1013;color:#f4f5f7;overflow:auto;padding:40px 20px;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+	<div style="max-width:720px;margin:0 auto">
+		<h1 style="font-size:26px;margin:0 0 6px;font-weight:700">Create your site</h1>
+		<p style="color:#9aa1ac;margin:0 0 22px;line-height:1.6">Answer a few questions and the AI generates a brand-new custom block theme for this site &mdash; its own colours, type and identity. Then refine everything here in the Studio.</p>
+		<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px">
+			<label style="font-size:12px;color:#9aa1ac;display:flex;flex-direction:column;gap:5px">Site name<input id="wpab-setup-brand" type="text" placeholder="e.g. Aurora Studio" style="padding:9px 11px;border:1px solid #2a2e35;border-radius:8px;background:#17191d;color:#f4f5f7;font-size:14px"></label>
+			<label style="font-size:12px;color:#9aa1ac;display:flex;flex-direction:column;gap:5px">Tagline<input id="wpab-setup-tag" type="text" placeholder="e.g. Design that moves people" style="padding:9px 11px;border:1px solid #2a2e35;border-radius:8px;background:#17191d;color:#f4f5f7;font-size:14px"></label>
+			<label style="font-size:12px;color:#9aa1ac;display:flex;flex-direction:column;gap:5px">Site type<select id="wpab-setup-type" style="padding:9px 11px;border:1px solid #2a2e35;border-radius:8px;background:#17191d;color:#f4f5f7;font-size:14px"><option value="business">Business</option><option value="agency">Agency</option><option value="portfolio">Portfolio</option><option value="restaurant">Restaurant</option><option value="shop">Shop</option><option value="blog">Blog</option><option value="nonprofit">Non-profit</option><option value="personal">Personal</option></select></label>
+			<label style="font-size:12px;color:#9aa1ac;display:flex;flex-direction:column;gap:5px">Style<select id="wpab-setup-style" style="padding:9px 11px;border:1px solid #2a2e35;border-radius:8px;background:#17191d;color:#f4f5f7;font-size:14px"><option value="modern">Modern</option><option value="minimal">Minimal</option><option value="bold">Bold</option><option value="elegant">Elegant</option><option value="playful">Playful</option><option value="editorial">Editorial</option></select></label>
+			<label style="font-size:12px;color:#9aa1ac;display:flex;flex-direction:column;gap:5px">Primary colour<span style="display:flex;gap:8px;align-items:center"><input id="wpab-setup-color" type="color" value="#3a5bff" style="width:42px;height:36px;padding:0;border:1px solid #2a2e35;border-radius:8px;background:#17191d"><input id="wpab-setup-colorhex" type="text" value="#3a5bff" maxlength="7" style="width:110px;padding:9px 11px;border:1px solid #2a2e35;border-radius:8px;background:#17191d;color:#f4f5f7;font-size:14px"></span></label>
+			<label style="font-size:12px;color:#9aa1ac;display:flex;flex-direction:column;gap:5px">Typography<select id="wpab-setup-font" style="padding:9px 11px;border:1px solid #2a2e35;border-radius:8px;background:#17191d;color:#f4f5f7;font-size:14px"><option value="sans">Modern sans</option><option value="serif">Classic serif</option><option value="editorial">Editorial serif</option><option value="rounded">Rounded sans</option><option value="mono">Technical / mono</option></select></label>
+			<label style="font-size:12px;color:#9aa1ac;display:flex;flex-direction:column;gap:5px">Base<select id="wpab-setup-base" style="padding:9px 11px;border:1px solid #2a2e35;border-radius:8px;background:#17191d;color:#f4f5f7;font-size:14px"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+		</div>
+		<label style="font-size:12px;color:#9aa1ac;display:flex;flex-direction:column;gap:5px;margin-top:14px">Extra details / custom instructions (optional)<textarea id="wpab-setup-custom" rows="3" placeholder="Pages you need, tone of voice, key selling points, sections to include or avoid." style="padding:9px 11px;border:1px solid #2a2e35;border-radius:8px;background:#17191d;color:#f4f5f7;font-size:14px;resize:vertical"></textarea></label>
+		<div style="margin-top:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+			<button type="button" id="wpab-setup-go" style="appearance:none;border:0;border-radius:9px;padding:12px 22px;font-size:14px;font-weight:600;cursor:pointer;background:#3a5bff;color:#fff">Generate my theme</button>
+			<span id="wpab-setup-result" style="font-size:13px;color:#9aa1ac"></span>
+		</div>
+	</div>
+</div>
+<script>
+(function () {
+	var cfg = window.WPAB_EDITOR || {};
+	var setup = document.getElementById('wpab-setup');
+	if (!setup || !cfg.restBuildContext) { return; }
+	function $(id) { return document.getElementById(id); }
+	if (cfg.buildEnabled === false) { return; }
+	fetch(cfg.restBuildContext, { headers: { 'X-WP-Nonce': cfg.nonce, 'Accept': 'application/json' }, credentials: 'same-origin' })
+		.then(function (r) { return r.json(); })
+		.then(function (d) {
+			var g = d && d.context && d.context.theme && d.context.theme.generated;
+			if (!g) { setup.style.display = ''; }
+		})
+		.catch(function () {});
+	var c = $('wpab-setup-color'), ch = $('wpab-setup-colorhex');
+	if (c && ch) {
+		c.addEventListener('input', function () { ch.value = c.value; });
+		ch.addEventListener('input', function () { if (/^#[0-9a-fA-F]{6}$/.test(ch.value)) { c.value = ch.value; } });
+	}
+	var go = $('wpab-setup-go');
+	if (go) {
+		go.addEventListener('click', function () {
+			var brand = ($('wpab-setup-brand').value || '').trim();
+			var res = $('wpab-setup-result');
+			if (!brand) { res.textContent = 'Please enter a site name.'; return; }
+			go.disabled = true; res.textContent = 'Generating your theme… this takes a few seconds.';
+			var payload = {
+				brand: brand,
+				tagline: ($('wpab-setup-tag').value || '').trim(),
+				site_type: $('wpab-setup-type').value,
+				style: $('wpab-setup-style').value,
+				primary: ($('wpab-setup-colorhex').value || '#3a5bff'),
+				font: $('wpab-setup-font').value,
+				dark: $('wpab-setup-base').value === 'dark',
+				custom: ($('wpab-setup-custom').value || '').trim()
+			};
+			fetch(cfg.restBuildTheme, { method: 'POST', headers: { 'X-WP-Nonce': cfg.nonce, 'Content-Type': 'application/json', 'Accept': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(payload) })
+				.then(function (r) { return r.json(); })
+				.then(function (d) {
+					if (d && d.success !== false && d.theme_slug) {
+						res.textContent = '✓ Theme created. Loading your studio…';
+						setTimeout(function () { location.reload(); }, 900);
+					} else {
+						go.disabled = false;
+						res.textContent = (d && (d.message || d.error)) || 'Could not generate the theme.';
+					}
+				})
+				.catch(function () { go.disabled = false; res.textContent = 'Network error generating the theme.'; });
+		});
+	}
+})();
+</script>
 		<?php
 	}
 }
