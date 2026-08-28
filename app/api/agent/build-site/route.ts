@@ -120,7 +120,13 @@ Patterns: also return 6-10 reusable, on-brand SECTION patterns (each a single se
 BLOCK MARKUP RULES — this is critical:
 - Output VALID Gutenberg block markup only: every element wrapped in its <!-- wp:... --> ... <!-- /wp:... --> delimiter comments. Never bare HTML or plain text.
 - Use core blocks: wp:heading (with {"level":N}), wp:paragraph, wp:buttons + wp:button, wp:list + wp:list-item, wp:columns + wp:column, wp:group, wp:spacer, wp:separator.
-- Build real SECTIONS by wrapping each in a wp:group. Give alternating sections a subtle background using the theme palette, e.g. a group with {"backgroundColor":"surface"} and its class "has-surface-background-color has-background", and constrained inner layout. Use palette slugs that exist: base, contrast, primary, surface, surface-2, border, muted.
+- SECTIONS MUST BE FULL-WIDTH BANDS. Wrap every section in a group that has BOTH "align":"full" AND a constrained layout, with vertical padding. This is the single most important rule: "align":"full" makes the background colour span the entire viewport while the constrained layout keeps text centred. A coloured group WITHOUT "align":"full" renders as an ugly narrow box in the middle of the page — never do that. Exact shape for each section:
+  <!-- wp:group {"align":"full","backgroundColor":"surface","style":{"spacing":{"padding":{"top":"var:preset|spacing|70","bottom":"var:preset|spacing|70"}}},"layout":{"type":"constrained"}} -->
+  <div class="wp-block-group alignfull has-surface-background-color has-background" style="padding-top:var(--wp--preset--spacing--70);padding-bottom:var(--wp--preset--spacing--70)"> ...section content... </div>
+  <!-- /wp:group -->
+- Alternate the section backgrounds across the page using palette slugs that exist (base, surface, surface-2, and occasionally "contrast" or "primary" for one bold band). When you use a dark band (contrast/primary background) also set a light "textColor":"base" on the group and on its headings so text stays readable.
+- Use padding presets (var:preset|spacing|60 or var:preset|spacing|70) for the vertical rhythm of each band, not just spacers.
+- For multi-column layouts use wp:columns + wp:column inside the section; they will sit at the constrained content width automatically.
 - Buttons: <!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="/contact">Get in touch</a></div><!-- /wp:button --></div><!-- /wp:buttons -->
 - Do NOT use wp:image or any <img> — there are no images yet.
 - Write REAL, specific, professional copy for "${brand}"${tagline ? ` (${tagline})` : ""} — never lorem ipsum. Keep claims generic and truthful where details are unknown (no invented prices, addresses or fake reviews attributed to named people).

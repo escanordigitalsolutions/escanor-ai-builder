@@ -1466,6 +1466,8 @@ final class WPAB_Dashboard {
 						var input = JSON.stringify(e.input || {}, null, 2);
 						var output = JSON.stringify(e.output || {}, null, 2);
 						var tok = e.usage ? (' · ' + (e.usage.totalTokens || e.usage.total_tokens || '?') + ' tok') : '';
+						var dur = e.duration_ms ? (' · ' + (e.duration_ms / 1000).toFixed(1) + 's') : '';
+						tok = dur + tok;
 						var head = '<div class="wpab-log__sum"><span class="wpab-log__badge ' + (ok ? 'is-ok' : 'is-err') + '">' + (ok ? 'OK' : 'ERR') + '</span><strong>' + esc(e.action || '') + '</strong>' + (e.model ? ' <span style="color:#787c82">' + esc(e.model) + '</span>' : '') + '<span class="wpab-log__meta">' + esc(fmtTime(e.time)) + tok + '</span></div>';
 						var body = '<div class="wpab-log__body" hidden>'
 							+ (e.error ? '<h4>Error</h4><pre class="wpab-log__pre">' + esc(e.error) + '</pre>' : '')

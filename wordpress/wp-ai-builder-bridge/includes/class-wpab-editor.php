@@ -668,7 +668,7 @@ final class WPAB_Editor {
 		return array();
 	}
 
-	private static function ai_log_add( string $action, array $input, $result, string $error ): void {
+	private static function ai_log_add( string $action, array $input, $result, string $error, int $duration_ms = 0 ): void {
 		$debug  = ( is_array( $result ) && isset( $result['debug'] ) && is_array( $result['debug'] ) ) ? $result['debug'] : array();
 		$prompt = '';
 
@@ -684,16 +684,17 @@ final class WPAB_Editor {
 		$user  = wp_get_current_user();
 
 		$entry = array(
-			'time'   => gmdate( 'c' ),
-			'user'   => ( $user && $user->exists() ) ? (string) $user->user_login : '',
-			'action' => $action,
-			'model'  => $model,
-			'ok'     => ( '' === $error ),
-			'error'  => self::truncate( $error, 500 ),
-			'input'  => $input,
-			'prompt' => self::truncate( $prompt, 8000 ),
-			'output' => self::ai_log_output( $action, $result ),
-			'usage'  => $usage,
+			'time'        => gmdate( 'c' ),
+			'user'        => ( $user && $user->exists() ) ? (string) $user->user_login : '',
+			'action'      => $action,
+			'model'       => $model,
+			'duration_ms' => $duration_ms,
+			'ok'          => ( '' === $error ),
+			'error'       => self::truncate( $error, 500 ),
+			'input'       => $input,
+			'prompt'      => self::truncate( $prompt, 8000 ),
+			'output'      => self::ai_log_output( $action, $result ),
+			'usage'       => $usage,
 		);
 
 		$log = get_option( self::AI_LOG_OPTION, array() );
@@ -707,6 +708,37 @@ final class WPAB_Editor {
 		}
 
 		update_option( self::AI_LOG_OPTION, $log, false );
+
+		self::ai_log_to_file( $entry );
+	}
+
+	/**
+	 * Mirror each entry to a newline-delimited JSON file under uploads, so the
+	 * full round-trip (input, exact prompt, output, timing) can be inspected
+	 * outside wp-admin. Path: wp-content/uploads/escanor-ai/log.jsonl.
+	 */
+	private static function ai_log_to_file( array $entry ): void {
+		$upload = wp_upload_dir();
+		if ( ! empty( $upload['error'] ) || empty( $upload['basedir'] ) ) {
+			return;
+		}
+
+		$dir = trailingslashit( $upload['basedir'] ) . 'escanor-ai';
+		if ( ! is_dir( $dir ) && ! wp_mkdir_p( $dir ) ) {
+			return;
+		}
+
+		$file = $dir . '/log.jsonl';
+
+		// Rotate once the file passes ~2 MB so it never grows without bound.
+		if ( file_exists( $file ) && filesize( $file ) > 2097152 ) {
+			@rename( $file, $dir . '/log-prev.jsonl' );
+		}
+
+		$line = wp_json_encode( $entry );
+		if ( false !== $line ) {
+			@file_put_contents( $file, $line . "\n", FILE_APPEND | LOCK_EX );
+		}
 	}
 
 	public static function rest_ai_log_get( WP_REST_Request $request ) {
@@ -871,22 +903,24 @@ final class WPAB_Editor {
 			'custom'   => isset( $params['custom'] ) ? (string) $params['custom'] : '',
 		);
 
-		$result = WPAB_Cloud::request( 'agent/build-site', $body, 120 );
+		$started = microtime( true );
+		$result  = WPAB_Cloud::request( 'agent/build-site', $body, 120 );
+		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
 
 		if ( is_wp_error( $result ) ) {
-			self::ai_log_add( 'generate-site', $body, null, $result->get_error_message() );
+			self::ai_log_add( 'generate-site', $body, null, $result->get_error_message(), $dur );
 			return $result;
 		}
 
 		if ( empty( $result['pages'] ) || ! is_array( $result['pages'] ) ) {
 			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The AI did not return any pages.';
-			self::ai_log_add( 'generate-site', $body, is_array( $result ) ? $result : null, $msg );
+			self::ai_log_add( 'generate-site', $body, is_array( $result ) ? $result : null, $msg, $dur );
 			return new WP_Error( 'wpab_build_empty', $msg, array( 'status' => 502 ) );
 		}
 
 		$patterns = ( isset( $result['patterns'] ) && is_array( $result['patterns'] ) ) ? $result['patterns'] : array();
 
-		self::ai_log_add( 'generate-site', $body, $result, '' );
+		self::ai_log_add( 'generate-site', $body, $result, '', $dur );
 
 		try {
 			$applied = WPAB_Builder::apply_site( $result['pages'], $patterns );
@@ -921,20 +955,22 @@ final class WPAB_Editor {
 			'index'    => $index,
 		);
 
-		$result = WPAB_Cloud::request( 'agent/build-images', $body, 120 );
+		$started = microtime( true );
+		$result  = WPAB_Cloud::request( 'agent/build-images', $body, 120 );
+		$dur     = (int) round( ( microtime( true ) - $started ) * 1000 );
 
 		if ( is_wp_error( $result ) ) {
-			self::ai_log_add( 'build-image', $body, null, $result->get_error_message() );
+			self::ai_log_add( 'build-image', $body, null, $result->get_error_message(), $dur );
 			return $result;
 		}
 
 		if ( empty( $result['images'] ) || ! is_array( $result['images'] ) ) {
 			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'No image was generated.';
-			self::ai_log_add( 'build-image', $body, is_array( $result ) ? $result : null, $msg );
+			self::ai_log_add( 'build-image', $body, is_array( $result ) ? $result : null, $msg, $dur );
 			return new WP_Error( 'wpab_build_image_empty', $msg, array( 'status' => 502 ) );
 		}
 
-		self::ai_log_add( 'build-image', $body, $result, '' );
+		self::ai_log_add( 'build-image', $body, $result, '', $dur );
 
 		$first = $result['images'][0];
 		$b64   = isset( $first['b64'] ) ? (string) $first['b64'] : '';

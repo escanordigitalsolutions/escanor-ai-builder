@@ -748,7 +748,7 @@ final class WPAB_Builder {
 					'slug' => $slug,
 					'file' => $existing,
 					'dir'  => $dir,
-					'name' => 'ESCANOR Features — ' . $brand,
+					'name' => $brand,
 				);
 			}
 		}
@@ -790,7 +790,7 @@ final class WPAB_Builder {
 			'slug' => $slug,
 			'file' => $file,
 			'dir'  => $dir,
-			'name' => 'ESCANOR Features — ' . $brand,
+			'name' => $brand,
 		);
 	}
 
@@ -892,7 +892,7 @@ ESKBOOT;
 		return strtr(
 			$template,
 			array(
-				'{{PLUGIN_NAME}}' => 'ESCANOR Features - ' . $brand,
+				'{{PLUGIN_NAME}}' => $brand,
 				'{{SLUG}}'        => $slug,
 				'{{BRAND}}'       => $brand,
 			)
