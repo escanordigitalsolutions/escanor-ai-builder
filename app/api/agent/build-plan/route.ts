@@ -46,13 +46,15 @@ Only include what the design needs, but favour a signature stack of GSAP + Scrol
 
 LIBRARY COVERAGE (required — no orphan effects): every animation you assign to any section MUST have its library present in libraries[]. Mapping: any "typed-headline" animation -> include typed.js; "tilt-cards" -> include vanilla-tilt; any gallery/lightbox -> include GLightbox; "slider" (testimonials/logos/gallery carousels) -> include Swiper; a section background of "animated-particles" -> include tsParticles; scroll reveals/parallax/count-up/pin-scroll -> covered by GSAP + ScrollTrigger. If a library is NOT in libraries[], do NOT assign an animation that needs it. Conversely, do not list a library that no section uses.
 
+IMAGERY — real photos matter; plan where the theme uses them so it never looks empty. Based on the brief, decide which sections carry PHOTOGRAPHIC imagery (typically: a hero image or side visual, a gallery/portfolio grid, an about/team portrait, feature/service cards with photos, testimonial avatars) versus SVG icons/illustrations (best for small feature icons and abstract accents). Note the intent in the relevant section's "layout" or "copy" (e.g. "split with photo", "photo gallery grid", "cards with photos"). Most sites need photos in at least the hero and one or two content sections. The engineer renders these as real on-topic placeholder images.
+
 ANIMATED BACKGROUNDS — plan at least one signature animated background for the hero (and optionally one deeper section). Pick from: animated SVG gradient/mesh, floating SVG blobs, an SVG/CSS aurora glow, a moving grid/dot field, or a tsParticles constellation. Encode the choice in design.motion.heroBackground and in the relevant section's "background".
 
 STRUCTURE (classic PHP theme):
 - Real .php templates using get_header()/get_footer(), the WordPress loop, get_template_part(), wp_head()/wp_footer().
 - Front page = front-page.php; every other content page = page-{slug}.php.
 - Reusable sections live in template-parts/section-{slug}.php; each page lists its section slugs in order.
-- Keep it LEAN so it generates fast: 4-6 pages, 6-10 unique sections, reuse sections across pages instead of inventing new ones. Do NOT exceed ~18 files total.
+- SIZE ADAPTS TO THE BRIEF — do not force a fixed count. Match the number of pages and sections to what the site actually needs: a simple landing page or small brochure site gets fewer; a rich, feature-heavy or multi-service brief gets more. Reuse sections across pages instead of inventing near-duplicates, and never pad with filler. As a rough guide 3-7 pages and 5-12 unique sections, and never exceed ~22 files total.
 - The files list MUST include: style.css, functions.php, header.php, footer.php, index.php, page.php, single.php, 404.php, searchform.php, front-page.php, one page-{slug}.php per non-front page, one template-parts/section-{slug}.php per unique section, assets/css/main.css, assets/js/main.js.
 - The front page opens with a striking hero (with its animated background) and follows an opinionated order, e.g. hero -> logos/social-proof -> features/benefits -> showcase/gallery -> testimonials -> CTA. VARY the background and layout of adjacent sections so no two in a row look the same.
 

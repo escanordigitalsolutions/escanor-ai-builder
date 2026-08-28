@@ -32,6 +32,8 @@ Hunt for these, in priority order:
 4. PHP that would FATAL or emit notices: undefined function, wrong get_template_part path, a template part referenced by a template but not present, obviously wrong/unescaped WP calls.
 5. LAYOUT BREAKAGE: horizontal overflow, collapsed/empty containers, unreadable contrast, a hero or section that renders with no visible content.
 6. MISSING ENQUEUE of assets/css/main.css, assets/js/main.js or the Google fonts.
+7. UNUSED LIBRARY ENQUEUES: functions.php enqueues a CDN library that NOTHING in the markup or main.js uses (e.g. Typed with no data-typed, GLightbox with no .glightbox, tsParticles with no data-bg="particles"). Remove those enqueues to keep the theme lean.
+8. EMPTY IMAGERY: a section that should show a photo (hero visual, gallery, about, key cards) renders with an empty box, a broken <img>, or no image at all. Add a real on-topic placeholder <img> (loremflickr.com/<w>/<h>/<keywords>?lock=<n>, with width/height, loading="lazy", alt) with proper object-fit/aspect-ratio, rather than leaving it blank.
 
 Rules:
 - Only fix REAL, critical problems. Do NOT restyle, redesign or "improve" things that already work. Make the SMALLEST change that fixes the defect (correct the JS selector, add the missing enqueue, remove the broken hidden state, fix the PHP). Keep the theme's existing design tokens, classes and conventions.
