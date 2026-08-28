@@ -75,7 +75,7 @@ final class WPAB_REST {
 					'scope' => array(
 						'required' => true,
 						'type'     => 'string',
-						'enum'     => array( 'theme', 'plugin' ),
+						'enum'     => array( 'theme' ),
 					),
 				),
 			)
@@ -92,7 +92,7 @@ final class WPAB_REST {
 					'scope' => array(
 						'required' => true,
 						'type'     => 'string',
-						'enum'     => array( 'theme', 'plugin' ),
+						'enum'     => array( 'theme' ),
 					),
 					'path'  => array(
 						'required' => true,
@@ -190,7 +190,6 @@ final class WPAB_REST {
 
 	public static function status( WP_REST_Request $request ) {
 		$theme  = WPAB_Scopes::theme();
-		$plugin = WPAB_Scopes::plugin();
 
 		return new WP_REST_Response(
 			array(
@@ -223,13 +222,6 @@ final class WPAB_REST {
 					'available'  => ! empty( $theme['available'] ),
 				),
 
-				'plugin'  => array(
-					'name'      => isset( $plugin['label'] ) ? $plugin['label'] : null,
-					'slug'      => isset( $plugin['slug'] ) ? $plugin['slug'] : null,
-					'active'    => ! empty( $plugin['active'] ),
-					'available' => ! empty( $plugin['available'] ),
-				),
-
 				// The builder gates its UI on these, so they describe what this
 				// installation can actually do right now — not what the plugin
 				// supports in principle.
@@ -255,7 +247,7 @@ final class WPAB_REST {
 	public static function project( WP_REST_Request $request ) {
 		$scopes = WPAB_Scopes::describe();
 
-		foreach ( array( 'theme', 'plugin' ) as $scope ) {
+		foreach ( array( 'theme' ) as $scope ) {
 			if ( empty( $scopes[ $scope ]['available'] ) ) {
 				$scopes[ $scope ]['file_count'] = 0;
 				continue;

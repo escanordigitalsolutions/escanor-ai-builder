@@ -42,7 +42,7 @@ const tools = [
       properties: {
         scope: {
           type: "string",
-          enum: ["theme", "plugin"],
+          enum: ["theme"],
           description: "Which project scope to inspect.",
         },
       },
@@ -61,7 +61,7 @@ const tools = [
       properties: {
         scope: {
           type: "string",
-          enum: ["theme", "plugin"],
+          enum: ["theme"],
         },
         paths: {
           type: "array",
@@ -144,7 +144,7 @@ type UsageTotals = {
 };
 
 function validateScope(value: unknown): ProjectScope {
-  if (value !== "theme" && value !== "plugin") {
+  if (value !== "theme") {
     throw new Error("Invalid project scope.");
   }
 

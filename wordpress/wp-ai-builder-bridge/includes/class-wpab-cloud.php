@@ -285,15 +285,6 @@ final class WPAB_Cloud {
 			update_option( self::PROJECT_OPTION, $result['project'], false );
 		}
 
-		// Cache module entitlements so the admin UI can lock what this project
-		// is not licensed for. Enforcement still lives on the SaaS.
-		if ( ! is_wp_error( $result ) && isset( $result['modules'] ) ) {
-			WPAB_Modules::store(
-				$result['modules'],
-				isset( $result['plan'] ) ? (string) $result['plan'] : ''
-			);
-		}
-
 		return $result;
 	}
 

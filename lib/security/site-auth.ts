@@ -3,12 +3,6 @@ import type { NextRequest } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { parseApiKey, verifyKeySecret } from "@/lib/security/api-key";
-import {
-  type Modules,
-  defaultEntitlements,
-  resolveModules,
-  resolvePlan,
-} from "@/lib/entitlements";
 
 /**
  * Authenticates a request coming *from* a WordPress site.
@@ -40,8 +34,6 @@ export type SiteAuthContext = {
   siteUrl: string | null;
   site: SiteRecord | null;
   actor: SiteActor;
-  modules: Modules;
-  plan: string;
 };
 
 type SiteRecord = {
@@ -208,30 +200,6 @@ export async function authenticateSiteRequest(
   const actor = readActor(request);
   const clientIp = readClientIp(request);
 
-  // Module entitlements. Defensive: a missing column (migration not yet run)
-  // or any query error resolves to the permissive default rather than failing
-  // the whole handshake.
-  let entitlements = defaultEntitlements();
-
-  try {
-    const { data: ent, error: entError } = await supabase
-      .from("projects")
-      .select("modules, plan")
-      .eq("id", project.id)
-      .maybeSingle();
-
-    if (entError) {
-      console.warn("Entitlements lookup failed, using defaults:", entError.message);
-    } else {
-      entitlements = {
-        modules: resolveModules(ent?.modules),
-        plan: resolvePlan(ent?.plan),
-      };
-    }
-  } catch (err) {
-    console.warn("Entitlements lookup threw, using defaults:", err);
-  }
-
   // Usage stamping must never delay the response.
   after(async () => {
     await supabase
@@ -255,8 +223,6 @@ export async function authenticateSiteRequest(
       siteUrl: site?.site_url ?? null,
       site,
       actor,
-      modules: entitlements.modules,
-      plan: entitlements.plan,
     },
   };
 }

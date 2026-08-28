@@ -2,9 +2,9 @@
 /**
  * Uninstall: remove every trace of the bridge.
  *
- * Deleting the plugin revokes access, so the token hash goes. Snapshots go too
- * — they are backups of files that still exist on disk, and leaving copies of
- * theme code inside uploads after an uninstall would be a surprise.
+ * Deleting the plugin revokes access, so the token hash goes. Any leftover
+ * options from older versions (write policy, snapshots, module cache) are
+ * cleaned up too, alongside the current ones.
  */
 
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
@@ -12,15 +12,11 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 }
 
 $wpab_options = array(
+	// Current options.
 	'wpab_bridge_token_hash',
 	'wpab_bridge_token_created',
 	'wpab_bridge_token_last_used',
 	'wpab_bridge_token_hint',
-	'wpab_project_plugin',
-	'wpab_write_enabled',
-	'wpab_create_enabled',
-	'wpab_block_risky_code',
-	'wpab_snapshot_limit',
 	'wpab_apply_lock',
 	'wpab_activity_log',
 	'wpab_installed_at',
@@ -28,6 +24,18 @@ $wpab_options = array(
 	'wpab_cloud_key',
 	'wpab_cloud_key_set_at',
 	'wpab_cloud_project',
+	'wpab_generated_theme',
+	'wpab_ai_log',
+	// Legacy options from removed features (write policy, scopes, modules,
+	// visual CSS) — deleting a missing option is a harmless no-op.
+	'wpab_project_plugin',
+	'wpab_write_enabled',
+	'wpab_create_enabled',
+	'wpab_block_risky_code',
+	'wpab_snapshot_limit',
+	'wpab_visual_css',
+	'wpab_modules',
+	'wpab_plan',
 );
 
 /**

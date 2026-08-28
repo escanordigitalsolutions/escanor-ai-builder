@@ -1,6 +1,6 @@
 import { assertSafeBridgeOrigin } from "@/lib/security/url-guard";
 
-export type ProjectScope = "theme" | "plugin";
+export type ProjectScope = "theme";
 export type ProjectFileOperation = "modify" | "create";
 
 export class WordPressBridgeError extends Error {

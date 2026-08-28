@@ -191,8 +191,8 @@ final class WPAB_Files {
 	public static function manifest(): array {
 		$scopes = array();
 
-		foreach ( array( 'theme', 'plugin' ) as $scope ) {
-			$descriptor = 'theme' === $scope ? WPAB_Scopes::theme() : WPAB_Scopes::plugin();
+		foreach ( array( 'theme' ) as $scope ) {
+			$descriptor = WPAB_Scopes::theme();
 
 			if ( empty( $descriptor['available'] ) ) {
 				$scopes[ $scope ] = array(

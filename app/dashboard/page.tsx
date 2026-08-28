@@ -1,6 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import NewSiteForm from "@/components/new-site-form";
 
 type SiteRow = {
   site_url: string | null;
@@ -81,12 +82,7 @@ export default async function DashboardPage() {
               Your sites
             </h1>
           </div>
-          <Link
-            href="/dashboard/new"
-            className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
-          >
-            New site
-          </Link>
+          <NewSiteForm />
         </div>
 
         <p className="mt-2 text-sm text-neutral-500">
@@ -97,14 +93,9 @@ export default async function DashboardPage() {
           {projects.length === 0 ? (
             <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-10 text-center">
               <p className="text-sm text-neutral-600">
-                No sites yet. Connect your first WordPress site to get started.
+                No sites yet. Use “New site” above to connect your first
+                WordPress site.
               </p>
-              <Link
-                href="/dashboard/new"
-                className="mt-4 inline-block rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700"
-              >
-                New site
-              </Link>
             </div>
           ) : (
             projects.map((project) => {

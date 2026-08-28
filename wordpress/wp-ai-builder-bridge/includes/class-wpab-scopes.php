@@ -2,10 +2,9 @@
 /**
  * Project scopes and path safety.
  *
- * The builder only ever addresses two scopes:
+ * The builder only ever addresses one scope:
  *
  *   theme   the active stylesheet directory (the child theme if one is active)
- *   plugin  one companion plugin an administrator explicitly approved
  *
  * Everything else on the filesystem is out of reach. This class is the single
  * place that turns an untrusted relative path from the network into an
@@ -19,8 +18,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 final class WPAB_Scopes {
-
-	public const PLUGIN_OPTION = 'wpab_project_plugin';
 
 	/** Directory names that are never readable or writable, at any depth. */
 	private const DENIED_SEGMENTS = array(
@@ -95,66 +92,9 @@ final class WPAB_Scopes {
 		);
 	}
 
-	public static function plugin(): array {
-		$selected = (string) get_option( self::PLUGIN_OPTION, '' );
-
-		if ( '' === $selected ) {
-			return array(
-				'available' => false,
-				'reason'    => 'No companion plugin has been approved for this project.',
-			);
-		}
-
-		$file = wp_normalize_path( $selected );
-
-		// A single-file plugin has no directory of its own, so it can never
-		// be a project scope.
-		if ( false === strpos( $file, '/' ) ) {
-			return array(
-				'available' => false,
-				'reason'    => 'The approved companion plugin is a single file and cannot be a project scope.',
-			);
-		}
-
-		$slug = explode( '/', $file )[0];
-		$path = wp_normalize_path( WP_PLUGIN_DIR . '/' . $slug );
-
-		if ( ! is_dir( $path ) ) {
-			return array(
-				'available' => false,
-				'reason'    => 'The approved companion plugin is no longer installed.',
-			);
-		}
-
-		// Never let the bridge rewrite itself.
-		if ( $slug === dirname( WPAB_BASENAME ) ) {
-			return array(
-				'available' => false,
-				'reason'    => 'The bridge plugin cannot be its own project scope.',
-			);
-		}
-
-		$data = array();
-
-		if ( function_exists( 'get_plugin_data' ) && file_exists( WP_PLUGIN_DIR . '/' . $file ) ) {
-			$data = get_plugin_data( WP_PLUGIN_DIR . '/' . $file, false, false );
-		}
-
-		return array(
-			'available' => true,
-			'slug'      => $slug,
-			'label'     => isset( $data['Name'] ) && '' !== $data['Name'] ? (string) $data['Name'] : $slug,
-			'version'   => isset( $data['Version'] ) ? (string) $data['Version'] : null,
-			'file'      => $file,
-			'active'    => self::is_plugin_active( $file ),
-			'path'      => $path,
-		);
-	}
-
 	public static function describe(): array {
 		return array(
-			'theme'  => self::public_view( self::theme() ),
-			'plugin' => self::public_view( self::plugin() ),
+			'theme' => self::public_view( self::theme() ),
 		);
 	}
 
@@ -168,24 +108,8 @@ final class WPAB_Scopes {
 		return $scope;
 	}
 
-	private static function is_plugin_active( string $file ): bool {
-		$active = get_option( 'active_plugins', array() );
-
-		if ( is_array( $active ) && in_array( $file, $active, true ) ) {
-			return true;
-		}
-
-		if ( is_multisite() ) {
-			$network = get_site_option( 'active_sitewide_plugins', array() );
-
-			return is_array( $network ) && isset( $network[ $file ] );
-		}
-
-		return false;
-	}
-
 	public static function is_valid_scope( $scope ): bool {
-		return 'theme' === $scope || 'plugin' === $scope;
+		return 'theme' === $scope;
 	}
 
 	/**
@@ -196,7 +120,7 @@ final class WPAB_Scopes {
 			return new WP_Error( 'wpab_bad_scope', 'Unknown project scope.', array( 'status' => 400 ) );
 		}
 
-		$descriptor = 'theme' === $scope ? self::theme() : self::plugin();
+		$descriptor = self::theme();
 
 		if ( empty( $descriptor['available'] ) || empty( $descriptor['path'] ) ) {
 			return new WP_Error(

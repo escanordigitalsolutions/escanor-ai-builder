@@ -49,22 +49,11 @@ export async function POST(request: NextRequest) {
       displayName: context.actor.displayName,
     },
 
-    // Which product modules this project is licensed for. The wp-admin plugin
-    // caches these and locks the modules a project is not entitled to.
-    modules: context.modules,
-    plan: context.plan,
-
-    // Advertised to wp-admin so the editor can hide UI the backend cannot
-    // serve yet. These flip on as the later milestones land.
+    // Advertised to wp-admin. This is the clean base: read-only chat +
+    // live preview. Build/edit capabilities were removed to be rebuilt.
     capabilities: {
       chat: true,
-      proposals: true,
-      preflight: true,
-      apply: true,
-      rollback: true,
-      livePreview: false,
-      cssFastPath: false,
-      elementTargeting: false,
+      livePreview: true,
     },
   });
 }
