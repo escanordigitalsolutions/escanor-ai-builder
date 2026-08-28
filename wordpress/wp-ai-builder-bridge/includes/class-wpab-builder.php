@@ -269,6 +269,18 @@ final class WPAB_Builder {
 			update_option( 'blogdescription', mb_substr( sanitize_text_field( (string) $spec['tagline'] ), 0, 120 ) );
 		}
 
+		// Every generated theme gets its OWN companion plugin created and
+		// activated right away — the per-site home for custom code (booking,
+		// post types, shortcodes, anything the client later asks for). Features
+		// are written into it as auto-loaded files. A hiccup here must not fail
+		// the theme, so it is best-effort and reported back.
+		$companion = null;
+		try {
+			$companion = self::ensure_companion_plugin( $brand );
+		} catch ( \Throwable $e ) {
+			$companion = new WP_Error( 'wpab_companion', $e->getMessage() );
+		}
+
 		WPAB_Log::add(
 			'theme_generated',
 			array(
@@ -278,7 +290,7 @@ final class WPAB_Builder {
 			)
 		);
 
-		return array(
+		$out = array(
 			'success'       => true,
 			'theme_slug'    => $slug,
 			'theme_name'    => $brand,
@@ -286,6 +298,13 @@ final class WPAB_Builder {
 			'editor_url'    => admin_url( 'site-editor.php' ),
 			'primary'       => self::clamp_hex( (string) ( $spec['primary'] ?? '' ), '#3a5bff' ),
 		);
+
+		if ( is_array( $companion ) ) {
+			$out['plugin_slug'] = $companion['slug'];
+			$out['plugin_name'] = $companion['name'];
+		}
+
+		return $out;
 	}
 
 	/* ---------------------------------------------------------------------
@@ -682,30 +701,57 @@ final class WPAB_Builder {
 		return $slug;
 	}
 
-	/**
-	 * Generate + activate a per-site companion plugin providing one feature.
-	 * Returns feature info or a WP_Error.
-	 */
-	public static function scaffold_feature_plugin( array $spec ) {
-		$feature = isset( $spec['feature'] ) ? sanitize_key( (string) $spec['feature'] ) : 'booking';
-
-		if ( 'booking' !== $feature ) {
-			return new WP_Error( 'wpab_feature_unknown', 'Only the booking feature is available so far.', array( 'status' => 400 ) );
-		}
-
-		$fs = self::fs();
-		if ( ! $fs ) {
-			return new WP_Error( 'wpab_feature_fs', 'WordPress could not get filesystem access to create the plugin on this host.', array( 'status' => 500 ) );
-		}
-
-		$brand = trim( sanitize_text_field( (string) ( $spec['brand'] ?? '' ) ) );
+	/** Normalise a brand string for safe use in plugin headers/names. */
+	private static function safe_brand( $brand ): string {
+		$brand = trim( sanitize_text_field( (string) $brand ) );
 		if ( '' === $brand ) {
 			$brand = (string) wp_get_theme()->get( 'Name' );
 		}
 		if ( '' === $brand ) {
 			$brand = 'My Site';
 		}
-		$brand = str_replace( array( '*/', '<', '>' ), '', mb_substr( $brand, 0, 60 ) );
+		return str_replace( array( '*/', '<', '>' ), '', mb_substr( $brand, 0, 60 ) );
+	}
+
+	/**
+	 * Ensure this site's companion plugin exists, is active, and is registered
+	 * as the approved write scope. Created at theme-generation time as the home
+	 * for all custom code; features are later written into its features/ folder
+	 * as auto-loaded files. Reuses an existing companion if one is registered.
+	 *
+	 * Returns array{ slug, file, dir, name } or a WP_Error.
+	 */
+	public static function ensure_companion_plugin( string $brand ) {
+		require_once ABSPATH . 'wp-admin/includes/plugin.php';
+
+		$fs = self::fs();
+		if ( ! $fs ) {
+			return new WP_Error( 'wpab_companion_fs', 'WordPress could not get filesystem access to create the companion plugin.', array( 'status' => 500 ) );
+		}
+
+		$brand = self::safe_brand( $brand );
+
+		// Reuse an already-approved companion plugin if it is still installed.
+		$existing = (string) get_option( WPAB_Scopes::PLUGIN_OPTION, '' );
+		if ( '' !== $existing && false !== strpos( $existing, '/' ) ) {
+			$slug = explode( '/', $existing )[0];
+			$dir  = WP_PLUGIN_DIR . '/' . $slug;
+
+			if ( is_dir( $dir ) && $slug !== dirname( WPAB_BASENAME ) ) {
+				if ( ! $fs->is_dir( $dir . '/features' ) ) {
+					$fs->mkdir( $dir . '/features', FS_CHMOD_DIR );
+				}
+				if ( ! is_plugin_active( $existing ) ) {
+					activate_plugin( $existing );
+				}
+				return array(
+					'slug' => $slug,
+					'file' => $existing,
+					'dir'  => $dir,
+					'name' => 'ESCANOR Features — ' . $brand,
+				);
+			}
+		}
 
 		$theme_slug = get_stylesheet();
 		$base_slug  = ( 0 === strpos( $theme_slug, 'escanor-' ) ? $theme_slug : 'escanor-' . sanitize_title( $brand ) ) . '-features';
@@ -716,37 +762,79 @@ final class WPAB_Builder {
 		$path = $dir . '/' . $slug . '.php';
 
 		if ( ! $fs->is_dir( $dir ) && ! $fs->mkdir( $dir, FS_CHMOD_DIR ) ) {
-			return new WP_Error( 'wpab_feature_mkdir', 'Could not create the plugin folder.', array( 'status' => 500 ) );
+			return new WP_Error( 'wpab_companion_mkdir', 'Could not create the companion plugin folder.', array( 'status' => 500 ) );
+		}
+		if ( ! $fs->is_dir( $dir . '/features' ) && ! $fs->mkdir( $dir . '/features', FS_CHMOD_DIR ) ) {
+			return new WP_Error( 'wpab_companion_mkdir', 'Could not create the features folder.', array( 'status' => 500 ) );
 		}
 
-		$source = self::booking_plugin_source( $brand, $slug );
+		// Keep the features folder loadable even before any feature is added.
+		$fs->put_contents( $dir . '/features/index.php', "<?php\n// Silence is golden.\n", FS_CHMOD_FILE );
 
-		if ( ! $fs->put_contents( $path, $source, FS_CHMOD_FILE ) ) {
-			return new WP_Error( 'wpab_feature_write', 'Could not write the plugin file.', array( 'status' => 500 ) );
+		if ( ! $fs->put_contents( $path, self::companion_bootstrap_source( $brand, $slug ), FS_CHMOD_FILE ) ) {
+			return new WP_Error( 'wpab_companion_write', 'Could not write the companion plugin.', array( 'status' => 500 ) );
 		}
 
-		require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		wp_clean_plugins_cache();
 
 		$activated = activate_plugin( $file );
 		if ( is_wp_error( $activated ) ) {
-			return new WP_Error( 'wpab_feature_activate', 'The plugin was created but could not be activated: ' . $activated->get_error_message(), array( 'status' => 500 ) );
+			return new WP_Error( 'wpab_companion_activate', 'The companion plugin was created but could not be activated: ' . $activated->get_error_message(), array( 'status' => 500 ) );
 		}
 
-		// Register it as the approved companion scope so later chat edits can
-		// refine it through the normal snapshotted write pipeline.
 		update_option( WPAB_Scopes::PLUGIN_OPTION, $file );
+
+		WPAB_Log::add( 'companion_plugin_created', array( 'slug' => $slug ) );
+
+		return array(
+			'slug' => $slug,
+			'file' => $file,
+			'dir'  => $dir,
+			'name' => 'ESCANOR Features — ' . $brand,
+		);
+	}
+
+	/**
+	 * Add one feature to this site's companion plugin by writing a self-loading
+	 * file into its features/ folder. The plugin is created first if needed, so
+	 * this works whether or not a theme was generated through the Builder.
+	 * Returns feature info or a WP_Error.
+	 */
+	public static function scaffold_feature_plugin( array $spec ) {
+		$feature = isset( $spec['feature'] ) ? sanitize_key( (string) $spec['feature'] ) : 'booking';
+
+		if ( 'booking' !== $feature ) {
+			return new WP_Error( 'wpab_feature_unknown', 'Only the booking feature is available so far.', array( 'status' => 400 ) );
+		}
+
+		$brand     = self::safe_brand( (string) ( $spec['brand'] ?? '' ) );
+		$companion = self::ensure_companion_plugin( $brand );
+
+		if ( is_wp_error( $companion ) ) {
+			return $companion;
+		}
+
+		$fs = self::fs();
+		if ( ! $fs ) {
+			return new WP_Error( 'wpab_feature_fs', 'WordPress could not get filesystem access to write the feature.', array( 'status' => 500 ) );
+		}
+
+		$feat_path = $companion['dir'] . '/features/booking.php';
+
+		if ( ! $fs->put_contents( $feat_path, self::booking_feature_source( $brand ), FS_CHMOD_FILE ) ) {
+			return new WP_Error( 'wpab_feature_write', 'Could not write the booking feature.', array( 'status' => 500 ) );
+		}
 
 		// Give the feature an immediate home: a published page with the form.
 		$page_id = self::ensure_booking_page();
 
-		WPAB_Log::add( 'feature_plugin_generated', array( 'slug' => $slug, 'feature' => $feature ) );
+		WPAB_Log::add( 'feature_added', array( 'feature' => $feature, 'plugin' => $companion['slug'] ) );
 
 		$result = array(
 			'success'     => true,
 			'feature'     => $feature,
-			'plugin_slug' => $slug,
-			'plugin_name' => 'ESCANOR Features — ' . $brand,
+			'plugin_slug' => $companion['slug'],
+			'plugin_name' => $companion['name'],
 			'admin_url'   => admin_url( 'edit.php?post_type=esk_booking' ),
 		);
 
@@ -755,6 +843,60 @@ final class WPAB_Builder {
 		}
 
 		return $result;
+	}
+
+	/** The companion plugin bootstrap — auto-loads every file in features/. */
+	private static function companion_bootstrap_source( string $brand, string $slug ): string {
+		$template = <<<'ESKBOOT'
+<?php
+/**
+ * Plugin Name: {{PLUGIN_NAME}}
+ * Description: Custom features generated for {{BRAND}} by the ESCANOR AI Builder — booking, post types, shortcodes and anything else this site needs. Every file in features/ is auto-loaded, so adding a capability is just adding a file.
+ * Version: 1.0.0
+ * Author: ESCANOR AI Builder
+ * Author URI: https://escanor.lt
+ * Text Domain: {{SLUG}}
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+define( 'ESCANOR_FEATURES_DIR', plugin_dir_path( __FILE__ ) );
+define( 'ESCANOR_FEATURES_URL', plugin_dir_url( __FILE__ ) );
+
+/**
+ * Auto-load every feature dropped into features/. Each feature file is
+ * self-contained and self-initialising, so adding one is just writing a file.
+ */
+$escanor_features_path = ESCANOR_FEATURES_DIR . 'features';
+
+if ( is_dir( $escanor_features_path ) ) {
+	$escanor_feature_files = scandir( $escanor_features_path );
+
+	if ( is_array( $escanor_feature_files ) ) {
+		sort( $escanor_feature_files );
+
+		foreach ( $escanor_feature_files as $escanor_feature_file ) {
+			if ( 'index.php' === $escanor_feature_file ) {
+				continue;
+			}
+			if ( '.php' === substr( $escanor_feature_file, -4 ) ) {
+				require_once $escanor_features_path . '/' . $escanor_feature_file;
+			}
+		}
+	}
+}
+ESKBOOT;
+
+		return strtr(
+			$template,
+			array(
+				'{{PLUGIN_NAME}}' => 'ESCANOR Features - ' . $brand,
+				'{{SLUG}}'        => $slug,
+				'{{BRAND}}'       => $brand,
+			)
+		);
 	}
 
 	/** Create (once) a published "Book" page carrying the booking shortcode. */
@@ -782,24 +924,26 @@ final class WPAB_Builder {
 		return is_wp_error( $id ) ? 0 : (int) $id;
 	}
 
-	/** The booking companion plugin's source, from a fixed template. */
-	private static function booking_plugin_source( string $brand, string $slug ): string {
+	/** The booking feature's source — a self-loading file for features/. */
+	private static function booking_feature_source( string $brand ): string {
 		$template = <<<'ESKPLUGIN'
 <?php
 /**
- * Plugin Name: {{PLUGIN_NAME}}
- * Description: Custom booking feature generated for {{BRAND}} by the ESCANOR AI Builder. Adds a booking form, stores requests as Bookings, and emails you on each new one.
- * Version: 1.0.0
- * Author: ESCANOR AI Builder
- * Author URI: https://escanor.lt
- * Text Domain: {{SLUG}}
+ * Feature: Booking
+ * Generated for {{BRAND}} by the ESCANOR AI Builder. Adds a booking form, stores
+ * requests as Bookings, and emails you on each new one. Auto-loaded by the
+ * companion plugin — no plugin header of its own.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-final class Escanor_Features {
+if ( class_exists( 'Escanor_Feature_Booking' ) ) {
+	return;
+}
+
+final class Escanor_Feature_Booking {
 
 	const CPT = 'esk_booking';
 	const NS  = 'escanor/v1';
@@ -962,23 +1106,13 @@ final class Escanor_Features {
 	}
 }
 
-Escanor_Features::init();
-
-register_activation_hook(
-	__FILE__,
-	static function () {
-		Escanor_Features::register_cpt();
-		flush_rewrite_rules();
-	}
-);
+Escanor_Feature_Booking::init();
 ESKPLUGIN;
 
 		return strtr(
 			$template,
 			array(
-				'{{PLUGIN_NAME}}' => 'ESCANOR Features - ' . $brand,
-				'{{SLUG}}'        => $slug,
-				'{{BRAND}}'       => $brand,
+				'{{BRAND}}' => $brand,
 			)
 		);
 	}

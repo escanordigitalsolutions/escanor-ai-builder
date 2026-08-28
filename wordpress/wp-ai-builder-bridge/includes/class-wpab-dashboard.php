@@ -1441,6 +1441,7 @@ final class WPAB_Dashboard {
 						var d = out.data;
 						lastBrief = payload;
 						result.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; Your theme &ldquo;' + esc(d.theme_name) + '&rdquo; is live.</strong>'
+							+ (d.plugin_slug ? '<p style="margin:6px 0 0;color:#3c434a;font-size:13px">A companion plugin (' + esc(d.plugin_name || 'ESCANOR Features') + ') was created &amp; activated — the home for custom features (booking, post types, more).</p>' : '')
 							+ '<div style="margin-top:8px">'
 							+ (d.preview_url ? '<a class="button" href="' + esc(d.preview_url) + '" target="_blank" rel="noopener">View site</a> ' : '')
 							+ (d.editor_url ? '<a class="button" href="' + esc(d.editor_url) + '" target="_blank" rel="noopener">Open Site Editor</a>' : '')
