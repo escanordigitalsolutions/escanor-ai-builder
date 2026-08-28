@@ -274,4 +274,157 @@ final class WPAB_Builder {
 			'primary'       => self::clamp_hex( (string) ( $spec['primary'] ?? '' ), '#3a5bff' ),
 		);
 	}
+
+	/* ---------------------------------------------------------------------
+	 * Site generation (B1b): create the AI-designed pages, set the home page
+	 * and wire the header navigation, in the currently active (generated) theme.
+	 * ------------------------------------------------------------------ */
+
+	/** Make the active theme render the front page's own content (a page). */
+	private static function front_page_template_to_content(): void {
+		$fs = self::fs();
+		if ( ! $fs ) {
+			return;
+		}
+
+		$path = get_stylesheet_directory() . '/templates/front-page.html';
+
+		$tpl  = '<!-- wp:template-part {"slug":"header","tagName":"header"} /-->' . "\n\n";
+		$tpl .= '<!-- wp:group {"tagName":"main","align":"full","layout":{"type":"constrained"}} -->' . "\n";
+		$tpl .= '<main class="wp-block-group alignfull">' . "\n";
+		$tpl .= '<!-- wp:post-content {"layout":{"type":"constrained"}} /-->' . "\n";
+		$tpl .= '</main>' . "\n";
+		$tpl .= '<!-- /wp:group -->' . "\n\n";
+		$tpl .= '<!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->' . "\n";
+
+		$fs->put_contents( $path, $tpl, FS_CHMOD_FILE );
+	}
+
+	/** A single wp_navigation post the header's Navigation block resolves to. */
+	private static function build_navigation( array $pages ): void {
+		$links = '';
+
+		foreach ( $pages as $p ) {
+			$attrs = wp_json_encode(
+				array(
+					'label' => $p['title'],
+					'type'  => 'page',
+					'id'    => (int) $p['id'],
+					'url'   => $p['url'],
+					'kind'  => 'post-type',
+				)
+			);
+
+			if ( false !== $attrs ) {
+				$links .= '<!-- wp:navigation-link ' . $attrs . ' /-->' . "\n";
+			}
+		}
+
+		$existing = get_posts(
+			array(
+				'post_type'   => 'wp_navigation',
+				'numberposts' => 1,
+				'post_status' => 'publish',
+			)
+		);
+
+		$navarr = array(
+			'post_type'    => 'wp_navigation',
+			'post_title'   => 'Navigation',
+			'post_status'  => 'publish',
+			'post_content' => $links,
+		);
+
+		if ( $existing ) {
+			$navarr['ID'] = (int) $existing[0]->ID;
+			wp_update_post( wp_slash( $navarr ) );
+		} else {
+			wp_insert_post( wp_slash( $navarr ) );
+		}
+	}
+
+	/**
+	 * Create the generated pages (published), set the home page as the static
+	 * front page, point the theme's front-page template at page content, and
+	 * build the header navigation. Returns the created pages.
+	 */
+	public static function apply_site( array $pages ) {
+		$created  = array();
+		$front_id = 0;
+		$can_raw  = current_user_can( 'unfiltered_html' );
+
+		foreach ( $pages as $p ) {
+			if ( ! is_array( $p ) ) {
+				continue;
+			}
+
+			$title  = trim( sanitize_text_field( (string) ( $p['title'] ?? '' ) ) );
+			$blocks = (string) ( $p['blocks'] ?? '' );
+
+			if ( '' === $title || '' === trim( $blocks ) ) {
+				continue;
+			}
+
+			if ( strlen( $blocks ) > 200000 ) {
+				$blocks = substr( $blocks, 0, 200000 );
+			}
+
+			$content = $can_raw ? $blocks : wp_kses_post( $blocks );
+			$slug    = ( isset( $p['slug'] ) && '' !== trim( (string) $p['slug'] ) ) ? sanitize_title( (string) $p['slug'] ) : sanitize_title( $title );
+
+			$id = wp_insert_post(
+				wp_slash(
+					array(
+						'post_type'    => 'page',
+						'post_title'   => $title,
+						'post_name'    => $slug,
+						'post_content' => $content,
+						'post_status'  => 'publish',
+					)
+				),
+				true
+			);
+
+			if ( is_wp_error( $id ) ) {
+				continue;
+			}
+
+			$id = (int) $id;
+
+			$created[] = array(
+				'id'    => $id,
+				'title' => (string) get_the_title( $id ),
+				'slug'  => (string) get_post_field( 'post_name', $id ),
+				'url'   => (string) get_permalink( $id ),
+				'front' => ! empty( $p['front'] ),
+			);
+
+			if ( ! empty( $p['front'] ) && ! $front_id ) {
+				$front_id = $id;
+			}
+		}
+
+		if ( empty( $created ) ) {
+			return new WP_Error( 'wpab_build_no_pages', 'No pages could be created.', array( 'status' => 500 ) );
+		}
+
+		if ( ! $front_id ) {
+			$front_id = $created[0]['id'];
+		}
+
+		update_option( 'show_on_front', 'page' );
+		update_option( 'page_on_front', $front_id );
+
+		self::front_page_template_to_content();
+		self::build_navigation( $created );
+
+		WPAB_Log::add( 'site_generated', array( 'pages' => count( $created ) ) );
+
+		return array(
+			'success'  => true,
+			'pages'    => $created,
+			'front_id' => $front_id,
+			'home_url' => home_url( '/' ),
+		);
+	}
 }

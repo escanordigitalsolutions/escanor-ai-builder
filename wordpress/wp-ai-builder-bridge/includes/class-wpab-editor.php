@@ -246,6 +246,17 @@ final class WPAB_Editor {
 			)
 		);
 
+		// Builder: generate the site's pages (AI, proxied to SaaS) and create them.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/generate-site',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_generate_site' ),
+				'permission_callback' => $permission,
+			)
+		);
+
 		// Analysis: /analyze is computed locally (instant, no AI); /recommend is
 		// proxied to the SaaS model which reads the same audit.
 		register_rest_route(
@@ -648,6 +659,42 @@ final class WPAB_Editor {
 		}
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	public static function rest_build_generate_site( WP_REST_Request $request ) {
+		$gate = self::require_module( 'build' );
+		if ( is_wp_error( $gate ) ) {
+			return $gate;
+		}
+
+		$params = self::json_params( $request );
+
+		$body = array(
+			'brand'    => isset( $params['brand'] ) ? (string) $params['brand'] : '',
+			'tagline'  => isset( $params['tagline'] ) ? (string) $params['tagline'] : '',
+			'siteType' => isset( $params['site_type'] ) ? (string) $params['site_type'] : '',
+			'style'    => isset( $params['style'] ) ? (string) $params['style'] : '',
+			'primary'  => isset( $params['primary'] ) ? (string) $params['primary'] : '',
+		);
+
+		$result = WPAB_Cloud::request( 'agent/build-site', $body, 120 );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		if ( empty( $result['pages'] ) || ! is_array( $result['pages'] ) ) {
+			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The AI did not return any pages.';
+			return new WP_Error( 'wpab_build_empty', $msg, array( 'status' => 502 ) );
+		}
+
+		try {
+			$applied = WPAB_Builder::apply_site( $result['pages'] );
+		} catch ( \Throwable $e ) {
+			return new WP_Error( 'wpab_build_apply', 'Creating pages failed: ' . $e->getMessage(), array( 'status' => 500 ) );
+		}
+
+		return is_wp_error( $applied ) ? $applied : new WP_REST_Response( $applied, 200 );
 	}
 
 	public static function rest_seo_apply( WP_REST_Request $request ) {

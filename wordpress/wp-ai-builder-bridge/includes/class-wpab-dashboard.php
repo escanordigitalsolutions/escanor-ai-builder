@@ -136,6 +136,7 @@ final class WPAB_Dashboard {
 			'restAnalyze'       => esc_url_raw( rest_url( self::NAMESPACE . '/editor/analyze' ) ),
 			'restUnderstand'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/understand' ) ),
 			'restBuildTheme'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/create-theme' ) ),
+			'restBuildSite'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/generate-site' ) ),
 			'seoEnabled'        => ! empty( $modules['seo'] ),
 			'nonce'            => wp_create_nonce( 'wp_rest' ),
 			'studioUrl'        => esc_url_raw( $studio ),
@@ -1254,6 +1255,25 @@ final class WPAB_Dashboard {
 			/* ---- Builder wizard ---- */
 			var bGen = $('wpab-b-generate');
 			if (bGen) {
+				var lastBrief = null;
+				function generateSite(btn) {
+					if (busy || !lastBrief) { return; }
+					var pr = $('wpab-pages-result');
+					setBusy(true); btn.disabled = true;
+					pr.innerHTML = '<p class="wpab-chat__empty"><span class="wpab-typing">Designing and creating your pages… this can take up to a minute.</span></p>';
+					api('POST', cfg.restBuildSite, lastBrief).then(function (out) {
+						if (!out.ok || !out.data || out.data.success === false) {
+							pr.innerHTML = '<div class="wpab-build__err">' + esc((out.data && (out.data.message || out.data.error)) || 'Could not generate pages.') + '</div>';
+							btn.disabled = false; return;
+						}
+						var pages = out.data.pages || [];
+						var list = pages.map(function (p) { return '<li><a href="' + esc(p.url) + '" target="_blank" rel="noopener">' + esc(p.title) + '</a>' + (p.front ? ' <em>(home)</em>' : '') + '</li>'; }).join('');
+						pr.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; ' + pages.length + ' page(s) created.</strong><ul style="margin:8px 0 0 18px">' + list + '</ul>'
+							+ '<p style="margin:10px 0 0;color:#3c434a;font-size:13px">Your home page is set. Refine any page in Content chat, or open the Site Editor. Next in the Builder: custom features (booking/forms) and AI images.</p></div>';
+						btn.textContent = 'Done';
+					}).catch(function () { pr.innerHTML = '<div class="wpab-build__err">Network error generating pages.</div>'; btn.disabled = false; })
+					.then(function () { setBusy(false); });
+				}
 				var bColor = $('wpab-b-color'), bColorHex = $('wpab-b-colorhex');
 				if (bColor && bColorHex) {
 					bColor.addEventListener('input', function () { bColorHex.value = bColor.value; });
@@ -1281,12 +1301,16 @@ final class WPAB_Dashboard {
 							bGen.disabled = false; return;
 						}
 						var d = out.data;
+						lastBrief = payload;
 						result.innerHTML = '<div class="wpab-build__ok"><strong>&#10003; Your theme &ldquo;' + esc(d.theme_name) + '&rdquo; is live.</strong>'
 							+ '<div style="margin-top:8px">'
 							+ (d.preview_url ? '<a class="button" href="' + esc(d.preview_url) + '" target="_blank" rel="noopener">View site</a> ' : '')
 							+ (d.editor_url ? '<a class="button" href="' + esc(d.editor_url) + '" target="_blank" rel="noopener">Open Site Editor</a>' : '')
-							+ '</div><p style="margin:10px 0 0;color:#3c434a;font-size:13px">Next in the Builder: sections, pages, custom features and AI images. You can already refine everything in Content chat and the Studio.</p></div>';
+							+ '</div>'
+							+ '<div style="margin-top:12px"><button type="button" class="button button-primary" id="wpab-b-pages">Generate starter pages with AI</button> <span class="wpab-build__note">Creates a home page + a few pages, and sets the home page &amp; menu.</span></div>'
+							+ '<div id="wpab-pages-result" style="margin-top:12px"></div></div>';
 						bGen.textContent = 'Generate another';
+						var pb = $('wpab-b-pages'); if (pb) { pb.addEventListener('click', function () { generateSite(pb); }); }
 					}).catch(function () { result.innerHTML = '<div class="wpab-build__err">Network error generating the theme.</div>'; bGen.disabled = false; })
 					.then(function () { setBusy(false); });
 				});

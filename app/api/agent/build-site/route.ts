@@ -1,0 +1,183 @@
+import OpenAI from "openai";
+import { NextRequest, NextResponse } from "next/server";
+
+import { authenticateSiteRequest } from "@/lib/security/site-auth";
+import { SMART_MODEL } from "@/lib/ai/models";
+import { moduleEnabled } from "@/lib/entitlements";
+
+/**
+ * WordPress -> SaaS site generation (Builder, B1b).
+ *
+ * From a short brief the model designs a small, complete site as Gutenberg
+ * block markup: a few pages, each with real, brand-specific sections. Nothing
+ * is written here — the pages are returned and WordPress creates them (as its
+ * own published pages) through the Builder, which also sets the front page.
+ *
+ * Images are intentionally omitted at this stage (they arrive in a later Builder
+ * phase); sections use coloured group/heading/paragraph/button layouts instead.
+ */
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const MODEL = SMART_MODEL;
+
+const submitTool = {
+  type: "function" as const,
+  name: "submit_site",
+  strict: false,
+  description:
+    "Return the generated site as an array of pages, each with valid WordPress block markup.",
+  parameters: {
+    type: "object",
+    properties: {
+      pages: {
+        type: "array",
+        description: "3-5 pages. Exactly one page must have front=true (the home page).",
+        items: {
+          type: "object",
+          properties: {
+            title: { type: "string", description: "Page title." },
+            slug: { type: "string", description: "URL slug (lowercase, hyphenated)." },
+            front: { type: "boolean", description: "True for the single home page." },
+            blocks: {
+              type: "string",
+              description:
+                "The full page body as valid Gutenberg block markup with <!-- wp:... --> delimiters.",
+            },
+          },
+          required: ["title", "blocks"],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["pages"],
+    additionalProperties: false,
+  },
+};
+
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const auth = await authenticateSiteRequest(request);
+
+    if (!auth.ok) {
+      return NextResponse.json(
+        { success: false, error: auth.error },
+        { status: auth.status }
+      );
+    }
+
+    const { context } = auth;
+
+    if (!moduleEnabled(context.modules, "build")) {
+      return NextResponse.json(
+        { success: false, error: "The Build module is not enabled on your plan." },
+        { status: 403 }
+      );
+    }
+
+    const body = await request.json();
+    const brand = str(body.brand).trim().slice(0, 80) || "My Site";
+    const tagline = str(body.tagline).trim().slice(0, 160);
+    const siteType = str(body.siteType || body.site_type).trim().slice(0, 40) || "business";
+    const style = str(body.style).trim().slice(0, 40) || "modern";
+
+    const instructions = `
+You are designing a small but COMPLETE WordPress website as Gutenberg block markup for a new site.
+
+Brand: ${brand}
+${tagline ? `Tagline: ${tagline}` : ""}
+Site type: ${siteType}
+Style: ${style}
+
+Call submit_site with 3-5 pages appropriate to a ${siteType} site. Exactly ONE page has front=true — the home page — and it must be the richest: a hero (a large heading + a short intro paragraph + a primary button), then 3-5 more sections (e.g. services/features, about, testimonial-style quote, and a closing call-to-action). Typical extra pages for a ${siteType} site (choose what fits): About, Services (or Menu/Portfolio/Shop), Contact.
+
+BLOCK MARKUP RULES — this is critical:
+- Output VALID Gutenberg block markup only: every element wrapped in its <!-- wp:... --> ... <!-- /wp:... --> delimiter comments. Never bare HTML or plain text.
+- Use core blocks: wp:heading (with {"level":N}), wp:paragraph, wp:buttons + wp:button, wp:list + wp:list-item, wp:columns + wp:column, wp:group, wp:spacer, wp:separator.
+- Build real SECTIONS by wrapping each in a wp:group. Give alternating sections a subtle background using the theme palette, e.g. a group with {"backgroundColor":"surface"} and its class "has-surface-background-color has-background", and constrained inner layout. Use palette slugs that exist: base, contrast, primary, surface, surface-2, border, muted.
+- Buttons: <!-- wp:buttons --><div class="wp-block-buttons"><!-- wp:button --><div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="/contact">Get in touch</a></div><!-- /wp:button --></div><!-- /wp:buttons -->
+- Do NOT use wp:image or any <img> — there are no images yet.
+- Write REAL, specific, professional copy for "${brand}"${tagline ? ` (${tagline})` : ""} — never lorem ipsum. Keep claims generic and truthful where details are unknown (no invented prices, addresses or fake reviews attributed to named people).
+- Do not include the page title as an H1 inside the body (WordPress renders the title). Start hero sections at H1 only on the home page hero if appropriate; otherwise use H2 for section headings.
+- Slugs: lowercase, hyphenated. Home slug "home".
+
+Keep each page focused; the whole site should feel cohesive and on-brand for a ${style} ${siteType}.`;
+
+    const response = await openai.responses.create({
+      model: MODEL,
+      instructions,
+      input: [
+        { role: "user", content: `Generate the website for ${brand}.` },
+      ],
+      tools: [submitTool],
+      tool_choice: { type: "function", name: "submit_site" },
+    });
+
+    const call = response.output.find(
+      (o) => o.type === "function_call" && o.name === "submit_site"
+    );
+
+    if (!call || call.type !== "function_call") {
+      return NextResponse.json(
+        { success: false, error: "The model did not return a site." },
+        { status: 502 }
+      );
+    }
+
+    const args = JSON.parse(call.arguments) as { pages?: unknown };
+    const rawPages = Array.isArray(args.pages) ? args.pages : [];
+
+    const pages = rawPages
+      .map((p) => {
+        const page = p as Record<string, unknown>;
+        return {
+          title: str(page.title).trim().slice(0, 120),
+          slug: str(page.slug).trim().slice(0, 80),
+          front: Boolean(page.front),
+          blocks: str(page.blocks).slice(0, 60000),
+        };
+      })
+      .filter((p) => p.title && p.blocks)
+      .slice(0, 6);
+
+    if (!pages.length) {
+      return NextResponse.json(
+        { success: false, error: "No usable pages were generated." },
+        { status: 502 }
+      );
+    }
+
+    // Guarantee exactly one front page.
+    if (!pages.some((p) => p.front)) {
+      pages[0].front = true;
+    }
+
+    return NextResponse.json({
+      success: true,
+      pages,
+      usage: response.usage
+        ? {
+            inputTokens: response.usage.input_tokens,
+            outputTokens: response.usage.output_tokens,
+            totalTokens: response.usage.total_tokens,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error("Build site error:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Site generation failed.",
+      },
+      { status: 500 }
+    );
+  }
+}
