@@ -3,7 +3,7 @@
  * Plugin Name:       WP AI Builder Bridge
  * Plugin URI:        https://builder.escanor.lt
  * Description:       Secure bridge between this WordPress site and the ESCANOR AI Builder. Project inspection, controlled writes with SHA-256 verification, snapshots, health checks and one-click rollback.
- * Version:           0.59.0
+ * Version:           0.60.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            ESCANOR Digital Solutions
@@ -17,24 +17,22 @@
  * Two independent directions of traffic live in this plugin:
  *
  *   SaaS  --(Bearer bridge token)------------------------->  WordPress
- *       read the project, preflight, apply, roll back.
+ *       read-only: inspect the active theme and the site's content.
  *       Handled by WPAB_Auth + WPAB_REST.
  *
  *   WordPress --(Bearer site key + actor headers)--------->  SaaS
- *       the wp-admin editor acting for a logged-in administrator.
+ *       the wp-admin AI Editor acting for a logged-in administrator.
  *       Handled by WPAB_Cloud.
  *
- * Nothing in here ever executes code it received over the wire. Writes are
- * restricted to an allowlisted set of paths inside the active theme and one
- * explicitly approved companion plugin, every write is snapshotted first, and
- * a failed health check rolls the whole deployment back.
+ * This is the clean base: the bridge only reads. Theme generation and the
+ * code-write pipeline were removed to be rebuilt fresh on top of it.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAB_VERSION', '0.59.0' );
+define( 'WPAB_VERSION', '0.60.0' );
 define( 'WPAB_FILE', __FILE__ );
 define( 'WPAB_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAB_URL', plugin_dir_url( __FILE__ ) );
@@ -47,7 +45,6 @@ require_once WPAB_DIR . 'includes/class-wpab-scopes.php';
 require_once WPAB_DIR . 'includes/class-wpab-modules.php';
 require_once WPAB_DIR . 'includes/class-wpab-content.php';
 require_once WPAB_DIR . 'includes/class-wpab-files.php';
-require_once WPAB_DIR . 'includes/class-wpab-writer.php';
 require_once WPAB_DIR . 'includes/class-wpab-rest.php';
 require_once WPAB_DIR . 'includes/class-wpab-admin.php';
 require_once WPAB_DIR . 'includes/class-wpab-cloud.php';
@@ -72,8 +69,6 @@ add_action( 'plugins_loaded', 'wpab_bootstrap' );
  * unattended install is inert until someone deliberately connects it.
  */
 function wpab_activate() {
-	WPAB_Writer::prepare_storage();
-
 	if ( '' === (string) get_option( 'wpab_installed_at', '' ) ) {
 		update_option( 'wpab_installed_at', gmdate( 'c' ), false );
 	}
@@ -105,8 +100,6 @@ function wpab_maybe_upgrade() {
 	if ( WPAB_VERSION === $stored ) {
 		return;
 	}
-
-	WPAB_Writer::prepare_storage();
 
 	update_option( 'wpab_version', WPAB_VERSION, false );
 

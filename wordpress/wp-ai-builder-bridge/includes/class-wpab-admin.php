@@ -29,9 +29,6 @@ final class WPAB_Admin {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
 		add_action( 'admin_post_wpab_generate_token', array( __CLASS__, 'handle_generate_token' ) );
 		add_action( 'admin_post_wpab_revoke_token', array( __CLASS__, 'handle_revoke_token' ) );
-		add_action( 'admin_post_wpab_save_settings', array( __CLASS__, 'handle_save_settings' ) );
-		add_action( 'admin_post_wpab_rollback_snapshot', array( __CLASS__, 'handle_rollback' ) );
-		add_action( 'admin_post_wpab_delete_snapshot', array( __CLASS__, 'handle_delete_snapshot' ) );
 		add_action( 'admin_post_wpab_clear_log', array( __CLASS__, 'handle_clear_log' ) );
 		add_filter( 'plugin_action_links_' . WPAB_BASENAME, array( __CLASS__, 'action_links' ) );
 	}
@@ -75,15 +72,6 @@ final class WPAB_Admin {
 			'manage_options',
 			self::BRIDGE_SLUG,
 			array( __CLASS__, 'render_main' )
-		);
-
-		add_submenu_page(
-			self::MENU_SLUG,
-			'AI Builder — Snapshots',
-			'Snapshots',
-			'manage_options',
-			self::SNAPSHOTS_SLUG,
-			array( __CLASS__, 'render_snapshots' )
 		);
 
 		add_submenu_page(
@@ -150,7 +138,6 @@ final class WPAB_Admin {
 		$existing = WPAB_Auth::has_token();
 		$token    = WPAB_Auth::generate_token();
 
-		WPAB_Writer::prepare_storage();
 		self::stash_token( $token );
 
 		WPAB_Log::add( $existing ? 'token_regenerated' : 'token_generated' );
@@ -165,64 +152,6 @@ final class WPAB_Admin {
 		WPAB_Log::add( 'token_revoked' );
 
 		self::back( self::BRIDGE_SLUG, 'token_revoked' );
-	}
-
-	public static function handle_save_settings(): void {
-		self::guard( 'wpab_save_settings' );
-
-		$plugin = isset( $_POST['wpab_project_plugin'] )
-			? sanitize_text_field( wp_unslash( $_POST['wpab_project_plugin'] ) )
-			: '';
-
-		// Only ever accept a plugin file that really is installed.
-		if ( '' !== $plugin && ! array_key_exists( $plugin, self::installed_plugins() ) ) {
-			$plugin = '';
-		}
-
-		update_option( WPAB_Scopes::PLUGIN_OPTION, $plugin, false );
-		update_option( WPAB_Writer::WRITE_OPTION, empty( $_POST['wpab_write_enabled'] ) ? '0' : '1', false );
-		update_option( WPAB_Writer::CREATE_OPTION, empty( $_POST['wpab_create_enabled'] ) ? '0' : '1', false );
-		update_option( WPAB_Writer::GUARD_OPTION, empty( $_POST['wpab_block_risky_code'] ) ? '0' : '1', false );
-
-		$keep = isset( $_POST['wpab_snapshot_limit'] ) ? (int) $_POST['wpab_snapshot_limit'] : 20;
-
-		update_option( WPAB_Writer::SNAPSHOT_LIMIT_OPT, max( 3, min( 100, $keep ) ), false );
-
-		WPAB_Log::add(
-			'settings_saved',
-			array(
-				'plugin' => '' === $plugin ? 'none' : $plugin,
-				'write'  => WPAB_Writer::write_enabled() ? 'on' : 'off',
-				'create' => WPAB_Writer::create_enabled() ? 'on' : 'off',
-			)
-		);
-
-		self::back( self::BRIDGE_SLUG, 'settings_saved' );
-	}
-
-	public static function handle_rollback(): void {
-		self::guard( 'wpab_rollback_snapshot' );
-
-		$id = isset( $_POST['snapshot_id'] ) ? sanitize_text_field( wp_unslash( $_POST['snapshot_id'] ) ) : '';
-
-		$result = WPAB_Writer::rollback( $id, ! empty( $_POST['wpab_force'] ) );
-
-		if ( is_wp_error( $result ) ) {
-			self::back( self::SNAPSHOTS_SLUG, 'rollback_failed', array( 'wpab_detail' => rawurlencode( $result->get_error_message() ) ) );
-		}
-
-		self::back( self::SNAPSHOTS_SLUG, 'rolled_back' );
-	}
-
-	public static function handle_delete_snapshot(): void {
-		self::guard( 'wpab_delete_snapshot' );
-
-		$id = isset( $_POST['snapshot_id'] ) ? sanitize_text_field( wp_unslash( $_POST['snapshot_id'] ) ) : '';
-
-		WPAB_Writer::delete_snapshot( $id );
-		WPAB_Log::add( 'snapshot_deleted', array( 'snapshot_id' => $id ) );
-
-		self::back( self::SNAPSHOTS_SLUG, 'snapshot_deleted' );
 	}
 
 	public static function handle_clear_log(): void {
@@ -243,28 +172,6 @@ final class WPAB_Admin {
 
 	private static function detail(): string {
 		return isset( $_GET['wpab_detail'] ) ? sanitize_text_field( rawurldecode( wp_unslash( $_GET['wpab_detail'] ) ) ) : '';
-	}
-
-	private static function installed_plugins(): array {
-		if ( ! function_exists( 'get_plugins' ) ) {
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		}
-
-		$plugins = get_plugins();
-		$self    = WPAB_BASENAME;
-		$list    = array();
-
-		foreach ( $plugins as $file => $data ) {
-			if ( $file === $self || false === strpos( $file, '/' ) ) {
-				continue;
-			}
-
-			$list[ $file ] = isset( $data['Name'] ) ? (string) $data['Name'] : $file;
-		}
-
-		asort( $list );
-
-		return $list;
 	}
 
 	private static function pill( bool $on, string $on_label = 'Yes', string $off_label = 'No' ): string {
@@ -301,20 +208,16 @@ final class WPAB_Admin {
 		$notice    = self::notice();
 		$new_token = self::take_token();
 		$theme     = WPAB_Scopes::theme();
-		$plugin    = WPAB_Scopes::plugin();
-		$snapshots = WPAB_Writer::snapshots();
 		?>
 		<div class="wrap">
 			<h1>AI Builder — Bridge</h1>
 			<p class="description">
-				Bridge <?php echo esc_html( WPAB_VERSION ); ?> connects this site to the ESCANOR AI Builder.
-				The builder can read the active theme and one approved companion plugin, and can deploy
-				reviewed changes with an automatic snapshot and rollback.
+				Bridge <?php echo esc_html( WPAB_VERSION ); ?> connects this site to the AI Builder.
+				The builder reads the active theme and the site's content so the AI Editor can
+				inspect and answer questions about this site.
 			</p>
 
-			<?php if ( 'settings_saved' === $notice ) : ?>
-				<div class="notice notice-success is-dismissible"><p>Settings saved.</p></div>
-			<?php elseif ( 'token_revoked' === $notice ) : ?>
+			<?php if ( 'token_revoked' === $notice ) : ?>
 				<div class="notice notice-success is-dismissible"><p>Bridge token revoked. The builder can no longer reach this site.</p></div>
 			<?php elseif ( 'token_regenerated' === $notice ) : ?>
 				<div class="notice notice-warning is-dismissible"><p>A new bridge token was generated. The previous token stopped working immediately — paste the new one into the builder.</p></div>
@@ -388,232 +291,23 @@ final class WPAB_Admin {
 					<th scope="row">Bridge endpoint</th>
 					<td><code><?php echo esc_html( rest_url( WPAB_REST_NAMESPACE ) ); ?></code></td>
 				</tr>
-			</table>
-
-			<h2>Project scopes</h2>
-			<table class="form-table" role="presentation">
 				<tr>
-					<th scope="row">Theme</th>
+					<th scope="row">Active theme</th>
 					<td>
 						<?php if ( ! empty( $theme['available'] ) ) : ?>
 							<strong><?php echo esc_html( (string) $theme['label'] ); ?></strong>
 							<code><?php echo esc_html( (string) $theme['slug'] ); ?></code>
-							<?php if ( ! empty( $theme['is_child'] ) ) : ?>
-								<span class="description">child of <?php echo esc_html( (string) $theme['parent'] ); ?></span>
-							<?php endif; ?>
 						<?php else : ?>
 							<em><?php echo esc_html( isset( $theme['reason'] ) ? $theme['reason'] : 'Unavailable.' ); ?></em>
 						<?php endif; ?>
 					</td>
 				</tr>
-			</table>
-
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-				<?php wp_nonce_field( 'wpab_save_settings' ); ?>
-				<input type="hidden" name="action" value="wpab_save_settings" />
-
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row"><label for="wpab_project_plugin">Companion plugin</label></th>
-						<td>
-							<select name="wpab_project_plugin" id="wpab_project_plugin">
-								<option value="">— none —</option>
-								<?php
-								$selected = (string) get_option( WPAB_Scopes::PLUGIN_OPTION, '' );
-
-								foreach ( self::installed_plugins() as $file => $name ) :
-									?>
-									<option value="<?php echo esc_attr( $file ); ?>" <?php selected( $selected, $file ); ?>>
-										<?php echo esc_html( $name ); ?>
-									</option>
-								<?php endforeach; ?>
-							</select>
-							<p class="description">
-								The one plugin the builder may read and write. Business logic belongs here;
-								presentation belongs in the theme. Leave as "none" to keep the builder theme-only.
-								<?php if ( ! empty( $plugin['available'] ) && empty( $plugin['active'] ) ) : ?>
-									<br /><strong>Note:</strong> the selected plugin is installed but not active.
-								<?php elseif ( ! empty( $plugin['reason'] ) && '' !== $selected ) : ?>
-									<br /><strong>Note:</strong> <?php echo esc_html( (string) $plugin['reason'] ); ?>
-								<?php endif; ?>
-							</p>
-						</td>
-					</tr>
-				</table>
-
-				<h2>Write policy</h2>
-				<table class="form-table" role="presentation">
-					<tr>
-						<th scope="row">Deployments</th>
-						<td>
-							<label>
-								<input type="checkbox" name="wpab_write_enabled" value="1" <?php checked( WPAB_Writer::write_enabled() ); ?> />
-								Allow the builder to modify approved project files
-							</label>
-							<p class="description">Turn this off to put the site in read-only mode without revoking the token.</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">New files</th>
-						<td>
-							<label>
-								<input type="checkbox" name="wpab_create_enabled" value="1" <?php checked( WPAB_Writer::create_enabled() ); ?> />
-								Allow the builder to create new files inside the approved scopes
-							</label>
-							<p class="description">Creation never overwrites: a create against an existing path is always refused.</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row">Risky PHP</th>
-						<td>
-							<label>
-								<input type="checkbox" name="wpab_block_risky_code" value="1" <?php checked( WPAB_Writer::guard_enabled() ); ?> />
-								Refuse deployments containing eval(), shell_exec(), base64_decode() and similar
-							</label>
-							<p class="description">Recommended. Generated theme and plugin code has no legitimate need for these.</p>
-						</td>
-					</tr>
-					<tr>
-						<th scope="row"><label for="wpab_snapshot_limit">Snapshots kept</label></th>
-						<td>
-							<input type="number" min="3" max="100" id="wpab_snapshot_limit" name="wpab_snapshot_limit"
-								value="<?php echo esc_attr( (string) WPAB_Writer::snapshot_keep() ); ?>" class="small-text" />
-							<p class="description">Older snapshots are pruned automatically after a successful deployment.</p>
-						</td>
-					</tr>
-				</table>
-
-				<?php submit_button( 'Save settings' ); ?>
-			</form>
-
-			<h2>Capability summary</h2>
-			<table class="widefat striped" style="max-width:720px">
-				<tbody>
-					<tr>
-						<td>Read project files</td>
-						<td><?php echo self::pill( true ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
-					</tr>
-					<tr>
-						<td>Preflight and SHA-256 verification</td>
-						<td><?php echo self::pill( true ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
-					</tr>
-					<tr>
-						<td>Modify existing files</td>
-						<td><?php echo self::pill( WPAB_Writer::write_enabled() ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
-					</tr>
-					<tr>
-						<td>Create new files</td>
-						<td><?php echo self::pill( WPAB_Writer::write_enabled() && WPAB_Writer::create_enabled() ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
-					</tr>
-					<tr>
-						<td>PHP syntax check before writing</td>
-						<td><?php echo self::pill( 'unavailable' !== WPAB_Writer::syntax_check( "<?php\n", 'probe.php' )['status'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
-					</tr>
-					<tr>
-						<td>Snapshots stored</td>
-						<td><?php echo esc_html( (string) $snapshots['count'] ); ?></td>
-					</tr>
-					<tr>
-						<td>Delete or rename files</td>
-						<td><?php echo self::pill( false, '', 'Never' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
-					</tr>
-				</tbody>
-			</table>
-		</div>
-		<?php
-	}
-
-	/* ---------------------------------------------------------------------
-	 * Snapshots page
-	 * ------------------------------------------------------------------ */
-
-	public static function render_snapshots(): void {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
-		}
-
-		$notice    = self::notice();
-		$snapshots = WPAB_Writer::snapshots();
-		?>
-		<div class="wrap">
-			<h1>AI Builder — Snapshots</h1>
-			<p class="description">
-				Every deployment copies the previous bytes of each file it touches before writing.
-				Rolling back restores those bytes and removes files the deployment created.
-			</p>
-
-			<?php if ( 'rolled_back' === $notice ) : ?>
-				<div class="notice notice-success is-dismissible"><p>Snapshot restored.</p></div>
-			<?php elseif ( 'rollback_failed' === $notice ) : ?>
-				<div class="notice notice-error is-dismissible"><p>Rollback failed: <?php echo esc_html( self::detail() ); ?></p></div>
-			<?php elseif ( 'snapshot_deleted' === $notice ) : ?>
-				<div class="notice notice-success is-dismissible"><p>Snapshot deleted.</p></div>
-			<?php endif; ?>
-
-			<table class="widefat striped">
-				<thead>
-					<tr>
-						<th>Snapshot</th>
-						<th>Taken</th>
-						<th>Files</th>
-						<th>State</th>
-						<th></th>
-					</tr>
-				</thead>
-				<tbody>
-					<?php if ( 0 === $snapshots['count'] ) : ?>
-						<tr><td colspan="5"><em>No deployments have been made on this site yet.</em></td></tr>
-					<?php endif; ?>
-
-					<?php foreach ( $snapshots['snapshots'] as $snapshot ) : ?>
-						<tr>
-							<td>
-								<code><?php echo esc_html( (string) $snapshot['id'] ); ?></code>
-								<?php if ( ! empty( $snapshot['proposal_id'] ) ) : ?>
-									<br /><span class="description">proposal <?php echo esc_html( substr( (string) $snapshot['proposal_id'], 0, 12 ) ); ?></span>
-								<?php endif; ?>
-							</td>
-							<td><?php echo esc_html( self::local_time( (string) $snapshot['created_at'] ) ); ?></td>
-							<td>
-								<?php foreach ( $snapshot['files'] as $file ) : ?>
-									<div>
-										<span class="description"><?php echo esc_html( (string) $file['operation'] ); ?></span>
-										<code><?php echo esc_html( $file['scope'] . '/' . $file['path'] ); ?></code>
-									</div>
-								<?php endforeach; ?>
-							</td>
-							<td>
-								<?php if ( ! empty( $snapshot['rolled_back_at'] ) ) : ?>
-									Rolled back<br />
-									<span class="description"><?php echo esc_html( self::local_time( (string) $snapshot['rolled_back_at'] ) ); ?></span>
-								<?php else : ?>
-									Applied
-								<?php endif; ?>
-							</td>
-							<td>
-								<?php if ( empty( $snapshot['rolled_back_at'] ) ) : ?>
-									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-										<?php wp_nonce_field( 'wpab_rollback_snapshot' ); ?>
-										<input type="hidden" name="action" value="wpab_rollback_snapshot" />
-										<input type="hidden" name="snapshot_id" value="<?php echo esc_attr( (string) $snapshot['id'] ); ?>" />
-										<label style="display:block;margin-bottom:4px">
-											<input type="checkbox" name="wpab_force" value="1" />
-											<span class="description">force (ignore later edits)</span>
-										</label>
-										<?php submit_button( 'Roll back', 'secondary', 'submit', false, array( 'onclick' => "return confirm('Restore this snapshot?')" ) ); ?>
-									</form>
-								<?php else : ?>
-									<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-										<?php wp_nonce_field( 'wpab_delete_snapshot' ); ?>
-										<input type="hidden" name="action" value="wpab_delete_snapshot" />
-										<input type="hidden" name="snapshot_id" value="<?php echo esc_attr( (string) $snapshot['id'] ); ?>" />
-										<?php submit_button( 'Delete', 'delete', 'submit', false, array( 'onclick' => "return confirm('Delete this snapshot permanently?')" ) ); ?>
-									</form>
-								<?php endif; ?>
-							</td>
-						</tr>
-					<?php endforeach; ?>
-				</tbody>
+				<tr>
+					<th scope="row">Access</th>
+					<td><?php echo self::pill( true, 'Read-only' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+						<p class="description">The bridge reads the theme and content so the AI Editor can inspect this site. It does not modify files.</p>
+					</td>
+				</tr>
 			</table>
 		</div>
 		<?php

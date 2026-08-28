@@ -4,17 +4,17 @@
  *
  * Every route below is authenticated by the bridge token and nothing else —
  * there is no cookie path into these, so a logged-in administrator browsing
- * the site cannot be tricked into performing a deployment via CSRF.
+ * the site cannot be tricked into anything via CSRF. This surface is
+ * READ-ONLY: it lets the AI Editor inspect the theme and content, nothing more.
  *
  *   GET  /wp-json/wp-ai-builder/v1/status
  *   GET  /wp-json/wp-ai-builder/v1/project
  *   GET  /wp-json/wp-ai-builder/v1/manifest
  *   GET  /wp-json/wp-ai-builder/v1/files?scope=theme
  *   GET  /wp-json/wp-ai-builder/v1/file?scope=theme&path=style.css
- *   POST /wp-json/wp-ai-builder/v1/preflight
- *   POST /wp-json/wp-ai-builder/v1/apply
- *   POST /wp-json/wp-ai-builder/v1/rollback
- *   GET  /wp-json/wp-ai-builder/v1/snapshots
+ *   GET  /wp-json/wp-ai-builder/v1/content-types
+ *   GET  /wp-json/wp-ai-builder/v1/content?type=page
+ *   GET  /wp-json/wp-ai-builder/v1/content-item?type=page&id=12
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -102,46 +102,6 @@ final class WPAB_REST {
 			)
 		);
 
-		register_rest_route(
-			$namespace,
-			'/preflight',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'preflight' ),
-				'permission_callback' => self::permission(),
-			)
-		);
-
-		register_rest_route(
-			$namespace,
-			'/apply',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'apply' ),
-				'permission_callback' => self::permission(),
-			)
-		);
-
-		register_rest_route(
-			$namespace,
-			'/rollback',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'rollback' ),
-				'permission_callback' => self::permission(),
-			)
-		);
-
-		register_rest_route(
-			$namespace,
-			'/snapshots',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( __CLASS__, 'snapshots' ),
-				'permission_callback' => self::permission(),
-			)
-		);
-
 		// Native content visibility (Phase 1, read-only): pages, posts, custom
 		// post types, WooCommerce products, menus, media. Lets the AI "see" the
 		// site's real content, not just theme/plugin source files.
@@ -195,18 +155,6 @@ final class WPAB_REST {
 			)
 		);
 
-		// Content editing (Phase 3): controlled, revision-backed writes to a
-		// single page/post/product/CPT. Menus and media are not editable here.
-		register_rest_route(
-			$namespace,
-			'/content-update',
-			array(
-				'methods'             => WP_REST_Server::CREATABLE,
-				'callback'            => array( __CLASS__, 'content_update' ),
-				'permission_callback' => self::permission(),
-			)
-		);
-
 	}
 
 	/* ---------------------------------------------------------------------
@@ -236,26 +184,6 @@ final class WPAB_REST {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
-	public static function content_update( WP_REST_Request $request ) {
-		$body = $request->get_json_params();
-
-		if ( ! is_array( $body ) ) {
-			return new WP_Error( 'wpab_content_bad_body', 'A JSON body is required.', array( 'status' => 400 ) );
-		}
-
-		$type   = isset( $body['type'] ) ? (string) $body['type'] : '';
-		$id     = isset( $body['id'] ) ? (int) $body['id'] : 0;
-		$fields = isset( $body['fields'] ) && is_array( $body['fields'] ) ? $body['fields'] : array();
-
-		if ( empty( $fields ) ) {
-			return new WP_Error( 'wpab_content_no_fields', 'No fields to update.', array( 'status' => 400 ) );
-		}
-
-		$result = WPAB_Content::update( $type, $id, $fields );
-
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
-	}
-
 	/* ---------------------------------------------------------------------
 	 * Read routes
 	 * ------------------------------------------------------------------ */
@@ -263,8 +191,6 @@ final class WPAB_REST {
 	public static function status( WP_REST_Request $request ) {
 		$theme  = WPAB_Scopes::theme();
 		$plugin = WPAB_Scopes::plugin();
-
-		$syntax = WPAB_Writer::syntax_check( "<?php\n", 'probe.php' );
 
 		return new WP_REST_Response(
 			array(
@@ -308,30 +234,18 @@ final class WPAB_REST {
 				// installation can actually do right now — not what the plugin
 				// supports in principle.
 				'capabilities' => array(
-					'read_files'       => true,
-					'manifest'         => true,
-					'preflight'        => true,
-					'controlled_write' => true,
-					'write_files'      => WPAB_Writer::write_enabled(),
-					'create_files'     => WPAB_Writer::write_enabled() && WPAB_Writer::create_enabled(),
-					'snapshots'        => true,
-					'rollback'         => true,
-					'health_check'     => true,
-					'syntax_check'     => 'unavailable' !== $syntax['status'],
-					'risky_code_guard' => WPAB_Writer::guard_enabled(),
-					'cloud_client'     => WPAB_Cloud::has_key(),
-					'delete_files'     => false,
-					'rename_files'     => false,
+					'read_files'   => true,
+					'manifest'     => true,
+					'read_content' => true,
+					'cloud_client' => WPAB_Cloud::has_key(),
+					'write_files'  => false,
+					'delete_files' => false,
+					'rename_files' => false,
 				),
 
 				'limits'  => array(
-					'max_files_per_apply' => WPAB_Writer::MAX_FILES_PER_APPLY,
-					'max_file_bytes'      => WPAB_Writer::MAX_FILE_BYTES,
-					'max_total_bytes'     => WPAB_Writer::MAX_TOTAL_BYTES,
-					'max_read_bytes'      => WPAB_Files::MAX_READ_BYTES,
-					'max_listed_files'    => WPAB_Files::MAX_FILES,
-					'writable_extensions' => WPAB_Scopes::writable_extensions(),
-					'snapshot_keep'       => WPAB_Writer::snapshot_keep(),
+					'max_read_bytes'   => WPAB_Files::MAX_READ_BYTES,
+					'max_listed_files' => WPAB_Files::MAX_FILES,
 				),
 			),
 			200
@@ -388,84 +302,5 @@ final class WPAB_REST {
 		}
 
 		return new WP_REST_Response( $result, 200 );
-	}
-
-	/* ---------------------------------------------------------------------
-	 * Write routes
-	 * ------------------------------------------------------------------ */
-
-	private static function files_param( WP_REST_Request $request ) {
-		$body = $request->get_json_params();
-
-		if ( ! is_array( $body ) || ! isset( $body['files'] ) || ! is_array( $body['files'] ) ) {
-			return new WP_Error(
-				'wpab_missing_files',
-				'A files array is required.',
-				array( 'status' => 400 )
-			);
-		}
-
-		return $body['files'];
-	}
-
-	public static function preflight( WP_REST_Request $request ) {
-		$files = self::files_param( $request );
-
-		if ( is_wp_error( $files ) ) {
-			return $files;
-		}
-
-		// A preflight always answers 200: "not ready" is a valid answer, not a
-		// transport failure, and the builder renders the per-file reasons.
-		return new WP_REST_Response( WPAB_Writer::preflight( $files ), 200 );
-	}
-
-	public static function apply( WP_REST_Request $request ) {
-		$body  = $request->get_json_params();
-		$files = self::files_param( $request );
-
-		if ( is_wp_error( $files ) ) {
-			return $files;
-		}
-
-		$proposal_id = isset( $body['proposal_id'] ) ? sanitize_text_field( (string) $body['proposal_id'] ) : '';
-
-		if ( '' === $proposal_id ) {
-			return new WP_Error( 'wpab_missing_proposal', 'A proposal_id is required.', array( 'status' => 400 ) );
-		}
-
-		$result = WPAB_Writer::apply( $proposal_id, $files );
-
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		return new WP_REST_Response( $result, 200 );
-	}
-
-	public static function rollback( WP_REST_Request $request ) {
-		$body = $request->get_json_params();
-
-		$snapshot_id = is_array( $body ) && isset( $body['snapshot_id'] )
-			? sanitize_text_field( (string) $body['snapshot_id'] )
-			: '';
-
-		if ( '' === $snapshot_id ) {
-			return new WP_Error( 'wpab_missing_snapshot', 'A snapshot_id is required.', array( 'status' => 400 ) );
-		}
-
-		$force = is_array( $body ) && ! empty( $body['force'] );
-
-		$result = WPAB_Writer::rollback( $snapshot_id, $force );
-
-		if ( is_wp_error( $result ) ) {
-			return $result;
-		}
-
-		return new WP_REST_Response( $result, 200 );
-	}
-
-	public static function snapshots( WP_REST_Request $request ) {
-		return new WP_REST_Response( WPAB_Writer::snapshots(), 200 );
 	}
 }
