@@ -9,8 +9,13 @@
  * and `border-neutral-200` read correctly on a light surface.
  */
 :root {
-  --background: #f5f6f7;
-  --foreground: #18181b;
+  --background: #f6f5f3;
+  --foreground: #1b1a18;
+  --accent: #6366f1;
+  --accent-2: #8b5cf6;
+  --card-border: rgba(20, 18, 16, 0.08);
+  --card-border-strong: rgba(20, 18, 16, 0.12);
+  --card-shadow: 0 1px 2px rgba(20, 18, 16, 0.04), 0 14px 40px rgba(20, 18, 16, 0.08);
 }
 
 @theme inline {
@@ -51,4 +56,96 @@ button,
 textarea,
 select {
   font: inherit;
+}
+
+/* ---- base44-style light glass design system (shared across dashboard) ---- */
+.app-shell {
+  position: relative;
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 560px at 50% -12%, rgba(99, 102, 241, 0.12), transparent 60%),
+    var(--background);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  box-shadow: var(--card-shadow);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2);
+}
+
+a.glass-card,
+.glass-card--hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+a.glass-card:hover,
+.glass-card--hover:hover {
+  transform: translateY(-2px);
+  border-color: var(--card-border-strong);
+  box-shadow: 0 2px 4px rgba(20, 18, 16, 0.05), 0 22px 54px rgba(20, 18, 16, 0.12);
+}
+
+.glass-soft {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 11px;
+  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.28);
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.btn-accent:hover:not(:disabled) {
+  background: #5457e5;
+}
+.btn-accent:disabled {
+  opacity: 0.55;
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--card-border-strong);
+  color: var(--foreground);
+  border-radius: 11px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: #fff;
+  border-color: rgba(20, 18, 16, 0.2);
+}
+.btn-ghost:disabled {
+  opacity: 0.45;
+}
+
+.field {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--card-border-strong);
+  border-radius: 11px;
+  color: var(--foreground);
+}
+.field::placeholder {
+  color: #9b968d;
+}
+.field:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
+.pill-on {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+}
+.pill-off {
+  background: rgba(20, 18, 16, 0.05);
+  color: #6f6b64;
 }

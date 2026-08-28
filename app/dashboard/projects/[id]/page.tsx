@@ -51,7 +51,7 @@ export default async function ProjectPage({ params }: Props) {
   const site = Array.isArray(wordpressSites) ? wordpressSites[0] : wordpressSites;
 
   return (
-    <main className="min-h-screen bg-[#f5f6f7] p-8 text-neutral-900">
+    <main className="app-shell p-8 text-neutral-900">
       <div className="mx-auto max-w-4xl">
         <a
           href="/dashboard"
@@ -61,7 +61,7 @@ export default async function ProjectPage({ params }: Props) {
         </a>
 
         <div className="mt-8">
-          <p className="text-[11px] uppercase tracking-wide text-neutral-400">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
             WordPress site
           </p>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight text-neutral-900">
@@ -93,7 +93,7 @@ export default async function ProjectPage({ params }: Props) {
 
 function Info({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-4">
+    <div className="glass-card p-4">
       <p className="text-[11px] uppercase tracking-wide text-neutral-400">
         {label}
       </p>

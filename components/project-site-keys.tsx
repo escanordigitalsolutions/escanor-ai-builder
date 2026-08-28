@@ -130,7 +130,7 @@ export default function ProjectSiteKeys({
   }
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-5">
+    <div className="glass-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-wide text-neutral-400">
@@ -146,7 +146,7 @@ export default function ProjectSiteKeys({
           type="button"
           onClick={createKey}
           disabled={creating}
-          className="rounded-md border border-neutral-200 px-2.5 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-40"
+          className="btn-ghost px-2.5 py-1.5 text-xs"
         >
           {creating ? "Creating..." : "New key"}
         </button>

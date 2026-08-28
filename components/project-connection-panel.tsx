@@ -119,7 +119,7 @@ export default function ProjectConnectionPanel({
   const connected = connection?.connected !== false;
 
   return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-5">
+    <div className="glass-card p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-[11px] uppercase tracking-wide text-neutral-400">
@@ -161,7 +161,7 @@ export default function ProjectConnectionPanel({
             type="button"
             onClick={testConnection}
             disabled={testing}
-            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-40"
+            className="btn-ghost px-3 py-2 text-xs"
           >
             {testing ? "Checking..." : "Test connection"}
           </button>
@@ -173,7 +173,7 @@ export default function ProjectConnectionPanel({
               setError("");
             }}
             disabled={testing}
-            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-40"
+            className="btn-ghost px-3 py-2 text-xs"
           >
             Replace token
           </button>
@@ -183,7 +183,7 @@ export default function ProjectConnectionPanel({
               href={wpAdminBridgeUrl}
               target="_blank"
               rel="noreferrer"
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-700 transition hover:border-neutral-300 hover:bg-neutral-50"
+              className="btn-ghost px-3 py-2 text-xs"
             >
               WP Admin ↗
             </a>
@@ -203,14 +203,14 @@ export default function ProjectConnectionPanel({
               value={token}
               onChange={(event) => setToken(event.target.value)}
               placeholder="Paste newly generated token"
-              className="min-w-0 flex-1 rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-400"
+              className="field min-w-0 flex-1 px-3 py-2.5 text-sm"
             />
 
             <button
               type="button"
               onClick={replaceToken}
               disabled={testing || !token.trim()}
-              className="rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white transition hover:bg-neutral-800 disabled:opacity-40"
+              className="btn-accent px-4 text-sm font-medium"
             >
               Save
             </button>

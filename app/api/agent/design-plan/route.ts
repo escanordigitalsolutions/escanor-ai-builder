@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
-import { SMART_MODEL } from "@/lib/ai/models";
+import { GEN_MODEL } from "@/lib/ai/models";
 import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
 
 /**
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
 
   try {
     let response = await openai.responses.create({
-      model: SMART_MODEL,
+      model: GEN_MODEL,
       instructions: INSTRUCTIONS,
       input,
       tools,
@@ -206,7 +206,7 @@ export async function POST(request: NextRequest) {
       );
 
       response = await openai.responses.create({
-        model: SMART_MODEL,
+        model: GEN_MODEL,
         instructions: INSTRUCTIONS,
         previous_response_id: response.id,
         input: outputs,

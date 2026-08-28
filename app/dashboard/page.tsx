@@ -71,14 +71,14 @@ export default async function DashboardPage() {
   const projects = (projectsData ?? []) as unknown as ProjectRow[];
 
   return (
-    <main className="min-h-screen bg-[#f5f6f7] p-8 text-neutral-900">
+    <main className="app-shell p-8 text-neutral-900">
       <div className="mx-auto max-w-4xl">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[11px] uppercase tracking-wide text-neutral-400">
-              AI Builder
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
+              ESCANOR · AI Builder
             </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-900">
+            <h1 className="mt-1.5 text-[1.7rem] font-semibold tracking-tight text-neutral-900">
               Your sites
             </h1>
           </div>
@@ -91,7 +91,7 @@ export default async function DashboardPage() {
 
         <div className="mt-8 space-y-3">
           {projects.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-10 text-center">
+            <div className="glass-card p-12 text-center">
               <p className="text-sm text-neutral-600">
                 No sites yet. Use “New site” above to connect your first
                 WordPress site.
@@ -105,7 +105,7 @@ export default async function DashboardPage() {
                 <Link
                   key={project.id}
                   href={`/dashboard/projects/${project.id}`}
-                  className="block rounded-xl border border-neutral-200 bg-white p-5 transition hover:border-neutral-300 hover:shadow-sm"
+                  className="glass-card block p-5"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -119,9 +119,7 @@ export default async function DashboardPage() {
                     <span
                       className={
                         "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium " +
-                        (connected
-                          ? "bg-green-100 text-green-700"
-                          : "bg-neutral-100 text-neutral-500")
+                        (connected ? "pill-on" : "pill-off")
                       }
                     >
                       {connected ? "Connected" : "Not connected"}

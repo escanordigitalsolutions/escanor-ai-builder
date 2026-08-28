@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
-import { SMART_MODEL } from "@/lib/ai/models";
+import { GEN_MODEL } from "@/lib/ai/models";
 
 /**
  * WordPress -> SaaS : theme BLUEPRINT.
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
   let response;
   try {
     response = await openai.responses.create({
-      model: SMART_MODEL,
+      model: GEN_MODEL,
       instructions: INSTRUCTIONS,
       input: `Brief:\n${JSON.stringify(brief, null, 2)}`,
     });
