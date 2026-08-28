@@ -91,6 +91,24 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/edit-theme',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_edit_theme' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/undo-edit',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_undo_edit' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/create-theme',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -163,6 +181,55 @@ final class WPAB_Editor {
 			),
 			180
 		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Phase F: edit the active generated theme from a plain-language instruction. */
+	public static function rest_edit_theme( WP_REST_Request $request ) {
+		$params      = self::json_params( $request );
+		$instruction = isset( $params['instruction'] ) ? trim( (string) $params['instruction'] ) : '';
+
+		if ( '' === $instruction ) {
+			return new WP_Error( 'wpab_edit_empty', 'An instruction is required.', array( 'status' => 400 ) );
+		}
+		if ( strlen( $instruction ) > 2000 ) {
+			$instruction = substr( $instruction, 0, 2000 );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/edit-theme', array( 'instruction' => $instruction ), 180 );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		$files = ( isset( $result['files'] ) && is_array( $result['files'] ) ) ? $result['files'] : array();
+
+		if ( empty( $files ) ) {
+			$msg = isset( $result['error'] ) ? (string) $result['error'] : 'The editor returned no changes.';
+			return new WP_Error( 'wpab_edit_empty_files', $msg, array( 'status' => 502 ) );
+		}
+
+		$applied = WPAB_Theme_Writer::update( $files );
+
+		if ( is_wp_error( $applied ) ) {
+			return $applied;
+		}
+
+		return new WP_REST_Response(
+			array(
+				'success'        => true,
+				'summary'        => isset( $result['summary'] ) ? (string) $result['summary'] : 'Updated the theme.',
+				'updated'        => isset( $applied['updated'] ) ? (int) $applied['updated'] : count( $files ),
+				'undo_available' => true,
+			),
+			200
+		);
+	}
+
+	/** Phase F: undo the most recent theme edit (one level). */
+	public static function rest_undo_edit( WP_REST_Request $request ) {
+		$result = WPAB_Theme_Writer::undo();
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -592,6 +659,8 @@ final class WPAB_Editor {
 			'restBuildPlan'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
 			'restBuildFile'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/file' ) ),
 			'restBuildFiles'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files' ) ),
+			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
+			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'   => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'exitUrl'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
@@ -897,6 +966,9 @@ final class WPAB_Editor {
 			.wpab-ed__new:hover { color: #fff; }
 			.wpab-ed__send { appearance: none; border: 0; border-radius: 9px; padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer; background: #3a5bff; color: #fff; }
 			.wpab-ed__send:disabled { opacity: .55; cursor: default; }
+			.wpab-ed__undo { margin-top: 8px; appearance: none; border: 1px solid #2c3037; border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; background: #1b1f24; color: #f4f5f7; }
+			.wpab-ed__undo:hover:not(:disabled) { border-color: #3a5bff; color: #fff; }
+			.wpab-ed__undo:disabled { opacity: .55; cursor: default; }
 		</style>
 		<?php
 		self::print_app_script( $config );
@@ -954,6 +1026,45 @@ final class WPAB_Editor {
 			}
 			function setBusy(b) { if (sendBtn) { sendBtn.disabled = b; } }
 
+			function reloadPreview() {
+				var fr = $('wpab-ed-frame');
+				if (!fr) { return; }
+				try { fr.contentWindow.location.reload(); } catch (e) { fr.src = fr.src; }
+			}
+			function addUndoMessage(summary) {
+				var wrap = addMessage('assistant', '✓ ' + (summary || 'Theme updated.'));
+				var mbody = wrap.querySelector('.wpab-msg__body');
+				if (mbody && cfg.restUndoEdit) {
+					var b = document.createElement('button');
+					b.type = 'button'; b.className = 'wpab-ed__undo'; b.textContent = 'Undo';
+					b.addEventListener('click', function () {
+						b.disabled = true; b.textContent = 'Undoing…';
+						api('POST', cfg.restUndoEdit, {}).then(function (u) {
+							if (u.ok && u.data && u.data.success) { b.textContent = 'Undone'; reloadPreview(); }
+							else { b.disabled = false; b.textContent = (u.data && (u.data.message || u.data.error)) || 'Undo failed'; }
+						}).catch(function () { b.disabled = false; b.textContent = 'Undo failed'; });
+					});
+					mbody.appendChild(document.createElement('br'));
+					mbody.appendChild(b);
+				}
+			}
+			function runEdit(instruction) {
+				var typing = addTyping();
+				var t = typing.querySelector('.wpab-typing'); if (t) { t.textContent = 'Applying your change…'; }
+				return api('POST', cfg.restEditTheme, { instruction: instruction }).then(function (out) {
+					typing.remove();
+					if (!out.ok || !out.data || out.data.success === false) {
+						addMessage('assistant', (out.data && (out.data.message || out.data.error)) || 'Could not apply the change.');
+						return;
+					}
+					addUndoMessage(out.data.summary);
+					reloadPreview();
+				}).catch(function () {
+					typing.remove();
+					addMessage('assistant', 'Network error applying the change.');
+				});
+			}
+
 			function sendChat(message) {
 				addMessage('user', message);
 				setBusy(true);
@@ -967,7 +1078,12 @@ final class WPAB_Editor {
 						return;
 					}
 					if (out.data.conversationId) { conversationId = out.data.conversationId; }
-					addMessage('assistant', out.data.answer || out.data.reply || '(no answer)');
+					var answer = out.data.answer || out.data.reply;
+					if (answer) { addMessage('assistant', answer); }
+					if (out.data.editRequest && out.data.editRequest.instruction) {
+						return runEdit(out.data.editRequest.instruction);
+					}
+					if (!answer) { addMessage('assistant', '(no answer)'); }
 				}).catch(function () {
 					typing.remove();
 					addMessage('assistant', 'Network error. Please try again.');

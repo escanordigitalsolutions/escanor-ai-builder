@@ -201,6 +201,161 @@ final class WPAB_Theme_Writer {
 		);
 	}
 
+	public const UNDO_OPTION = 'wpab_theme_undo';
+
+	/**
+	 * Edit files in the ACTIVE generated theme. Only the theme this plugin
+	 * generated (tracked by wpab_generated_theme) can be edited — never a
+	 * stock or third-party theme. Existing files are updated and new ones may
+	 * be created inside the theme; every file is validated exactly like create().
+	 * The previous contents are stored so a single-level undo can restore them.
+	 *
+	 * @param array $files List of array{ path:string, contents:string }.
+	 * @return array|WP_Error { updated, undo_available }
+	 */
+	public static function update( array $files ) {
+		$active    = get_stylesheet();
+		$generated = (string) get_option( self::GENERATED_OPTION, '' );
+
+		if ( '' === $generated || $generated !== $active ) {
+			return new WP_Error( 'wpab_tw_not_generated', 'Editing is only available for a theme generated here. Generate a theme first.', array( 'status' => 409 ) );
+		}
+
+		if ( empty( $files ) || ! is_array( $files ) ) {
+			return new WP_Error( 'wpab_tw_no_files', 'No changes to write.', array( 'status' => 400 ) );
+		}
+
+		if ( count( $files ) > self::MAX_FILES ) {
+			return new WP_Error( 'wpab_tw_too_many', 'Too many files in one edit.', array( 'status' => 400 ) );
+		}
+
+		$dir = trailingslashit( wp_normalize_path( get_stylesheet_directory() ) );
+		$fs  = self::fs();
+
+		if ( ! $fs ) {
+			return new WP_Error( 'wpab_tw_fs', 'WordPress could not get filesystem access.', array( 'status' => 500 ) );
+		}
+
+		// ---- Validate everything before writing a single byte. ----
+		$clean = array();
+		$total = 0;
+
+		foreach ( $files as $file ) {
+			if ( ! is_array( $file ) || ! isset( $file['path'] ) ) {
+				return new WP_Error( 'wpab_tw_bad_file', 'Each change needs a path and contents.', array( 'status' => 400 ) );
+			}
+
+			$rel = self::clean_relative_path( (string) $file['path'] );
+			if ( is_wp_error( $rel ) ) {
+				return $rel;
+			}
+
+			$contents = isset( $file['contents'] ) ? (string) $file['contents'] : '';
+			$total   += strlen( $contents );
+
+			if ( strlen( $contents ) > self::MAX_FILE_BYTES ) {
+				return new WP_Error( 'wpab_tw_file_big', sprintf( '%s is too large.', $rel ), array( 'status' => 400 ) );
+			}
+			if ( $total > self::MAX_TOTAL_BYTES ) {
+				return new WP_Error( 'wpab_tw_total_big', 'The edit is too large in total.', array( 'status' => 400 ) );
+			}
+			if ( 'php' === self::extension( $rel ) ) {
+				$lint = self::validate_php( $contents, $rel );
+				if ( is_wp_error( $lint ) ) {
+					return $lint;
+				}
+			}
+
+			$clean[ $rel ] = $contents;
+		}
+
+		// ---- Snapshot current state for undo, then write. ----
+		$undo = array();
+
+		foreach ( $clean as $rel => $contents ) {
+			$abs = $dir . $rel;
+
+			// Path must resolve inside the theme (defence in depth).
+			if ( file_exists( $abs ) ) {
+				$real = realpath( $abs );
+				if ( false === $real || 0 !== strpos( wp_normalize_path( $real ), $dir ) ) {
+					return new WP_Error( 'wpab_tw_escaped', 'A path resolves outside the theme.', array( 'status' => 403 ) );
+				}
+				$undo[] = array( 'path' => $rel, 'contents' => (string) $fs->get_contents( $abs ), 'created' => false );
+			} else {
+				$undo[] = array( 'path' => $rel, 'contents' => null, 'created' => true );
+			}
+		}
+
+		foreach ( $clean as $rel => $contents ) {
+			$abs     = $dir . $rel;
+			$sub_dir = dirname( $abs );
+
+			if ( ! $fs->is_dir( $sub_dir ) && ! wp_mkdir_p( $sub_dir ) ) {
+				return new WP_Error( 'wpab_tw_subdir', sprintf( 'Could not create the folder for %s.', $rel ), array( 'status' => 500 ) );
+			}
+			if ( ! $fs->put_contents( $abs, $contents, FS_CHMOD_FILE ) ) {
+				return new WP_Error( 'wpab_tw_write', sprintf( 'Could not write %s.', $rel ), array( 'status' => 500 ) );
+			}
+		}
+
+		update_option( self::UNDO_OPTION, array( 'slug' => $active, 'files' => $undo ), false );
+		wp_clean_themes_cache();
+
+		return array(
+			'success'        => true,
+			'updated'        => count( $clean ),
+			'undo_available' => true,
+		);
+	}
+
+	/** Restore the files changed by the most recent update(). One level deep. */
+	public static function undo() {
+		$undo = get_option( self::UNDO_OPTION, array() );
+
+		if ( ! is_array( $undo ) || empty( $undo['files'] ) ) {
+			return new WP_Error( 'wpab_tw_no_undo', 'There is nothing to undo.', array( 'status' => 409 ) );
+		}
+
+		$active = get_stylesheet();
+		if ( ! isset( $undo['slug'] ) || $undo['slug'] !== $active ) {
+			delete_option( self::UNDO_OPTION );
+			return new WP_Error( 'wpab_tw_undo_stale', 'The last edit belongs to a different theme and cannot be undone.', array( 'status' => 409 ) );
+		}
+
+		$dir = trailingslashit( wp_normalize_path( get_stylesheet_directory() ) );
+		$fs  = self::fs();
+
+		if ( ! $fs ) {
+			return new WP_Error( 'wpab_tw_fs', 'WordPress could not get filesystem access.', array( 'status' => 500 ) );
+		}
+
+		$restored = 0;
+
+		foreach ( $undo['files'] as $u ) {
+			if ( ! is_array( $u ) || ! isset( $u['path'] ) ) {
+				continue;
+			}
+			$abs = $dir . $u['path'];
+
+			if ( ! empty( $u['created'] ) ) {
+				if ( file_exists( $abs ) ) {
+					@unlink( $abs ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+				}
+				$restored++;
+			} elseif ( isset( $u['contents'] ) && null !== $u['contents'] ) {
+				if ( $fs->put_contents( $abs, (string) $u['contents'], FS_CHMOD_FILE ) ) {
+					$restored++;
+				}
+			}
+		}
+
+		delete_option( self::UNDO_OPTION );
+		wp_clean_themes_cache();
+
+		return array( 'success' => true, 'restored' => $restored );
+	}
+
 	/* ---------------------------------------------------------------------
 	 * Validation helpers
 	 * ------------------------------------------------------------------ */

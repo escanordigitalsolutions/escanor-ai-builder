@@ -25,6 +25,7 @@ $wpab_options = array(
 	'wpab_cloud_key_set_at',
 	'wpab_cloud_project',
 	'wpab_generated_theme',
+	'wpab_theme_undo',
 	'wpab_ai_log',
 	// Legacy options from removed features (write policy, scopes, modules,
 	// visual CSS) — deleting a missing option is a harmless no-op.
