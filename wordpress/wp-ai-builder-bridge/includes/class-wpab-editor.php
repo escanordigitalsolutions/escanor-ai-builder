@@ -585,11 +585,16 @@ final class WPAB_Editor {
 			return $gate;
 		}
 
-		$limit  = (int) $request->get_param( 'limit' );
-		$result = WPAB_Seo::audit(
-			(string) $request->get_param( 'type' ),
-			$limit > 0 ? $limit : 100
-		);
+		$limit = (int) $request->get_param( 'limit' );
+
+		try {
+			$result = WPAB_Seo::audit(
+				(string) $request->get_param( 'type' ),
+				$limit > 0 ? $limit : 100
+			);
+		} catch ( \Throwable $e ) {
+			return new WP_Error( 'wpab_seo_audit_error', 'Audit failed: ' . $e->getMessage(), array( 'status' => 500 ) );
+		}
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}

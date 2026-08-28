@@ -571,7 +571,7 @@ final class WPAB_Seo {
 	public static function audit( string $type, int $limit = 100 ) {
 		$type = trim( $type );
 
-		if ( ! self::is_editable_type( $type ) ) {
+		if ( ! WPAB_Content::is_editable_type( $type ) ) {
 			return new WP_Error( 'wpab_seo_bad_type', 'SEO applies to pages, posts and products.', array( 'status' => 400 ) );
 		}
 
@@ -591,8 +591,10 @@ final class WPAB_Seo {
 
 		$items       = array();
 		$need_work   = 0;
+		$skipped     = array();
 
 		foreach ( $posts as $post ) {
+			try {
 			$id     = (int) $post->ID;
 			$basic  = self::read_basic( $id, $detect['plugin'] );
 			$scores = self::plugin_scores( $id, $detect['plugin'] );
@@ -633,6 +635,12 @@ final class WPAB_Seo {
 				'issues'    => $issues,
 				'grade'     => $grade,
 			);
+			} catch ( \Throwable $e ) {
+				if ( count( $skipped ) < 3 ) {
+					$skipped[] = $e->getMessage();
+				}
+				continue;
+			}
 		}
 
 		return array(
@@ -644,6 +652,7 @@ final class WPAB_Seo {
 			'count'        => count( $items ),
 			'need_work'    => $need_work,
 			'items'        => $items,
+			'skipped'      => $skipped,
 		);
 	}
 

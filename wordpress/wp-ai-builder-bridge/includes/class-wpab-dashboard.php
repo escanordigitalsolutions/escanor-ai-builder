@@ -1003,10 +1003,13 @@ final class WPAB_Dashboard {
 			function loadSeoItems(type) {
 				seoItemsEl.innerHTML = '<p class="wpab-chat__empty">Auditing…</p>';
 				api('GET', cfg.restSeoAudit + '?type=' + encodeURIComponent(type) + '&limit=200').then(function (out) {
-					if (!out.ok || !out.data || out.data.success === false) { seoItemsEl.innerHTML = '<p class="wpab-chat__empty">Could not load items.</p>'; return; }
+					if (!out.ok || !out.data || out.data.success === false) { seoItemsEl.innerHTML = '<p class="wpab-chat__empty">Could not load items. ' + esc((out.data && (out.data.message || out.data.error)) || ('HTTP ' + out.status)) + '</p>'; return; }
 					var items = out.data.items || [];
 					seoCurType = type; seoAudit = items;
-					if (!items.length) { seoItemsEl.innerHTML = '<p class="wpab-chat__empty">Nothing here yet.</p>'; return; }
+					if (!items.length) {
+						var sk = (out.data.skipped && out.data.skipped.length) ? ' (' + esc(out.data.skipped.join('; ')) + ')' : '';
+						seoItemsEl.innerHTML = '<p class="wpab-chat__empty">Nothing here yet.' + sk + '</p>'; return;
+					}
 					seoItemsEl.innerHTML = '<div class="wpab-seo__summary">' + out.data.count + ' items · <strong>' + out.data.need_work + '</strong> need attention</div>';
 					if (out.data.need_work > 0) {
 						var bulk = document.createElement('button');
