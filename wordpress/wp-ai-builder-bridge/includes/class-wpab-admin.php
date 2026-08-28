@@ -45,70 +45,27 @@ final class WPAB_Admin {
 	}
 
 	public static function register_menu(): void {
-		// Top level is the ESCANOR dashboard (the base Chat + Content module),
-		// not the bridge settings. Bridge settings move to their own submenu so
-		// the landing screen is the launchpad, and the submenu parents used by
-		// Cloud / Snapshots / Log / Editor (all 'wp-ai-builder') stay intact.
+		// The top level is the AI Editor — the single unified tool (live
+		// preview + chat + build + content). Everything else is a support
+		// submenu. The submenu parents used by Cloud / Snapshots / Log /
+		// Editor (all 'wp-ai-builder') stay intact.
 		add_menu_page(
 			'ESCANOR AI Builder',
 			'ESCANOR',
 			'manage_options',
 			self::MENU_SLUG,
-			array( 'WPAB_Dashboard', 'render' ),
+			array( 'WPAB_Editor', 'render_page' ),
 			'dashicons-superhero',
 			58
 		);
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			'ESCANOR — Dashboard',
-			'Dashboard',
+			'ESCANOR — AI Editor',
+			'AI Editor',
 			'manage_options',
 			self::MENU_SLUG,
-			array( 'WPAB_Dashboard', 'render' )
-		);
-
-		// Module sub-pages. Content is the base module (always present); SEO
-		// appears only when the project is licensed for it; Insights is a
-		// read-only AI scan available whenever connected.
-		add_submenu_page(
-			self::MENU_SLUG,
-			'ESCANOR — Content',
-			'Content',
-			'manage_options',
-			'wp-ai-builder-content',
-			array( 'WPAB_Dashboard', 'render_content' )
-		);
-
-		if ( WPAB_Modules::is_enabled( 'seo' ) ) {
-			add_submenu_page(
-				self::MENU_SLUG,
-				'ESCANOR — SEO',
-				'SEO',
-				'manage_options',
-				'wp-ai-builder-seo',
-				array( 'WPAB_Dashboard', 'render_seo' )
-			);
-		}
-
-		if ( WPAB_Modules::is_enabled( 'build' ) ) {
-			add_submenu_page(
-				self::MENU_SLUG,
-				'ESCANOR — Build',
-				'Build',
-				'manage_options',
-				'wp-ai-builder-build',
-				array( 'WPAB_Dashboard', 'render_build' )
-			);
-		}
-
-		add_submenu_page(
-			self::MENU_SLUG,
-			'ESCANOR — Insights',
-			'Insights',
-			'manage_options',
-			'wp-ai-builder-insights',
-			array( 'WPAB_Dashboard', 'render_insights' )
+			array( 'WPAB_Editor', 'render_page' )
 		);
 
 		add_submenu_page(

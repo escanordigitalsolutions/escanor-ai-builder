@@ -26,7 +26,9 @@ final class WPAB_Editor {
 	private const VISUAL_CSS_OPTION = 'wpab_visual_css';
 
 	public static function init(): void {
-		add_action( 'admin_menu', array( __CLASS__, 'register_page' ), 30 );
+		// The admin menu (top level + landing submenu) is registered by
+		// WPAB_Admin — the AI Editor is now the primary tool, so it no longer
+		// registers a separate submenu of its own.
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 		// Print the Visual editor's overrides on the front end, late so they win
 		// over the theme regardless of whether the theme loads style.css.
@@ -1206,11 +1208,9 @@ final class WPAB_Editor {
 			);
 		}
 
-		$companion = WPAB_Scopes::plugin();
-		$features  = array();
-		if ( ! empty( $companion['slug'] ) ) {
-			$features = self::list_dir_files( WP_PLUGIN_DIR . '/' . $companion['slug'] . '/features' );
-		}
+		// Theme-only: features (booking, post types, custom blocks) live in the
+		// active theme's features/ folder — there is no companion plugin.
+		$features = self::list_dir_files( $dir . '/features' );
 
 		$recent = array();
 		$log    = get_option( self::AI_LOG_OPTION, array() );
@@ -1229,7 +1229,7 @@ final class WPAB_Editor {
 			'theme'     => array(
 				'name'      => (string) $theme->get( 'Name' ),
 				'slug'      => $slug,
-				'generated' => ( 0 === strpos( $slug, 'escanor-' ) ),
+				'generated' => ( '' !== (string) get_option( 'wpab_generated_theme', '' ) && (string) get_option( 'wpab_generated_theme', '' ) === $slug ),
 				'palette'   => $palette,
 				'templates' => self::list_dir_files( $dir . '/templates' ),
 				'parts'     => self::list_dir_files( $dir . '/parts' ),
@@ -1240,11 +1240,7 @@ final class WPAB_Editor {
 				'page_on_front' => $front,
 			),
 			'pages'     => $pages,
-			'companion' => array(
-				'slug'     => isset( $companion['slug'] ) ? (string) $companion['slug'] : '',
-				'active'   => ! empty( $companion['active'] ),
-				'features' => $features,
-			),
+			'features'  => $features,
 			'recent'    => $recent,
 			'site'      => array(
 				'name'    => (string) get_bloginfo( 'name' ),
@@ -1664,17 +1660,6 @@ final class WPAB_Editor {
 	/* ---------------------------------------------------------------------
 	 * Studio page (full screen)
 	 * ------------------------------------------------------------------ */
-
-	public static function register_page(): void {
-		add_submenu_page(
-			'wp-ai-builder',
-			'AI Builder — Studio',
-			'AI Editor',
-			'manage_options',
-			self::PAGE_SLUG,
-			array( __CLASS__, 'render_page' )
-		);
-	}
 
 	public static function render_page(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
@@ -2922,12 +2907,38 @@ final class WPAB_Editor {
 	var setup = document.getElementById('wpab-setup');
 	if (!setup || !cfg.restBuildContext) { return; }
 	function $(id) { return document.getElementById(id); }
-	if (cfg.buildEnabled === false) { return; }
+	function openWizard() { setup.style.display = ''; }
+	function closeWizard() { setup.style.display = 'none'; }
+	window.wpabOpenWizard = openWizard;
+	(function () {
+		var x = document.createElement('button');
+		x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.innerHTML = '&times;';
+		x.style.cssText = 'position:absolute;top:16px;right:22px;background:transparent;border:0;color:#9aa1ac;font-size:30px;line-height:1;cursor:pointer';
+		x.addEventListener('click', closeWizard);
+		setup.appendChild(x);
+	})();
+	// Typing /wizard (or /theme) in the chat opens the theme wizard any time —
+	// e.g. to regenerate. Capture phase runs before the chat's own handler.
+	(function () {
+		var f = $('wpab-editor-form');
+		if (!f) { return; }
+		f.addEventListener('submit', function (e) {
+			var inp = $('wpab-editor-input');
+			var v = inp ? (inp.value || '').trim().toLowerCase() : '';
+			if (v === '/wizard' || v === '/theme' || v === '/new') {
+				e.preventDefault(); e.stopImmediatePropagation();
+				if (inp) { inp.value = ''; }
+				openWizard();
+			}
+		}, true);
+	})();
+	// Auto-open on first run: whenever this site has no ESCANOR-generated theme
+	// active yet (e.g. a stock theme like Twenty Twenty-Five), show the wizard.
 	fetch(cfg.restBuildContext, { headers: { 'X-WP-Nonce': cfg.nonce, 'Accept': 'application/json' }, credentials: 'same-origin' })
 		.then(function (r) { return r.json(); })
 		.then(function (d) {
 			var g = d && d.context && d.context.theme && d.context.theme.generated;
-			if (!g) { setup.style.display = ''; }
+			if (!g) { openWizard(); }
 		})
 		.catch(function () {});
 	var c = $('wpab-setup-color'), ch = $('wpab-setup-colorhex');

@@ -1,8 +1,8 @@
 <?php
 /**
  * Title: Hero
- * Slug: escanor-base/hero
- * Categories: escanor
+ * Slug: site/hero
+ * Categories: sections
  * Description: A centered hero with a heading, intro and a call-to-action button.
  */
 ?>
