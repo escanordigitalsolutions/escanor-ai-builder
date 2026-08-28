@@ -56,10 +56,10 @@ export async function POST(request: NextRequest) {
     const pageTitle = str(page.title).trim().slice(0, 120) || "Home";
     const isFront = Boolean(page.front);
     const purpose = str(page.purpose).trim().slice(0, 300);
-    const sections = Array.isArray(page.sections) ? page.sections.map((s) => str(s).trim()).filter(Boolean).slice(0, 8) : [];
+    const sections: string[] = Array.isArray(page.sections) ? (page.sections as unknown[]).map((s) => str(s).trim()).filter(Boolean).slice(0, 8) : [];
 
     // Other page slugs so internal links point somewhere real.
-    const links = Array.isArray(body.slugs) ? body.slugs.map((s: unknown) => str(s).trim()).filter(Boolean).slice(0, 12) : [];
+    const links: string[] = Array.isArray(body.slugs) ? (body.slugs as unknown[]).map((s) => str(s).trim()).filter(Boolean).slice(0, 12) : [];
 
     const instructions = `
 You are writing ONE page of a ${style} ${siteType} website as Gutenberg block markup.

@@ -102,7 +102,7 @@ Call submit_plan with 4-8 pages appropriate to a ${siteType} site. Exactly ONE p
     const pages = rawPages
       .map((p) => {
         const page = p as Record<string, unknown>;
-        const sections = Array.isArray(page.sections) ? page.sections.map((s) => str(s).trim().slice(0, 80)).filter(Boolean).slice(0, 8) : [];
+        const sections: string[] = Array.isArray(page.sections) ? (page.sections as unknown[]).map((s) => str(s).trim().slice(0, 80)).filter(Boolean).slice(0, 8) : [];
         return {
           title: str(page.title).trim().slice(0, 120),
           slug: str(page.slug).trim().slice(0, 80),

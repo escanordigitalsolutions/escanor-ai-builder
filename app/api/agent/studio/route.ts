@@ -178,7 +178,7 @@ Guidance:
       action.args = {
         title: str(args.title).slice(0, 120),
         purpose: str(args.purpose).slice(0, 300),
-        sections: Array.isArray(args.sections) ? args.sections.map((s) => str(s)).filter(Boolean).slice(0, 8) : [],
+        sections: Array.isArray(args.sections) ? (args.sections as unknown[]).map((s) => str(s)).filter(Boolean).slice(0, 8) : [],
       };
     } else if (name === "edit_page") {
       action.args = { slug: str(args.slug).slice(0, 80) || "home", instructions: str(args.instructions).slice(0, 3000) };
