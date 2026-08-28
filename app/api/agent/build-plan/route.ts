@@ -44,6 +44,8 @@ MOTION + JS LIBRARIES — these are loaded by functions.php and MUST come from c
 - Alpine.js — alpinejs/3.14.1/cdn.min.js — small stateful UI (tabs, accordions, mobile menu).
 Only include what the design needs, but favour a signature stack of GSAP + ScrollTrigger plus 1-2 others.
 
+LIBRARY COVERAGE (required — no orphan effects): every animation you assign to any section MUST have its library present in libraries[]. Mapping: any "typed-headline" animation -> include typed.js; "tilt-cards" -> include vanilla-tilt; any gallery/lightbox -> include GLightbox; "slider" (testimonials/logos/gallery carousels) -> include Swiper; a section background of "animated-particles" -> include tsParticles; scroll reveals/parallax/count-up/pin-scroll -> covered by GSAP + ScrollTrigger. If a library is NOT in libraries[], do NOT assign an animation that needs it. Conversely, do not list a library that no section uses.
+
 ANIMATED BACKGROUNDS — plan at least one signature animated background for the hero (and optionally one deeper section). Pick from: animated SVG gradient/mesh, floating SVG blobs, an SVG/CSS aurora glow, a moving grid/dot field, or a tsParticles constellation. Encode the choice in design.motion.heroBackground and in the relevant section's "background".
 
 STRUCTURE (classic PHP theme):

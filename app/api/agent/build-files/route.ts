@@ -38,7 +38,7 @@ Naming (deterministic from the blueprint, so CSS and markup agree across batches
 - assets/css/main.css defines :root design tokens from the blueprint (colors, --grad, fonts, --radius, a spacing scale --space-1..--space-8, shadow scale --shadow-sm/md/lg, --transition) and styles every global primitive AND a .section-<slug> block for EACH section in blueprint.sections. Use tokens, not hardcoded values.
 
 Motion is driven by data-attributes so markup and JS never need to see each other. In section markup, ADD these where the section's "animation" calls for it; in assets/js/main.js, IMPLEMENT them once (guarded, reduced-motion aware):
-- data-reveal (optional value up|left|right|scale) — element animates in on scroll (GSAP + ScrollTrigger, or a small IntersectionObserver fallback if GSAP absent).
+- data-reveal (optional value up|left|right|scale) — element reveals in on scroll. Implemented EXACTLY per the REVEAL MECHANISM section below (JS adds the .is-revealed class; NEVER rely on inline GSAP opacity or visibility).
 - data-reveal-group — stagger this element's direct children in.
 - data-parallax="0.15" — parallax translateY by factor on scroll.
 - data-count="1200" data-suffix="+" — count-up when in view.
@@ -56,6 +56,22 @@ Animated backgrounds — a section whose "background" starts with "animated-" MU
 Backgrounds must sit behind content (position:absolute; inset:0; z-index:0; content wrapper z-index:1) and never cause overflow or hurt text contrast.
 
 Buttons: .btn is pill/rounded per radius, weighted, with a smooth transition; .btn--primary uses --grad with a hover sheen/shine (a moving highlight) and a slight lift; .btn--ghost is bordered. Optionally magnetic on pointer devices via main.js (data-magnetic), disabled on touch and reduced-motion.
+
+=== REVEAL MECHANISM (exact — obey so CSS and JS can NEVER disagree) ===
+The reveal is driven ONLY by toggling a class, never by inline animation opacity, so it cannot silently leave content invisible:
+- CSS: under html.has-motion, hide [data-reveal] using ONLY opacity + transform (translate/scale) with a transition. NEVER use visibility:hidden or display:none for reveals — that is the exact trap that leaves content invisible when GSAP is present. Reveal with the class: html.has-motion [data-reveal].is-revealed { opacity:1; transform:none; } and html.has-motion [data-reveal-group].is-revealed > * { opacity:1; transform:none; } (stagger children with transition-delay).
+- JS (main.js): reveal by ADDING the .is-revealed class when the element enters the viewport — via ScrollTrigger onEnter when GSAP is present, else IntersectionObserver, else add the class immediately. Do NOT use gsap.fromTo/gsap.to on opacity for reveals; GSAP is only for parallax, count-up easing and magnetic buttons.
+- html.has-motion is added by JS after DOM ready ONLY when NOT prefers-reduced-motion. Under reduced-motion, [data-reveal] elements must be fully visible with no hidden state.
+
+=== HEADER / NAV / FOOTER CONTRACT (exact class + data-* names — header.php, main.css AND main.js MUST all use these) ===
+- Header: <header class="site-header" data-header>; scrolled state class .is-scrolled — main.js toggles it on [data-header] when scrollY > 8.
+- Brand: <a class="site-header__brand" ...> with the custom logo or the site title inside.
+- Nav: <nav class="site-nav" data-nav> containing wp_nav_menu( array( 'theme_location' => 'primary', 'menu_class' => 'site-nav__menu', 'container' => false, 'fallback_cb' => false ) ); mobile open state class .is-open on [data-nav].
+- Toggle: <button class="site-header__toggle" data-nav-toggle aria-expanded="false" aria-controls="the nav id"> with hamburger bars. main.js listens on [data-nav-toggle], toggles aria-expanded and .is-open on [data-nav], and adds a body class .nav-open.
+- main.js MUST select the data-* hooks ([data-header], [data-nav], [data-nav-toggle]) — NOT ad-hoc class names — so markup and JS cannot drift. main.css styles the classes above plus the .is-scrolled and .is-open states and the desktop-vs-mobile nav layout.
+- Scroll progress: <div class="scroll-progress" aria-hidden="true"><span class="scroll-progress__bar"></span></div>; main.js sets the bar's width/scaleX from scroll position.
+- Footer: <footer class="site-footer"> with a .site-footer__grid of columns; main.css styles .site-footer and .site-footer__grid.
+Anything a JS behaviour targets must be reachable by one of these exact classes or a stable data-* hook.
 
 === THEME CONVENTIONS (classic PHP) ===
 - Templates start with get_header() and end with get_footer(); include sections with get_template_part('template-parts/section', '<slug>') in the exact order the blueprint page lists them.

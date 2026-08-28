@@ -109,6 +109,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/review-theme',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_review_theme' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/create-theme',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -232,6 +241,59 @@ final class WPAB_Editor {
 		$result = WPAB_Theme_Writer::undo();
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/**
+	 * Post-generation QA: ask the SaaS to review the just-built active theme for
+	 * critical defects and apply any fixes. Non-fatal by design — the theme is
+	 * already created and working, so a failed or empty review never errors.
+	 */
+	public static function rest_review_theme( WP_REST_Request $request ) {
+		$params  = self::json_params( $request );
+		$focus   = isset( $params['focus'] ) ? trim( (string) $params['focus'] ) : '';
+		$payload = array();
+		if ( '' !== $focus ) {
+			$payload['focus'] = substr( $focus, 0, 500 );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/review-theme', $payload, 180 );
+
+		if ( is_wp_error( $result ) ) {
+			return new WP_REST_Response(
+				array( 'success' => true, 'applied' => false, 'updated' => 0, 'summary' => 'Review skipped.' ),
+				200
+			);
+		}
+
+		$files   = ( isset( $result['files'] ) && is_array( $result['files'] ) ) ? $result['files'] : array();
+		$summary = isset( $result['summary'] ) ? (string) $result['summary'] : 'Reviewed the theme.';
+
+		if ( empty( $files ) ) {
+			return new WP_REST_Response(
+				array( 'success' => true, 'applied' => false, 'updated' => 0, 'summary' => $summary ),
+				200
+			);
+		}
+
+		$applied = WPAB_Theme_Writer::update( $files );
+
+		if ( is_wp_error( $applied ) ) {
+			// Keep the already-working theme rather than failing generation.
+			return new WP_REST_Response(
+				array( 'success' => true, 'applied' => false, 'updated' => 0, 'summary' => $summary ),
+				200
+			);
+		}
+
+		return new WP_REST_Response(
+			array(
+				'success' => true,
+				'applied' => true,
+				'updated' => isset( $applied['updated'] ) ? (int) $applied['updated'] : count( $files ),
+				'summary' => $summary,
+			),
+			200
+		);
 	}
 
 	public static function rest_create_theme( WP_REST_Request $request ) {
@@ -661,6 +723,7 @@ final class WPAB_Editor {
 			'restBuildFiles'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
+			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
 			'nonce'       => wp_create_nonce( 'wp_rest' ),
 			'cloudPage'   => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'exitUrl'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
@@ -689,6 +752,13 @@ final class WPAB_Editor {
 					</div>
 
 					<div id="wpab-ed-wprogress" class="wpab-ed__wprogress" hidden>
+						<ol class="wpab-ed__steps" id="wpab-ed-steps">
+							<li class="wpab-ed__step" data-phase="plan"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Planning the design</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="build"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Building the theme</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="write"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Writing files</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="check"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Checking for issues</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="revise"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Final revision</span><span class="wpab-ed__stepmeta"></span></li>
+						</ol>
 						<div class="wpab-ed__wbar"><span id="wpab-ed-wbarfill" class="wpab-ed__wbarfill"></span></div>
 						<div id="wpab-ed-wstep" class="wpab-ed__wstep"></div>
 					</div>
@@ -739,9 +809,11 @@ final class WPAB_Editor {
 			.wpab-ed__exit:hover { background: #1c1f24; color: #fff; }
 			.wpab-ed__newtheme { background: #3a5bff; color: #fff; border: 0; border-radius: 8px; padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 16px rgba(58,91,255,.4); }
 			.wpab-ed__newtheme:hover { background: #2f4ae0; }
-			.wpab-ed__wizard { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(8,10,13,.72); padding: 24px; }
+			.wpab-ed__wizard { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 620px at 50% -12%, rgba(90,108,255,.20), transparent 60%), rgba(8,10,13,.66); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 24px; }
 			.wpab-ed__wizard[hidden] { display: none !important; }
-			.wpab-ed__wcard { width: 100%; max-width: 480px; max-height: 88vh; overflow-y: auto; background: #14171b; border: 1px solid #23262b; border-radius: 16px; padding: 26px; }
+			.wpab-ed__wcard { position: relative; width: 100%; max-width: 500px; max-height: 88vh; overflow-y: auto; background: linear-gradient(180deg, rgba(30,34,44,.82), rgba(18,21,28,.86)); border: 1px solid rgba(255,255,255,.09); border-radius: 20px; padding: 28px; box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.06); -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); animation: wpab-ed-cardin .45s cubic-bezier(.2,.75,.25,1); }
+			.wpab-ed__wcard::before { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1px; background: linear-gradient(135deg, rgba(99,120,255,.55), rgba(167,139,250,.16) 42%, transparent 72%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+			@keyframes wpab-ed-cardin { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
 			.wpab-ed__winput + .wpab-ed__wlabel { margin-top: 14px; }
 			.wpab-ed__wlabel { margin-top: 14px; }
 			.wpab-ed__wlabel:first-of-type { margin-top: 0; }
@@ -749,9 +821,21 @@ final class WPAB_Editor {
 			.wpab-ed__wrow { display: flex; gap: 12px; }
 			.wpab-ed__wcol { flex: 1 1 0; }
 			.wpab-ed__wcolor { width: 100%; height: 42px; background: #0e1013; border: 1px solid #2c3037; border-radius: 10px; padding: 4px; cursor: pointer; }
-			.wpab-ed__wprogress { margin-top: 16px; }
-			.wpab-ed__wbar { height: 8px; background: #23262b; border-radius: 999px; overflow: hidden; }
-			.wpab-ed__wbarfill { display: block; height: 100%; width: 0; background: #3a5bff; transition: width .3s ease; }
+			.wpab-ed__wprogress { margin-top: 6px; }
+			.wpab-ed__steps { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+			.wpab-ed__step { display: flex; align-items: center; gap: 12px; padding: 9px 10px; border-radius: 10px; font-size: 13.5px; color: #868e9c; transition: background .3s ease, color .3s ease; }
+			.wpab-ed__step.is-active { background: rgba(99,120,255,.1); color: #f4f5f7; }
+			.wpab-ed__step.is-done { color: #cfd4dc; }
+			.wpab-ed__stepicon { position: relative; flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #363b45; box-sizing: border-box; transition: border-color .3s ease, background .3s ease; }
+			.wpab-ed__step.is-active .wpab-ed__stepicon { border-color: rgba(125,139,255,.25); border-top-color: #7d8bff; border-right-color: #7d8bff; animation: wpab-ed-spin .7s linear infinite; }
+			.wpab-ed__step.is-done .wpab-ed__stepicon { border-color: #5a6cff; background: #5a6cff; animation: none; }
+			.wpab-ed__step.is-done .wpab-ed__stepicon::after { content: ""; position: absolute; left: 6px; top: 2px; width: 4px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+			.wpab-ed__steptext { flex: 1 1 auto; }
+			.wpab-ed__stepmeta { flex: 0 0 auto; font-size: 11.5px; color: #7c828b; font-variant-numeric: tabular-nums; }
+			.wpab-ed__step.is-active .wpab-ed__stepmeta { color: #a9b2ff; }
+			@keyframes wpab-ed-spin { to { transform: rotate(360deg); } }
+			.wpab-ed__wbar { height: 6px; background: rgba(255,255,255,.07); border-radius: 999px; overflow: hidden; }
+			.wpab-ed__wbarfill { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #5a6cff, #a78bfa); box-shadow: 0 0 12px rgba(122,133,255,.6); transition: width .5s cubic-bezier(.2,.75,.25,1); }
 			.wpab-ed__wstep { margin-top: 8px; font-size: 12px; color: #9aa1ac; }
 			.wpab-ed__whead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; }
 			.wpab-ed__wdots { display: flex; gap: 6px; }
@@ -1047,6 +1131,28 @@ final class WPAB_Editor {
 			}
 			function errText(out, fallback) { return (out && out.data && (out.data.message || out.data.error)) || fallback; }
 
+			// Animated step feedback ------------------------------------------------
+			var PHASES = ['plan', 'build', 'write', 'check', 'revise'];
+			function stepEl(phase) { var s = $('wpab-ed-steps'); return s ? s.querySelector('[data-phase="' + phase + '"]') : null; }
+			function stepState(phase, state, meta) {
+				var el = stepEl(phase);
+				if (!el) { return; }
+				el.classList.remove('is-active', 'is-done');
+				if (state) { el.classList.add(state === 'done' ? 'is-done' : 'is-active'); }
+				var m = el.querySelector('.wpab-ed__stepmeta');
+				if (m) { m.textContent = meta || ''; }
+			}
+			function phaseProgress(phase, extra) {
+				var idx = PHASES.indexOf(phase);
+				for (var i = 0; i < PHASES.length; i++) {
+					if (i < idx) { stepState(PHASES[i], 'done'); }
+					else if (i === idx) { stepState(PHASES[i], 'active', extra || ''); }
+					else { stepState(PHASES[i], ''); }
+				}
+				setProgress(idx + (extra ? 0.5 : 0), PHASES.length, '');
+			}
+			function finishAllSteps() { for (var i = 0; i < PHASES.length; i++) { stepState(PHASES[i], 'done'); } setProgress(PHASES.length, PHASES.length, ''); }
+
 			function generateTheme() {
 				if (!wGo || !cfg.restBuildPlan) { return; }
 				var brief = collectBrief();
@@ -1062,12 +1168,25 @@ final class WPAB_Editor {
 				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = ''; }
 				if (wForm) { wForm.style.display = 'none'; }
 				if (wProgress) { wProgress.hidden = false; }
-				setProgress(0, 1, 'Planning your theme…');
+				for (var pi = 0; pi < PHASES.length; pi++) { stepState(PHASES[pi], ''); }
+				phaseProgress('plan');
+
+				// Runs a review pass; non-fatal — resolves even if the pass fails.
+				function reviewPass(phase, focus) {
+					phaseProgress(phase);
+					if (!cfg.restReviewTheme) { stepState(phase, 'done'); return Promise.resolve(); }
+					return wpost(cfg.restReviewTheme, focus ? { focus: focus } : {}).then(function (rOut) {
+						var d = (rOut && rOut.data) || {};
+						var meta = d.applied ? ('fixed ' + (d.updated || 0)) : 'clean';
+						stepState(phase, 'done', meta);
+					}).catch(function () { stepState(phase, 'done'); });
+				}
 
 				wpost(cfg.restBuildPlan, { brief: brief }).then(function (out) {
 					if (!out.ok || !out.data || out.data.success === false || !out.data.blueprint) {
 						throw new Error(errText(out, 'Could not plan the theme.'));
 					}
+					stepState('plan', 'done');
 					var blueprint = out.data.blueprint;
 					var brand = brief.name || (blueprint.theme && blueprint.theme.name) || 'Custom Theme';
 					var files = (blueprint.files || []).filter(function (pp) { return typeof pp === 'string' && pp; });
@@ -1087,7 +1206,8 @@ final class WPAB_Editor {
 
 					function runBatch(b) {
 						if (b >= totalB) {
-							setProgress(totalB, totalB, 'Writing theme…');
+							stepState('build', 'done', totalB + ' batches');
+							phaseProgress('write');
 							return wpost(cfg.restCreateTheme, {
 								brand: brand,
 								description: (blueprint.theme && blueprint.theme.description) || '',
@@ -1098,14 +1218,21 @@ final class WPAB_Editor {
 									throw new Error(errText(cOut, 'Could not write the theme.'));
 								}
 								var fin = cOut.data.finalize || {};
-								var extra = fin.pages_created ? (', ' + fin.pages_created + ' pages' + (fin.menu_built ? ' + menu' : '')) : '';
-								if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + (cOut.data.name || brand) + '” created (' + (cOut.data.files_written || built.length) + ' files' + extra + ') and activated. Reloading…'; }
-								setTimeout(function () { location.reload(); }, 1400);
+								var extra = fin.pages_created ? (fin.pages_created + ' pages' + (fin.menu_built ? ' + menu' : '')) : (cOut.data.files_written || built.length) + ' files';
+								stepState('write', 'done', extra);
+								var themeName = cOut.data.name || brand;
+								// QA passes: check, then a final revision. Both non-fatal.
+								return reviewPass('check').then(function () {
+									return reviewPass('revise', 'any remaining invisible or hidden content, header/nav or mobile-menu selector mismatches, JS using a library that functions.php does not enqueue, PHP errors, or horizontal overflow');
+								}).then(function () {
+									finishAllSteps();
+									if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + '), checked and activated. Reloading…'; }
+									setTimeout(function () { location.reload(); }, 1500);
+								});
 							});
 						}
-						var batch = batches[b];
-						setProgress(b, totalB, 'Designing & building your theme… (' + (b + 1) + '/' + totalB + ')');
-						return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: batch }).then(function (fOut) {
+						phaseProgress('build', (b + 1) + '/' + totalB);
+						return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: batches[b] }).then(function (fOut) {
 							if (!fOut.ok || !fOut.data || fOut.data.success === false || !Array.isArray(fOut.data.files) || !fOut.data.files.length) {
 								throw new Error(errText(fOut, 'Could not generate a batch of files.'));
 							}
