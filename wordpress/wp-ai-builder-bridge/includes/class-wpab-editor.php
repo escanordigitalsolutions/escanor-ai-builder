@@ -168,7 +168,144 @@ final class WPAB_Editor {
 
 		$result = WPAB_Theme_Writer::create( $brand, $files, $meta );
 
-		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		// Phase E: with the theme written and active, materialise the site —
+		// create the pages (each picks up its page-{slug}.php template via the
+		// WordPress template hierarchy), set the front page and build the menu.
+		$blueprint = isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ? $params['blueprint'] : array();
+
+		if ( ! empty( $blueprint ) ) {
+			try {
+				$result['finalize'] = self::finalize_generated_site( $blueprint );
+			} catch ( \Throwable $e ) {
+				$result['finalize'] = array( 'ok' => false, 'error' => $e->getMessage() );
+			}
+		}
+
+		return new WP_REST_Response( $result, 200 );
+	}
+
+	/**
+	 * Create the WordPress pages a blueprint describes, wire the front page and
+	 * build the primary menu. Idempotent by slug: a page that already exists is
+	 * reused, the menu is rebuilt each time. Templates are picked up
+	 * automatically by the page-{slug}.php hierarchy — no per-page meta needed.
+	 */
+	private static function finalize_generated_site( array $blueprint ): array {
+		$pages      = isset( $blueprint['pages'] ) && is_array( $blueprint['pages'] ) ? $blueprint['pages'] : array();
+		$front_slug = isset( $blueprint['frontPage'] ) ? sanitize_title( (string) $blueprint['frontPage'] ) : '';
+		$menu_items = isset( $blueprint['menu'] ) && is_array( $blueprint['menu'] ) ? $blueprint['menu'] : array();
+
+		$created  = array(); // slug => page id
+		$front_id = 0;
+
+		foreach ( $pages as $p ) {
+			if ( ! is_array( $p ) ) {
+				continue;
+			}
+
+			$slug  = isset( $p['slug'] ) ? sanitize_title( (string) $p['slug'] ) : '';
+			$title = isset( $p['title'] ) ? sanitize_text_field( (string) $p['title'] ) : '';
+
+			if ( '' === $slug || '' === $title ) {
+				continue;
+			}
+
+			$existing = get_page_by_path( $slug );
+
+			if ( $existing instanceof WP_Post ) {
+				$created[ $slug ] = (int) $existing->ID;
+			} else {
+				$id = wp_insert_post(
+					array(
+						'post_type'    => 'page',
+						'post_status'  => 'publish',
+						'post_title'   => $title,
+						'post_name'    => $slug,
+						'post_content' => '',
+					),
+					true
+				);
+
+				if ( is_wp_error( $id ) ) {
+					continue;
+				}
+
+				$created[ $slug ] = (int) $id;
+			}
+
+			if ( $slug === $front_slug ) {
+				$front_id = $created[ $slug ];
+			}
+		}
+
+		// Static front page (front-page.php still wins for rendering, but this
+		// makes the front a real page rather than the blog index).
+		if ( $front_id > 0 ) {
+			update_option( 'show_on_front', 'page' );
+			update_option( 'page_on_front', $front_id );
+		}
+
+		// Build the primary menu from the blueprint order.
+		$menu_built = false;
+
+		if ( ! empty( $menu_items ) && function_exists( 'wp_create_nav_menu' ) ) {
+			$menu_name = 'Primary';
+			$menu_obj  = wp_get_nav_menu_object( $menu_name );
+			$menu_id   = $menu_obj ? (int) $menu_obj->term_id : (int) wp_create_nav_menu( $menu_name );
+
+			if ( $menu_id && ! is_wp_error( $menu_id ) ) {
+				// Clear existing items so regeneration does not stack duplicates.
+				$existing_items = wp_get_nav_menu_items( $menu_id );
+				if ( is_array( $existing_items ) ) {
+					foreach ( $existing_items as $item ) {
+						wp_delete_post( (int) $item->ID, true );
+					}
+				}
+
+				foreach ( $menu_items as $mi ) {
+					if ( ! is_array( $mi ) ) {
+						continue;
+					}
+
+					$mslug  = isset( $mi['slug'] ) ? sanitize_title( (string) $mi['slug'] ) : '';
+					$mtitle = isset( $mi['title'] ) ? sanitize_text_field( (string) $mi['title'] ) : '';
+
+					if ( isset( $created[ $mslug ] ) ) {
+						wp_update_nav_menu_item(
+							$menu_id,
+							0,
+							array(
+								'menu-item-title'     => '' !== $mtitle ? $mtitle : get_the_title( $created[ $mslug ] ),
+								'menu-item-object'    => 'page',
+								'menu-item-object-id' => $created[ $mslug ],
+								'menu-item-type'      => 'post_type',
+								'menu-item-status'    => 'publish',
+							)
+						);
+					}
+				}
+
+				$locations = get_theme_mod( 'nav_menu_locations' );
+				if ( ! is_array( $locations ) ) {
+					$locations = array();
+				}
+				$locations['primary'] = $menu_id;
+				set_theme_mod( 'nav_menu_locations', $locations );
+
+				$menu_built = true;
+			}
+		}
+
+		return array(
+			'ok'            => true,
+			'pages_created' => count( $created ),
+			'front_page'    => $front_id > 0,
+			'menu_built'    => $menu_built,
+		);
 	}
 
 	/**
@@ -789,13 +926,16 @@ final class WPAB_Editor {
 							return wpost(cfg.restCreateTheme, {
 								brand: brand,
 								description: (blueprint.theme && blueprint.theme.description) || '',
-								files: built
+								files: built,
+								blueprint: blueprint
 							}).then(function (cOut) {
 								if (!cOut.ok || !cOut.data || cOut.data.success === false) {
 									throw new Error(errText(cOut, 'Could not write the theme.'));
 								}
-								if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + (cOut.data.name || brand) + '” created (' + (cOut.data.files_written || built.length) + ' files) and activated. Reloading…'; }
-								setTimeout(function () { location.reload(); }, 1200);
+								var fin = cOut.data.finalize || {};
+								var extra = fin.pages_created ? (', ' + fin.pages_created + ' pages' + (fin.menu_built ? ' + menu' : '')) : '';
+								if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + (cOut.data.name || brand) + '” created (' + (cOut.data.files_written || built.length) + ' files' + extra + ') and activated. Reloading…'; }
+								setTimeout(function () { location.reload(); }, 1400);
 							});
 						}
 						var path = files[i];
