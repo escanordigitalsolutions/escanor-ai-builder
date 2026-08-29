@@ -1184,6 +1184,9 @@ final class WPAB_Editor {
 					</div>
 				</div>
 				<form id="wpab-ed-form" class="wpab-ed__form" autocomplete="off">
+					<div id="wpab-ed-selrow" class="wpab-ed__selrow" hidden>
+						<span class="wpab-ed__seltag"><span class="tgt" id="wpab-ed-seltgt"></span><span class="sec" id="wpab-ed-selsec"></span><button type="button" class="x" id="wpab-ed-selclear" title="Remove selection">&times;</button></span>
+					</div>
 					<textarea id="wpab-ed-input" class="wpab-ed__input" rows="1" placeholder="Ask about this site…"></textarea>
 					<div class="wpab-ed__formrow">
 						<span class="wpab-ed__formtools">
@@ -1298,20 +1301,22 @@ final class WPAB_Editor {
 			.wpab-ed__wbtn--ghost:hover:not(:disabled) { background: var(--ed-surface-2); color: var(--ed-text); }
 			.wpab-ed__preview { position: absolute; inset: 0; background: #f1f0ee; }
 			.wpab-ed__frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
-			.wpab-ed__chat { position: absolute; left: 25%; width: 50%; bottom: 14px; z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; max-height: 70vh; background: transparent; border: 0; box-shadow: none; overflow: visible; pointer-events: none; }
+			.wpab-ed__chat { position: absolute; left: 25%; width: 50%; bottom: 14px; z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; max-height: 70vh; background: transparent; border: 0; box-shadow: none; overflow: visible; pointer-events: none; transition: left .4s cubic-bezier(.2,.75,.25,1), width .4s cubic-bezier(.2,.75,.25,1), height .4s cubic-bezier(.2,.75,.25,1); }
 			.wpab-ed__chat > * { pointer-events: auto; }
-			.wpab-ed__chat.is-large { height: 78vh; max-height: 78vh; background: rgba(255,255,255,.92); border: 1px solid var(--ed-border); border-radius: var(--ed-radius); box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(20px) saturate(1.3); backdrop-filter: blur(20px) saturate(1.3); overflow: hidden; justify-content: flex-start; }
+			.wpab-ed__chat.is-large { left: 7%; width: 86%; height: 87vh; max-height: 87vh; background: rgba(255,255,255,.94); border: 1px solid var(--ed-border); border-radius: var(--ed-radius); box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(20px) saturate(1.3); backdrop-filter: blur(20px) saturate(1.3); overflow: hidden; justify-content: flex-start; }
 			@media (max-width: 1100px) { .wpab-ed__chat { left: 6%; width: 88%; } }
 			.wpab-ed__expand { background: none; border: 0; color: var(--ed-muted); font-size: 15px; cursor: pointer; line-height: 1; padding: 2px 7px; border-radius: 6px; }
 			.wpab-ed__expand:hover { background: var(--ed-surface-2); color: var(--ed-text); }
 			.wpab-ed__notice { margin: 12px; padding: 11px 13px; border-radius: 10px; background: #fdecec; border: 1px solid #f5c2c2; color: #b42318; font-size: 13px; }
 			.wpab-ed__notice a { color: #b42318; }
-			.wpab-ed__thread { flex: 0 1 auto; overflow-y: auto; max-height: 46vh; padding: 6px 2px 12px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin; }
-			.wpab-ed__chat.is-large .wpab-ed__thread { flex: 1 1 auto; overflow-y: auto; justify-content: flex-start; padding: 14px; }
+			.wpab-ed__thread { flex: 0 1 auto; overflow-y: auto; max-height: 132px; padding: 20px 2px 12px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 34px); mask-image: linear-gradient(to bottom, transparent 0, #000 34px); }
+			.wpab-ed__thread::-webkit-scrollbar { display: none; }
+			.wpab-ed__chat.is-large .wpab-ed__thread { flex: 1 1 auto; overflow-y: auto; max-height: none; justify-content: flex-start; padding: 14px; -webkit-mask-image: none; mask-image: none; scrollbar-width: thin; }
+			.wpab-ed__chat.is-large .wpab-ed__thread::-webkit-scrollbar { display: block; width: 8px; }
 			.wpab-ed__empty { display: none; }
 			.wpab-ed__chat.is-large .wpab-ed__empty { display: block; color: var(--ed-faint); font-size: 13px; line-height: 1.6; margin: 0; }
-			.wpab-msg { display: flex; flex-direction: column; gap: 2px; animation: wpabmsgin .5s cubic-bezier(.2,.75,.25,1); transition: opacity 1.1s ease, transform 1.1s ease; }
-			@keyframes wpabmsgin { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+			.wpab-msg { display: flex; flex-direction: column; gap: 2px; animation: wpabmsgin .85s cubic-bezier(.16,.7,.2,1); transition: opacity 1.4s ease, transform 1.4s ease; }
+			@keyframes wpabmsgin { from { opacity: 0; transform: translateY(22px) scale(.985); filter: blur(2px); } to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
 			.wpab-msg__role { display: none; }
 			.wpab-msg__body { font-size: 13.5px; line-height: 1.55; color: #33312d; word-wrap: break-word; max-width: 82%; padding: 9px 14px; border-radius: 16px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.75); box-shadow: 0 10px 30px -14px rgba(20,19,18,.28); -webkit-backdrop-filter: blur(14px) saturate(1.25); backdrop-filter: blur(14px) saturate(1.25); align-self: flex-start; border-bottom-left-radius: 5px; }
 			.wpab-ed__chat.is-large .wpab-msg__body { background: rgba(20,19,18,.05); border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
@@ -1339,6 +1344,15 @@ final class WPAB_Editor {
 			.wpab-ed__undo:hover:not(:disabled) { border-color: var(--ed-accent); color: var(--ed-accent); }
 			.wpab-ed__undo:disabled { opacity: .55; cursor: default; }
 			.wpab-ed__editdone { font-weight: 600; color: var(--ed-text); }
+			.wpab-ed__selrow[hidden] { display: none !important; }
+			.wpab-ed__selrow { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; animation: wpabmsgin .5s ease; }
+			.wpab-ed__seltag { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; background: rgba(20,19,18,.06); border: 1px solid rgba(20,19,18,.12); border-radius: 9px; padding: 5px 10px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #141312; }
+			.wpab-ed__seltag .tgt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 420px; }
+			.wpab-ed__seltag .sec { color: var(--ed-faint); font-family: inherit; }
+			.wpab-ed__seltag .x { border: 0; background: none; cursor: pointer; color: var(--ed-muted); font-size: 13px; line-height: 1; padding: 0 2px; }
+			.wpab-ed__seltag .x:hover { color: #141312; }
+			.wpab-msg .wpab-ed__seltag { margin-bottom: 6px; background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.3); color: #fff; align-self: flex-end; }
+			.wpab-msg .wpab-ed__seltag .sec { color: rgba(255,255,255,.65); }
 			.wpab-ed__plansteps { margin: 8px 0 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ed-muted); }
 			.wpab-ed__plansteps li { margin-bottom: 3px; }
 			.wpab-ed__chips2 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
@@ -1425,11 +1439,19 @@ final class WPAB_Editor {
 					});
 				});
 			}
-			function addMessage(role, body) {
+			function addMessage(role, body, sel) {
 				var empty = thread.querySelector('.wpab-ed__empty');
 				if (empty) { empty.remove(); }
 				var wrap = document.createElement('div');
 				wrap.className = 'wpab-msg wpab-msg--' + role;
+				if (sel) {
+					var chip = document.createElement('span');
+					chip.className = 'wpab-ed__seltag';
+					chip.innerHTML = '<span class="tgt"></span><span class="sec"></span>';
+					chip.firstChild.textContent = '\u2316 ' + sel.short;
+					chip.lastChild.textContent = sel.sec ? '\u00b7 ' + sel.sec : '';
+					wrap.appendChild(chip);
+				}
 				var html = role === 'assistant' ? renderMarkdown(body) : escapeHtml(body);
 				wrap.innerHTML = '<div class="wpab-msg__role">' + (role === 'user' ? 'You' : 'AI') + '</div><div class="wpab-msg__body">' + html + '</div>';
 				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
@@ -1627,8 +1649,8 @@ final class WPAB_Editor {
 				});
 			}
 
-			function sendChat(message) {
-				addMessage('user', message);
+			function sendChat(message, displayText, sel) {
+				addMessage('user', displayText || message, sel || null);
 				setBusy(true);
 				var typing = addTyping();
 				var body = { message: message };
@@ -1661,7 +1683,11 @@ final class WPAB_Editor {
 					var v = (input.value || '').trim();
 					if (!v) { return; }
 					input.value = ''; input.style.height = 'auto';
-					sendChat(v);
+					var sel = selTarget;
+					selTarget = null;
+					renderSelChip();
+					var full = sel ? sel.full + ' \u2014 ' + v : v;
+					sendChat(full, v, sel);
 				});
 			}
 			if (input) {
@@ -1802,11 +1828,27 @@ final class WPAB_Editor {
 					else if (sec.tagName) { secName = sec.tagName.toLowerCase(); }
 				}
 				var txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
-				var out = 'Selected element: ' + parts.join(' > ');
-				if (secName) { out += ' (inside ' + secName + ')'; }
-				if (txt) { out += ', text: "' + txt + (txt.length >= 60 ? '\u2026' : '') + '"'; }
-				return out;
+				var full = 'Selected element: ' + parts.join(' > ');
+				if (secName) { full += ' (inside ' + secName + ')'; }
+				if (txt) { full += ', text: "' + txt + (txt.length >= 60 ? '\u2026' : '') + '"'; }
+				return { full: full, short: parts[parts.length - 1] || 'element', sec: secName };
 			}
+
+			var selTarget = null;
+			var selRow = $('wpab-ed-selrow');
+			function renderSelChip() {
+				if (!selRow) { return; }
+				if (!selTarget) { selRow.hidden = true; return; }
+				var tgt = $('wpab-ed-seltgt');
+				var sec = $('wpab-ed-selsec');
+				if (tgt) { tgt.textContent = '\u2316 ' + selTarget.short; }
+				if (sec) { sec.textContent = selTarget.sec ? '\u00b7 ' + selTarget.sec : ''; }
+				selRow.hidden = false;
+			}
+			(function () {
+				var xBtn = $('wpab-ed-selclear');
+				if (xBtn) { xBtn.addEventListener('click', function () { selTarget = null; renderSelChip(); }); }
+			})();
 
 			function inspectCleanup() {
 				if (inspectHovered) {
@@ -1835,14 +1877,10 @@ final class WPAB_Editor {
 			function inspectClick(e) {
 				e.preventDefault();
 				e.stopPropagation();
-				var desc = inspectDescriptor(e.target);
+				selTarget = inspectDescriptor(e.target);
 				setInspect(false);
-				if (input) {
-					var cur = (input.value || '').trim();
-					input.value = desc + ' \u2014 ' + cur;
-					input.focus();
-					try { input.setSelectionRange(input.value.length, input.value.length); } catch (er) {}
-				}
+				renderSelChip();
+				if (input) { input.focus(); }
 			}
 			function inspectAttach() {
 				var fr = $('wpab-ed-frame');

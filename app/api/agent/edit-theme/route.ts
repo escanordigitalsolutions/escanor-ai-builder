@@ -77,6 +77,11 @@ function parseOutput(text: string): { summary: string; files: { path: string; co
     const path = m[1].trim().replace(/^`+|`+$/g, "");
     let contents = m[2].replace(/^﻿/, "");
     contents = contents.replace(/\n?===\s*WPAB_END\s*===[\s\S]*$/, "");
+    // Cheap models sometimes wrap file contents in markdown fences — strip
+    // them so ```php never ends up inside a real theme file.
+    contents = contents
+      .replace(/^\s*```[a-zA-Z]*\s*\r?\n/, "")
+      .replace(/\r?\n```\s*$/, "");
     if (path) {
       files.push({ path, contents: contents.replace(/\s+$/, "") + "\n" });
     }
