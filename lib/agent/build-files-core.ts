@@ -49,6 +49,27 @@ function parseFiles(text: string): { path: string; contents: string }[] {
   return out;
 }
 
+const PORT_INSTRUCTIONS = `You are porting an APPROVED homepage design mockup into classic PHP WordPress theme files. The design is FINAL — reproduce it faithfully; adapt to WordPress, never redesign.
+
+1. assets/css/main.css: start from the MOCKUP CSS essentially verbatim — keep its selectors, tokens and values. Add only what is missing: the mobile nav open/close states (.site-nav.is-open, .site-header.is-scrolled, body.nav-open) and styles for files that have no mockup fragment, written in the same design system.
+2. A file that has a FRAGMENT below: convert that fragment to PHP keeping its markup, classes, copy and images EXACTLY. Replace the brand name with bloginfo('name') where natural and internal links with esc_url(home_url('/<slug>')). Keep <img> placeholder URLs as-is.
+3. header.php: the header fragment plus the WordPress head — <!DOCTYPE html>, wp_head(), body_class(), wp_body_open(). Give the header element data-header, replace the mockup's nav list with wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ) inside <nav class="site-nav" data-nav>, give the hamburger button data-nav-toggle and aria-expanded="false"; then open <main>. footer.php: close </main>, the footer fragment, wp_footer(), </body></html>.
+4. Files WITHOUT a fragment (inner page templates, index/single/404/searchform, extra sections): build them in the mockup's design system — reuse its classes, tokens, spacing and rhythm so they look like the same site.
+5. Templates start with get_header() and end with get_footer(); pages include sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output (esc_html, esc_url, esc_attr). functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the GOOGLE FONTS URLS listed below, get_stylesheet_uri(), assets/css/main.css and assets/js/main.js (footer) with filemtime() cache-busting; no external JS libraries; prefix functions with the textDomain. assets/js/main.js: vanilla only — the nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header] on scroll. style.css: the WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base.
+6. No PHP that executes code or touches the filesystem/network (eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback or similar).
+
+Output each requested path, in order:
+===WPAB_FILE:<path>===
+<complete raw contents>
+===WPAB_END===
+Your reply starts at the first marker and ends at the last ===WPAB_END===; paths copied exactly; no other text, no fences.`;
+
+export type MockupCtx = {
+  css?: string;
+  fonts?: string[];
+  fragments?: Record<string, string>;
+};
+
 export type BuildFilesResult = {
   files: { path: string; contents: string }[];
   truncated: boolean;
@@ -59,18 +80,37 @@ export type BuildFilesResult = {
 export async function generateBuildFiles(
   modelConfig: unknown,
   blueprint: unknown,
-  paths: string[]
+  paths: string[],
+  mockup?: MockupCtx | null
 ): Promise<BuildFilesResult> {
   const model = pickModel(modelConfig, "build");
 
+  let input = `Blueprint:\n${JSON.stringify(blueprint)}\n\n`;
+  if (mockup) {
+    if (mockup.fonts && mockup.fonts.length) {
+      input += `GOOGLE FONTS URLS:\n${mockup.fonts.join("\n")}\n\n`;
+    }
+    if (mockup.css && paths.includes("assets/css/main.css")) {
+      input += `MOCKUP CSS:\n${mockup.css}\n\n`;
+    }
+    if (mockup.fragments) {
+      for (const p of paths) {
+        const frag = mockup.fragments[p];
+        if (typeof frag === "string" && frag) {
+          input += `FRAGMENT for ${p}:\n${frag}\n\n`;
+        }
+      }
+    }
+  }
+  input +=
+    `Generate the complete contents of these files, in this order:\n` +
+    paths.map((p) => `- ${p}`).join("\n");
+
   const gen = await generateText({
     model,
-    system: INSTRUCTIONS,
+    system: mockup ? PORT_INSTRUCTIONS : INSTRUCTIONS,
     maxTokens: 32000,
-    input:
-      `Blueprint:\n${JSON.stringify(blueprint)}\n\n` +
-      `Generate the complete contents of these files, in this order:\n` +
-      paths.map((p) => `- ${p}`).join("\n"),
+    input,
   });
 
   const parsed = parseFiles(gen.text);
@@ -110,4 +150,38 @@ export async function generateBuildFiles(
   );
 
   return { files, truncated: gen.truncated, usage: gen.usage, model };
+}
+
+/** Validate/trim a mockup context arriving from the WordPress side. */
+export function readMockupCtx(value: unknown): MockupCtx | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const v = value as Record<string, unknown>;
+  const out: MockupCtx = {};
+  if (typeof v.css === "string" && v.css.length <= 300000) {
+    out.css = v.css;
+  }
+  if (Array.isArray(v.fonts)) {
+    out.fonts = v.fonts
+      .filter(
+        (f): f is string =>
+          typeof f === "string" && f.startsWith("https://fonts.googleapis.com/")
+      )
+      .slice(0, 4);
+  }
+  if (v.fragments && typeof v.fragments === "object") {
+    const frags: Record<string, string> = {};
+    for (const [k, val] of Object.entries(v.fragments as Record<string, unknown>)) {
+      if (typeof val === "string" && val.length <= 150000 && Object.keys(frags).length < 15) {
+        frags[k] = val;
+      }
+    }
+    out.fragments = frags;
+  }
+  return out.css ||
+    (out.fragments && Object.keys(out.fragments).length) ||
+    (out.fonts && out.fonts.length)
+    ? out
+    : null;
 }

@@ -109,6 +109,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/design/mockup-start',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_mockup_start' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/edit-theme',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -164,7 +173,12 @@ final class WPAB_Editor {
 			return new WP_Error( 'wpab_plan_empty', 'A brief is required.', array( 'status' => 400 ) );
 		}
 
-		$result = WPAB_Cloud::request( 'agent/build-plan', array( 'brief' => $brief ), 90 );
+		$plan_payload = array( 'brief' => $brief );
+		if ( isset( $params['mockupSections'] ) && is_array( $params['mockupSections'] ) ) {
+			$plan_payload['mockupSections'] = array_slice( array_values( array_map( 'sanitize_key', $params['mockupSections'] ) ), 0, 10 );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/build-plan', $plan_payload, 90 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -211,14 +225,15 @@ final class WPAB_Editor {
 			return new WP_Error( 'wpab_files_bad', 'A blueprint and paths are required.', array( 'status' => 400 ) );
 		}
 
-		$result = WPAB_Cloud::request(
-			'agent/build-files',
-			array(
-				'blueprint' => $blueprint,
-				'paths'     => $paths,
-			),
-			180
+		$files_payload = array(
+			'blueprint' => $blueprint,
+			'paths'     => $paths,
 		);
+		if ( isset( $params['mockup'] ) && is_array( $params['mockup'] ) ) {
+			$files_payload['mockup'] = $params['mockup'];
+		}
+
+		$result = WPAB_Cloud::request( 'agent/build-files', $files_payload, 180 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -246,14 +261,15 @@ final class WPAB_Editor {
 			return new WP_Error( 'wpab_files_bad', 'A blueprint and paths are required.', array( 'status' => 400 ) );
 		}
 
-		$result = WPAB_Cloud::request(
-			'agent/build-files-start',
-			array(
-				'blueprint' => $blueprint,
-				'paths'     => $paths,
-			),
-			30
+		$files_payload = array(
+			'blueprint' => $blueprint,
+			'paths'     => $paths,
 		);
+		if ( isset( $params['mockup'] ) && is_array( $params['mockup'] ) ) {
+			$files_payload['mockup'] = $params['mockup'];
+		}
+
+		$result = WPAB_Cloud::request( 'agent/build-files-start', $files_payload, 30 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -268,6 +284,26 @@ final class WPAB_Editor {
 		}
 
 		$result = WPAB_Cloud::request( 'agent/job-status', array( 'jobId' => $job_id ), 20 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Design-first: START the homepage mockup job on the SaaS. */
+	public static function rest_mockup_start( WP_REST_Request $request ) {
+		if ( function_exists( 'set_time_limit' ) ) { @set_time_limit( 300 ); }
+		$params = self::json_params( $request );
+		$brief  = isset( $params['brief'] ) && is_array( $params['brief'] ) ? $params['brief'] : array();
+
+		if ( empty( $brief ) ) {
+			return new WP_Error( 'wpab_mock_bad', 'A brief is required.', array( 'status' => 400 ) );
+		}
+
+		$payload = array( 'brief' => $brief );
+		if ( isset( $params['variation'] ) && is_string( $params['variation'] ) ) {
+			$payload['variation'] = substr( $params['variation'], 0, 500 );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/design-mockup-start', $payload, 30 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -840,6 +876,7 @@ final class WPAB_Editor {
 			'restBuildFiles'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files' ) ),
 			'restBuildFilesStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files-start' ) ),
 			'restBuildJob'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/job' ) ),
+			'restMockupStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/mockup-start' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
@@ -873,14 +910,22 @@ final class WPAB_Editor {
 
 					<div id="wpab-ed-wprogress" class="wpab-ed__wprogress" hidden>
 						<ol class="wpab-ed__steps" id="wpab-ed-steps">
-							<li class="wpab-ed__step" data-phase="plan"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Setting the art direction</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="design"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Designing the homepage</span><span class="wpab-ed__stepmeta"></span></li>
+							<li class="wpab-ed__step" data-phase="plan"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Planning the pages</span><span class="wpab-ed__stepmeta"></span></li>
 							<li class="wpab-ed__step" data-phase="build"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Building the theme</span><span class="wpab-ed__stepmeta"></span></li>
 							<li class="wpab-ed__step" data-phase="write"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Writing files</span><span class="wpab-ed__stepmeta"></span></li>
-							<li class="wpab-ed__step" data-phase="refine"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Elevating the design</span><span class="wpab-ed__stepmeta"></span></li>
 							<li class="wpab-ed__step" data-phase="check"><span class="wpab-ed__stepicon"></span><span class="wpab-ed__steptext">Final quality check</span><span class="wpab-ed__stepmeta"></span></li>
 						</ol>
 						<div class="wpab-ed__wbar"><span id="wpab-ed-wbarfill" class="wpab-ed__wbarfill"></span></div>
 						<div id="wpab-ed-wstep" class="wpab-ed__wstep"></div>
+					</div>
+
+					<div id="wpab-ed-mockwrap" class="wpab-ed__mockwrap" hidden>
+						<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-same-origin"></iframe>
+						<div class="wpab-ed__mockactions">
+							<button type="button" id="wpab-ed-mockuse" class="wpab-ed__wbtn">Use this design</button>
+							<button type="button" id="wpab-ed-mockredo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Try another direction</button>
+						</div>
 					</div>
 
 					<div id="wpab-ed-wresult" class="wpab-ed__wresult"></div>
@@ -1030,6 +1075,9 @@ final class WPAB_Editor {
 			.wpab-ed__chipslead { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ed-faint); margin-right: 2px; }
 			.wpab-ed__filechip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--ed-accent-soft); border: 1px solid rgba(99,102,241,.2); color: var(--ed-accent); font-size: 11.5px; font-weight: 600; }
 			.wpab-ed__editdone + .wpab-ed__chips2 + .wpab-ed__undo, .wpab-ed__chips2 + .wpab-ed__undo { margin-top: 10px; }
+		.wpab-ed__mockwrap { margin-top: 14px; }
+		.wpab-ed__mockframe { width: 100%; height: 440px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: #fff; display: block; }
+		.wpab-ed__mockactions { display: flex; gap: 8px; margin-top: 10px; }
 		</style>
 		<?php
 		self::print_app_script( $config );
@@ -1302,7 +1350,7 @@ final class WPAB_Editor {
 			function errText(out, fallback) { return (out && out.data && (out.data.message || out.data.error)) || (out && !out.ok && out.status ? 'HTTP ' + out.status : fallback); }
 
 			// Animated step feedback ------------------------------------------------
-			var PHASES = ['plan', 'build', 'write', 'refine', 'check'];
+			var PHASES = ['design', 'plan', 'build', 'write', 'check'];
 			function stepEl(phase) { var s = $('wpab-ed-steps'); return s ? s.querySelector('[data-phase="' + phase + '"]') : null; }
 			function stepState(phase, state, meta) {
 				var el = stepEl(phase);
@@ -1358,8 +1406,8 @@ final class WPAB_Editor {
 				if (!t) { return ''; }
 				return ' · ~' + (t >= 1000 ? (Math.round(t / 100) / 10) + 'k' : t) + ' tokens';
 			}
-			function saveGenState(brand, blueprint, built) {
-				try { localStorage.setItem(GEN_STATE_KEY, JSON.stringify({ brand: brand, blueprint: blueprint, built: built, tokIn: tokIn, tokOut: tokOut, t: Date.now() })); } catch (e) {}
+			function saveGenState(brand, blueprint, built, mock) {
+				try { localStorage.setItem(GEN_STATE_KEY, JSON.stringify({ brand: brand, blueprint: blueprint, built: built, mock: mock || null, tokIn: tokIn, tokOut: tokOut, t: Date.now() })); } catch (e) {}
 			}
 			function loadGenState() {
 				try {
@@ -1377,6 +1425,7 @@ final class WPAB_Editor {
 				genToken++; // every checkpoint in the running chain now fails alive()
 				if (genAbort) { try { genAbort.abort(); } catch (e) {} }
 				busy = false;
+				var mw = $('wpab-ed-mockwrap'); if (mw) { mw.hidden = true; }
 				var st = loadGenState();
 				if (wResult) {
 					wResult.className = 'wpab-ed__wresult is-err';
@@ -1427,6 +1476,7 @@ final class WPAB_Editor {
 				return function (err) {
 					if (!alive(myRun)) { return; } // cancelled — the cancel handler already reset the UI
 					busy = false;
+					var mw2 = $('wpab-ed-mockwrap'); if (mw2) { mw2.hidden = true; }
 					var st = loadGenState();
 					if (wResult) {
 						wResult.className = 'wpab-ed__wresult is-err';
@@ -1484,7 +1534,7 @@ final class WPAB_Editor {
 
 			// The build pipeline from a blueprint: batches -> write -> refine -> check.
 			// prevBuilt carries already-generated files when resuming an earlier run.
-			function runPipeline(myRun, sig, brand, blueprint, prevBuilt) {
+			function runPipeline(myRun, sig, brand, blueprint, prevBuilt, mockCtx) {
 				var files = (blueprint.files || []).filter(function (pp) { return typeof pp === 'string' && pp; });
 				if (!files.length) { throw new Error('The plan returned no files.'); }
 				if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
@@ -1508,20 +1558,37 @@ final class WPAB_Editor {
 				for (var bi = 0; bi < rest.length; bi += 3) { batches.push(rest.slice(bi, bi + 3)); }
 				var totalB = batches.length;
 
+				// In design-first mode each batch carries only the mockup pieces it
+				// needs: the CSS for main.css, the HTML fragment for its own file.
+				function batchPayload(paths) {
+					var payload = { blueprint: blueprint, paths: paths };
+					if (mockCtx) {
+						var mk = { css: '', fonts: mockCtx.fonts || [], fragments: {} };
+						var any = !!(mockCtx.fonts && mockCtx.fonts.length);
+						for (var mi = 0; mi < paths.length; mi++) {
+							var mp2 = paths[mi];
+							if (mp2 === 'assets/css/main.css' && mockCtx.css) { mk.css = mockCtx.css; any = true; }
+							if (mockCtx.fragments && mockCtx.fragments[mp2]) { mk.fragments[mp2] = mockCtx.fragments[mp2]; any = true; }
+						}
+						if (any) { payload.mockup = mk; }
+					}
+					return payload;
+				}
+
 				// Request one batch. Preferred path: start an async job on the SaaS
 				// and poll it every few seconds — every HTTP request stays short, so
 				// no host/proxy/function timeout can kill a long model call. Falls
 				// back to the one-shot endpoint when the async pair is unavailable.
 				function requestBatch(paths) {
 					if (!cfg.restBuildFilesStart || !cfg.restBuildJob) {
-						return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: paths }, sig);
+						return wpost(cfg.restBuildFiles, batchPayload(paths), sig);
 					}
-					return wpost(cfg.restBuildFilesStart, { blueprint: blueprint, paths: paths }, sig).then(function (sOut) {
+					return wpost(cfg.restBuildFilesStart, batchPayload(paths), sig).then(function (sOut) {
 						var jobId = sOut && sOut.data && sOut.data.jobId;
 						if (!jobId) {
 							if (sOut && sOut.status === 404) {
 								// Older SaaS without the async endpoints — one-shot fallback.
-								return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: paths }, sig);
+								return wpost(cfg.restBuildFiles, batchPayload(paths), sig);
 							}
 							// Surface the start error instead of silently falling back to
 							// the long synchronous call (which shared hosts kill with 504).
@@ -1611,11 +1678,11 @@ final class WPAB_Editor {
 									setBuildDetail('Regenerating ' + friendlyName(bad) + ' — ' + wmsg.slice(0, 70) + '…');
 									built = built.filter(function (f) { return f.path !== bad; });
 									delete doneMap[bad];
-									saveGenState(brand, blueprint, built);
+									saveGenState(brand, blueprint, built, mockCtx);
 									return fetchBatchFiles([bad], 0, 1).then(function (got2) {
 										if (!alive(myRun)) { return; }
 										for (var gk = 0; gk < got2.length; gk++) { built.push(got2[gk]); doneMap[got2[gk].path] = 1; }
-										saveGenState(brand, blueprint, built);
+										saveGenState(brand, blueprint, built, mockCtx);
 										return runBatch(totalB);
 									});
 								}
@@ -1627,11 +1694,9 @@ final class WPAB_Editor {
 							var extra = fin.pages_created ? (fin.pages_created + ' pages' + (fin.menu_built ? ' + menu' : '')) : (cOut.data.files_written || built.length) + ' files';
 							stepState('write', 'done', extra);
 							var themeName = cOut.data.name || brand;
-							// Elevate the design (staged, per-file), then a final correctness
-							// check to clean up anything the elevation touched. Both non-fatal.
-							return designRevise(myRun, sig, blueprint).then(function () {
-								return reviewPass(myRun, sig, 'check', 'any invisible or hidden content, header/nav or mobile-menu selector mismatches, JS using a library that functions.php does not enqueue, PHP errors, horizontal overflow, or empty image placeholders');
-							}).then(function () {
+							// The design was approved at the mockup stage — go straight to
+							// the correctness check. Non-fatal.
+							return reviewPass(myRun, sig, 'check', 'any invisible or hidden content, header/nav or mobile-menu selector mismatches, PHP errors, horizontal overflow, or empty image placeholders').then(function () {
 								if (!alive(myRun)) { return; }
 								finishAllSteps();
 								if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + tokLabel() + '), designed and activated. Reloading…'; }
@@ -1644,7 +1709,7 @@ final class WPAB_Editor {
 					return fetchBatchFiles(batches[b], b, totalB).then(function (got) {
 						if (!alive(myRun)) { return; }
 						for (var k = 0; k < got.length; k++) { built.push(got[k]); doneMap[got[k].path] = 1; }
-						saveGenState(brand, blueprint, built);
+						saveGenState(brand, blueprint, built, mockCtx);
 						return runBatch(b + 1);
 					});
 				}
@@ -1668,10 +1733,21 @@ final class WPAB_Editor {
 				tokIn = 0; tokOut = 0;
 				clearGenState();
 				beginBusyUI();
-				phaseProgress('plan');
-				setBuildDetail('Designing the layout, palette and sections…');
 
-				wpost(cfg.restBuildPlan, { brief: brief }, sig).then(function (out) {
+				// Design-first: compose and approve the homepage BEFORE building.
+				if (cfg.restMockupStart && cfg.restBuildJob) {
+					startDesignPhase(myRun, sig, brief, '');
+					return;
+				}
+
+				stepState('design', 'done', 'skipped');
+				runPlan(myRun, sig, brief, [], null);
+			}
+
+			function runPlan(myRun, sig, brief, mockupSections, mockCtx) {
+				phaseProgress('plan');
+				setBuildDetail('Planning the pages…');
+				wpost(cfg.restBuildPlan, { brief: brief, mockupSections: mockupSections || [] }, sig).then(function (out) {
 					if (!alive(myRun)) { return; }
 					if (!out.ok || !out.data || out.data.success === false || !out.data.blueprint) {
 						throw new Error(errText(out, 'Could not plan the theme.'));
@@ -1680,8 +1756,93 @@ final class WPAB_Editor {
 					stepState('plan', 'done');
 					var blueprint = out.data.blueprint;
 					var brand = brief.name || (blueprint.theme && blueprint.theme.name) || 'Custom Theme';
-					return runPipeline(myRun, sig, brand, blueprint, []);
+					return runPipeline(myRun, sig, brand, blueprint, [], mockCtx);
 				}).catch(genFail(myRun));
+			}
+
+			// Design phase: one strong-model job composes the whole homepage as a
+			// single HTML file; the user reviews it in an iframe and approves it
+			// before a single theme file is written.
+			function startDesignPhase(myRun, sig, brief, variation) {
+				phaseProgress('design');
+				setBuildDetail(variation ? 'Designing a different direction…' : 'Designing the homepage…');
+				var started = Date.now();
+				wpost(cfg.restMockupStart, { brief: brief, variation: variation || '' }, sig).then(function (sOut) {
+					if (!alive(myRun)) { return; }
+					var jobId = sOut && sOut.data && sOut.data.jobId;
+					if (!jobId) { throw new Error(errText(sOut, 'Could not start the design step.')); }
+					function poll() {
+						if (!alive(myRun)) { throw new Error('Stopped.'); }
+						if (Date.now() - started > 480000) { throw new Error('The design step timed out.'); }
+						return delay(3500).then(function () {
+							if (!alive(myRun)) { throw new Error('Stopped.'); }
+							return wpost(cfg.restBuildJob, { jobId: jobId }, sig);
+						}).then(function (jOut) {
+							var d = (jOut && jOut.data) || {};
+							if (d.status === 'done') { return d.result || {}; }
+							if (d.status === 'error') { throw new Error(d.error || 'The design step failed.'); }
+							if (!jOut.ok) { throw new Error(errText(jOut, 'The design step failed.')); }
+							setBuildDetail('Designing the homepage… ' + Math.round((Date.now() - started) / 1000) + 's');
+							return poll();
+						});
+					}
+					return poll();
+				}).then(function (mock) {
+					if (!alive(myRun) || !mock) { return; }
+					addTok(mock);
+					showMockup(myRun, sig, brief, mock);
+				}).catch(genFail(myRun));
+			}
+
+			function showMockup(myRun, sig, brief, mock) {
+				stepState('design', 'done', (mock.sections && mock.sections.length ? mock.sections.length + ' sections' : ''));
+				var wrap = $('wpab-ed-mockwrap');
+				var frame = $('wpab-ed-mockframe');
+				if (!wrap || !frame) { return proceedFromMockup(myRun, sig, brief, mock); }
+				if (wProgress) { wProgress.hidden = true; }
+				frame.srcdoc = mock.html || '';
+				wrap.hidden = false;
+				setBuildDetail('');
+				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = 'Review the design' + tokLabel() + ' — use it, or try another direction.'; }
+				var useBtn = $('wpab-ed-mockuse');
+				var redoBtn = $('wpab-ed-mockredo');
+				if (useBtn) {
+					useBtn.onclick = function () {
+						if (!alive(myRun)) { return; }
+						wrap.hidden = true;
+						if (wProgress) { wProgress.hidden = false; }
+						if (wResult) { wResult.textContent = ''; }
+						proceedFromMockup(myRun, sig, brief, mock);
+					};
+				}
+				if (redoBtn) {
+					redoBtn.onclick = function () {
+						if (!alive(myRun)) { return; }
+						wrap.hidden = true;
+						if (wProgress) { wProgress.hidden = false; }
+						if (wResult) { wResult.textContent = ''; }
+						startDesignPhase(myRun, sig, brief, 'The previous design direction was rejected. Take a clearly different visual direction: a different palette family, a different typography feel, a different hero structure.');
+					};
+				}
+			}
+
+			function buildMockCtx(mock) {
+				var frags = {};
+				if (mock.header) { frags['header.php'] = mock.header; }
+				if (mock.footer) { frags['footer.php'] = mock.footer; }
+				var secs = mock.sections || [];
+				for (var si2 = 0; si2 < secs.length; si2++) {
+					var sc = secs[si2];
+					if (sc && sc.slug && sc.html) { frags['template-parts/section-' + sc.slug + '.php'] = sc.html; }
+				}
+				return { css: mock.css || '', fonts: mock.fonts || [], fragments: frags };
+			}
+
+			function proceedFromMockup(myRun, sig, brief, mock) {
+				var slugs = [];
+				var secs = mock.sections || [];
+				for (var si3 = 0; si3 < secs.length; si3++) { if (secs[si3] && secs[si3].slug) { slugs.push(secs[si3].slug); } }
+				runPlan(myRun, sig, brief, slugs, buildMockCtx(mock));
 			}
 
 			function resumeRun(st) {
@@ -1694,7 +1855,7 @@ final class WPAB_Editor {
 				beginBusyUI();
 				stepState('plan', 'done');
 				Promise.resolve().then(function () {
-					return runPipeline(myRun, sig, st.brand || 'Custom Theme', st.blueprint, st.built);
+					return runPipeline(myRun, sig, st.brand || 'Custom Theme', st.blueprint, st.built, st.mock || null);
 				}).catch(genFail(myRun));
 			}
 

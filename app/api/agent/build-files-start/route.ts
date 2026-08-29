@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
-import { generateBuildFiles } from "@/lib/agent/build-files-core";
+import { generateBuildFiles, readMockupCtx } from "@/lib/agent/build-files-core";
 
 // The response returns immediately with a job id, but the generation itself
 // runs in after() — it needs the full duration budget.
@@ -59,6 +59,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const mockup = readMockupCtx(body.mockup);
+
   const projectId = auth.context.projectId;
   const supabase = createServiceClient();
 
@@ -107,7 +109,7 @@ export async function POST(request: NextRequest) {
   after(async () => {
     const db = createServiceClient();
     try {
-      const result = await generateBuildFiles(modelConfig, blueprint, paths);
+      const result = await generateBuildFiles(modelConfig, blueprint, paths, mockup);
       const ok = result.files.length > 0;
       await db
         .from("ai_jobs")

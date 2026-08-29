@@ -80,7 +80,7 @@ const CORE_FILES = [
  * from pages + sections. The model's own "files" (if any) are ignored, so a
  * template can never call a template-part that is missing from the build.
  */
-function normalizeBlueprint(bp: Json): void {
+function normalizeBlueprint(bp: Json, mockupSections: string[] = []): void {
   type Section = { slug: string } & Json;
   type Page = { slug: string; sections?: unknown } & Json;
 
@@ -94,6 +94,22 @@ function normalizeBlueprint(bp: Json): void {
     seen.add(slug);
     sections.push({ ...(s as Json), slug } as Section);
     if (sections.length >= 10) break;
+  }
+
+  // Design-first mode: the homepage mockup fixes the section universe. Every
+  // mockup section exists (add a stub when the model forgot it) and nothing
+  // outside the mockup survives.
+  if (mockupSections.length) {
+    const bySlug = new Map(sections.map((x) => [x.slug, x]));
+    sections.length = 0;
+    seen.clear();
+    for (const slug of mockupSections) {
+      seen.add(slug);
+      sections.push(
+        (bySlug.get(slug) as Section) ??
+          ({ slug, type: "custom", layout: "", look: "", copy: "" } as Section)
+      );
+    }
   }
 
   const front = typeof bp.frontPage === "string" ? bp.frontPage : "";
@@ -112,6 +128,16 @@ function normalizeBlueprint(bp: Json): void {
       : [];
     pages.push({ ...(p as Json), slug, sections: secs } as Page);
     if (pages.length >= 6) break;
+  }
+
+  if (mockupSections.length) {
+    for (const p of pages) {
+      const isFront =
+        p.slug === front || (p as Json).template === "front-page.php";
+      if (isFront) {
+        (p as Json).sections = [...mockupSections];
+      }
+    }
   }
 
   // Only keep sections that some page actually uses.
@@ -159,6 +185,11 @@ export async function POST(request: NextRequest) {
   }
 
   const brief = body.brief ?? {};
+  const mockupSections = Array.isArray(body.mockupSections)
+    ? (body.mockupSections as unknown[])
+        .filter((x): x is string => typeof x === "string" && /^[a-z0-9-]+$/.test(x))
+        .slice(0, 10)
+    : [];
 
   let modelConfig: unknown = {};
   try {
@@ -179,7 +210,13 @@ export async function POST(request: NextRequest) {
     const gen = await generateText({
       model: pickModel(modelConfig, "plan"),
       system: INSTRUCTIONS,
-      input: `Brief:\n${JSON.stringify(brief, null, 2)}`,
+      input:
+        `Brief:\n${JSON.stringify(brief, null, 2)}` +
+        (mockupSections.length
+          ? `\n\nThe homepage is ALREADY DESIGNED and approved with these sections, in this order: ${mockupSections.join(
+              ", "
+            )}. Use ONLY these section slugs across all pages — do not invent new sections. The front page uses all of them in this exact order. Plan the other pages by reusing the most fitting of these sections.`
+          : ""),
       maxTokens: 8000,
     });
     text = gen.text;
@@ -205,7 +242,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  normalizeBlueprint(blueprint);
+  normalizeBlueprint(blueprint, mockupSections);
 
   if (
     !Array.isArray(blueprint.files) ||
