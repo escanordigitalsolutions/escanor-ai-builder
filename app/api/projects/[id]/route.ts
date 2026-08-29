@@ -63,6 +63,7 @@ export async function DELETE(
     "ai_apply_runs",
     "ai_jobs",
     "ai_usage",
+    "ai_designs",
     "ai_live_steps",
     "site_api_keys",
     "wordpress_sites",

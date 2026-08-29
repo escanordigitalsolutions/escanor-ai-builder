@@ -109,6 +109,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/design/status',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_design_status' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/design/mockup-start',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -304,6 +313,28 @@ final class WPAB_Editor {
 		}
 
 		$result = WPAB_Cloud::request( 'agent/design-mockup-start', $payload, 30 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Design archive: mark a design used/rejected on the SaaS. Best-effort. */
+	public static function rest_design_status( WP_REST_Request $request ) {
+		$params    = self::json_params( $request );
+		$design_id = isset( $params['designId'] ) ? trim( (string) $params['designId'] ) : '';
+		$status    = isset( $params['status'] ) ? (string) $params['status'] : '';
+
+		if ( '' === $design_id || ! in_array( $status, array( 'used', 'rejected' ), true ) ) {
+			return new WP_Error( 'wpab_dstatus_bad', 'A designId and a valid status are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request(
+			'agent/design-status',
+			array(
+				'designId' => $design_id,
+				'status'   => $status,
+			),
+			15
+		);
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -925,6 +956,7 @@ final class WPAB_Editor {
 			'restBuildFilesStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files-start' ) ),
 			'restBuildJob'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/job' ) ),
 			'restMockupStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/mockup-start' ) ),
+			'restDesignStatus' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/status' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
@@ -1907,9 +1939,15 @@ final class WPAB_Editor {
 				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = 'Review the design' + tokLabel() + ' — use it, or try another direction.'; }
 				var useBtn = $('wpab-ed-mockuse');
 				var redoBtn = $('wpab-ed-mockredo');
+				function markDesign(status) {
+					if (cfg.restDesignStatus && mock && mock.designId) {
+						wpost(cfg.restDesignStatus, { designId: mock.designId, status: status }).catch(function () {});
+					}
+				}
 				if (useBtn) {
 					useBtn.onclick = function () {
 						if (!alive(myRun)) { return; }
+						markDesign('used');
 						if (wizard) { wizard.classList.remove('is-design'); }
 						wrap.hidden = true;
 						if (wProgress) { wProgress.hidden = false; }
@@ -1920,6 +1958,7 @@ final class WPAB_Editor {
 				if (redoBtn) {
 					redoBtn.onclick = function () {
 						if (!alive(myRun)) { return; }
+						markDesign('rejected');
 						if (wizard) { wizard.classList.remove('is-design'); }
 						wrap.hidden = true;
 						if (wProgress) { wProgress.hidden = false; }

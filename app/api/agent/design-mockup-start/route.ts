@@ -82,6 +82,31 @@ export async function POST(request: NextRequest) {
       const mock = await generateMockup(modelConfig, brief, variation);
       await logUsage(projectId, "design", mock.model, mock.usage);
       const ok = mock.sections.length >= 3 && mock.css.length > 200 && !mock.truncated;
+
+      // Archive the design (every attempt, accepted or not) so nothing is lost
+      // when ai_jobs is cleaned up. Best-effort — a failed insert never blocks.
+      let designId: string | null = null;
+      if (ok) {
+        try {
+          const { data: design } = await db
+            .from("ai_designs")
+            .insert({
+              project_id: projectId,
+              brief,
+              model: mock.model,
+              html: mock.html,
+              status: "pending",
+              input_tokens: mock.usage.inputTokens,
+              output_tokens: mock.usage.outputTokens,
+            })
+            .select("id")
+            .single();
+          designId = (design?.id as string) ?? null;
+        } catch (archiveError) {
+          console.error("design archive error:", archiveError);
+        }
+      }
+
       await db
         .from("ai_jobs")
         .update({
@@ -89,6 +114,7 @@ export async function POST(request: NextRequest) {
           result: ok
             ? {
                 success: true,
+                designId,
                 html: mock.html,
                 css: mock.css,
                 header: mock.header,

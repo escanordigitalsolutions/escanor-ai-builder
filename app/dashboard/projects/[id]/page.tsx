@@ -6,6 +6,7 @@ import ProjectSiteKeys from "@/components/project-site-keys";
 import ProjectModelPanel from "@/components/project-model-panel";
 import ProjectUsagePanel from "@/components/project-usage-panel";
 import ProjectDanger from "@/components/project-danger";
+import ProjectDesignsPanel from "@/components/project-designs-panel";
 
 type Props = {
   params: Promise<{
@@ -98,6 +99,10 @@ export default async function ProjectPage({ params }: Props) {
           />
 
           <ProjectUsagePanel projectId={project.id} />
+        </div>
+
+        <div className="mt-4">
+          <ProjectDesignsPanel projectId={project.id} />
         </div>
 
         <ProjectDanger projectId={project.id} projectName={project.name} />
