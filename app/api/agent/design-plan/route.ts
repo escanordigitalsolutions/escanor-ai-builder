@@ -24,12 +24,9 @@ export const maxDuration = 300;
  * written here.
  */
 
-const INSTRUCTIONS = `You are an art director reviewing a just-generated WordPress theme. Inspect the real files with the tools (list_project_files first, then read assets/css/main.css, header.php, front-page.php and the template-parts that carry the design).
-
-Name the changes with the MOST visual impact — a stronger hero, a bolder type scale, a more distinctive section layout, better use of imagery or whitespace. Concrete, specific instructions; CSS + vanilla JS only (no libraries); keep it responsive. At most 3 targets, most impactful first.
-
-Final reply: NO tool calls, ONLY valid JSON — first character { and last character }, no markdown, no commentary:
-{ "verdict": "one short sentence", "targets": [ { "path": "template-parts/section-hero.php", "instruction": "concrete change" } ] }`;
+const INSTRUCTIONS = `Art-direct this just-generated WordPress theme toward a bespoke look. Inspect with the tools (main.css, front-page.php, section template-parts), then name at most 3 concrete changes with the biggest visual impact — bolder hero, more dramatic type scale, a more distinctive section layout, braver use of imagery or whitespace. CSS + vanilla JS only, responsive.
+Final reply: ONLY JSON, { first, } last:
+{ "verdict": "one sentence", "targets": [ { "path": "...", "instruction": "..." } ] }`;
 
 const tools: ToolDef[] = [
   {

@@ -8,24 +8,23 @@ import { generateText, type Usage } from "@/lib/ai/provider";
  * exact requested paths.
  */
 
-const INSTRUCTIONS = `You are a WordPress theme developer. Generate the requested files for a classic PHP theme, consistent with the blueprint (palette, fonts, pages, sections). Other files are generated in separate calls, so follow these conventions exactly so everything fits together.
+const INSTRUCTIONS = `Build files for a CUSTOM classic PHP WordPress theme. Express the blueprint's design.style and each section's "look" boldly: dramatic clamp() type scale, generous whitespace, varied section layouts. It must not look like a default template.
 
-- Classic theme conventions: templates start with get_header() and end with get_footer(); pages include their sections with get_template_part('template-parts/section', '<slug>') in the blueprint order; use the loop; escape output (esc_html, esc_url, esc_attr).
-- Each section file renders <section class="section section-<slug>"> and assets/css/main.css has a matching .section-<slug> block for EVERY section in the blueprint. Shared classes: .container, .btn, .btn--primary, .btn--ghost.
-- header.php: <!DOCTYPE html>, wp_head(), body_class(), wp_body_open(); a sticky <header class="site-header" data-header> with the custom logo or site title, <nav class="site-nav" data-nav> containing wp_nav_menu( array( 'theme_location' => 'primary', 'menu_class' => 'site-nav__menu', 'container' => false, 'fallback_cb' => false ) ), and a mobile <button class="site-header__toggle" data-nav-toggle aria-expanded="false">. Then open <main>.
-- footer.php: close </main>, a simple footer, wp_footer(), </body></html>.
-- functions.php: after_setup_theme (title-tag, post-thumbnails, custom-logo, html5, register_nav_menus with 'primary'); enqueue design.fonts.googleUrl, get_stylesheet_uri(), assets/css/main.css and assets/js/main.js (in the footer) with filemtime() cache-busting. NO external JS libraries. Prefix function names with the theme textDomain (underscores).
-- assets/css/main.css: :root tokens from the blueprint palette and fonts, base typography, header + mobile nav (open/closed states), buttons, footer, and one block per blueprint section. Mobile-first and responsive, no horizontal overflow. Never hide content with opacity/visibility/display in a way that needs JS to show it.
-- assets/js/main.js: small vanilla JS only — the mobile nav toggle (toggles .is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header] when scrollY > 8. Nothing else is required.
-- style.css: the standard WordPress theme header comment (Theme Name from blueprint.theme.name) plus minimal base styles — the real CSS lives in assets/css/main.css.
-- Real, on-topic copy guided by each section's "copy" (never lorem ipsum). Where a section calls for a photo, use <img src="https://loremflickr.com/<w>/<h>/<keywords>?lock=<n>"> with width, height, a descriptive alt, loading="lazy".
-- PHP must NEVER use: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backticks. (filemtime() is fine.)
+Glue rules (other files are generated in separate calls):
+1. Templates: get_header()/get_footer(); sections via get_template_part('template-parts/section','<slug>') in blueprint order; escaped output (esc_html, esc_url, esc_attr).
+2. A section renders <section class="section section-<slug>">. assets/css/main.css: :root tokens from the palette/fonts, base typography, .container, .btn/.btn--primary/.btn--ghost, header + mobile nav, footer, and one .section-<slug> block per blueprint section. Mobile-first, no horizontal overflow, nothing hidden waiting for JS.
+3. header.php: doctype, wp_head(), body_class(), wp_body_open(); <header class="site-header" data-header> with the site title/logo, <nav class="site-nav" data-nav> holding wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false) ), <button class="site-header__toggle" data-nav-toggle>; open <main>. footer.php: close </main>, footer, wp_footer(), </body></html>.
+4. functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the fonts googleUrl, style.css, main.css, main.js (footer). No JS libraries.
+5. assets/js/main.js: vanilla only — nav toggle (.is-open on [data-nav], .nav-open on body) and .is-scrolled on [data-header] on scroll.
+6. style.css: WordPress theme header comment (Theme Name from blueprint) + minimal base.
+7. Real on-topic copy, never lorem ipsum. Photos: <img src="https://loremflickr.com/<w>/<h>/<keywords>?lock=<n>" width height alt loading="lazy">.
+8. No PHP that executes code or touches the filesystem/network (eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback or similar).
 
-OUTPUT FORMAT — for EACH requested path output exactly, in order:
+Output each requested path, in order:
 ===WPAB_FILE:<path>===
-<the complete raw file contents>
+<complete raw contents>
 ===WPAB_END===
-STRICT: your reply STARTS with the first ===WPAB_FILE: marker and ENDS with the last ===WPAB_END===. No introduction, no commentary, no code fences. Copy each requested path into its marker EXACTLY as given, character for character.`;
+Your reply starts at the first marker and ends at the last ===WPAB_END===; paths copied exactly; no other text, no fences.`;
 
 function parseFiles(text: string): { path: string; contents: string }[] {
   const out: { path: string; contents: string }[] = [];

@@ -19,25 +19,22 @@ export const maxDuration = 300;
  * generated.
  */
 
-const INSTRUCTIONS = `You are a web designer planning a classic PHP WordPress theme (NOT a block theme) from a short brief.
+const INSTRUCTIONS = `Design a classic PHP WordPress theme from the brief — a bespoke site, not a template.
 
-Read the brief and decide: the theme name (brief.name if given), the pages the site needs, the sections on each page, a color palette that fits, and a Google Fonts pairing. Honour anything the brief states explicitly. Keep it focused: 3-5 pages, 5-8 unique sections total, reused across pages. Each section's "copy" is one sentence of real, on-topic content direction.
+Invent a distinctive visual identity for this brand: a bold Google Fonts pairing, a confident palette, and one signature visual idea. Describe it in design.style (2-3 sentences). Plan 3-5 pages and 5-8 unique sections reused across pages; no two adjacent sections may use the same layout. Each section gets "copy" (one sentence of real content direction) and "look" (one phrase describing its visual treatment, e.g. "full-bleed photo, overlay headline", "oversized numbered list", "asymmetric 60/40 split").
 
-design.fonts.googleUrl must be a valid https://fonts.googleapis.com/css2 URL for the chosen fonts with display=swap.
-
-Respond with ONLY valid JSON — the very first character of your reply is { and the very last is }. No markdown, no fences, no commentary. Use exactly these keys:
+Reply with ONLY this JSON — first character {, last }:
 {
   "theme": { "name": string, "description": string, "textDomain": string },
   "design": {
     "palette": { "bg": hex, "surface": hex, "fg": hex, "muted": hex, "border": hex, "accent": hex },
-    "fonts": { "heading": string, "body": string, "googleUrl": string },
-    "radius": string,
-    "dark": boolean
+    "fonts": { "heading": string, "body": string, "googleUrl": "https://fonts.googleapis.com/css2?... with display=swap" },
+    "radius": string, "dark": boolean, "style": string
   },
   "menu": [ { "title": string, "slug": string } ],
   "frontPage": string,
   "pages": [ { "slug": string, "title": string, "template": string, "sections": [string], "headline": string } ],
-  "sections": [ { "slug": string, "type": string, "layout": string, "copy": string } ]
+  "sections": [ { "slug": string, "type": string, "layout": string, "look": string, "copy": string } ]
 }`;
 
 type Json = Record<string, unknown>;

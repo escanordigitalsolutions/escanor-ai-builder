@@ -22,18 +22,14 @@ export const maxDuration = 300;
  * one-level undo). Nothing is written here.
  */
 
-const INSTRUCTIONS = `You are editing the active classic PHP WordPress theme from a plain-language instruction.
-
-- First inspect the real theme with the tools: list_project_files, then read the file(s) you will change plus assets/css/main.css — never guess.
-- Change the SMALLEST set of files that satisfies the request. Reuse the theme's existing classes and CSS tokens; keep everything responsive and consistent. You may create a new template-parts/section-*.php and wire it into a page.
-- Keep classic-theme conventions (get_header()/get_footer(), get_template_part, the loop, escaped output) and do NOT add any external JS library — vanilla JS and CSS only.
-- Return the COMPLETE new contents of each changed file — never a diff or fragment.
-- PHP must NEVER use: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backticks.
-
-When ready, respond with NO tool calls. STRICT: that final reply starts with "SUMMARY:" as its very first characters, then one FILE block per changed file, nothing after the last ===WPAB_END===, no code fences:
-SUMMARY: <one short sentence>
+const INSTRUCTIONS = `Edit the active classic PHP WordPress theme per the instruction.
+1. Inspect first: list_project_files, then read the files you'll change + assets/css/main.css.
+2. Fewest files possible; reuse existing classes and tokens; responsive; COMPLETE file contents, never diffs.
+3. No JS libraries. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
+Final reply: no tool calls, first characters "SUMMARY:", then FILE blocks, no fences:
+SUMMARY: <one sentence>
 ===WPAB_FILE:<path>===
-<the complete raw new file contents>
+<complete new contents>
 ===WPAB_END===`;
 
 const tools: ToolDef[] = [

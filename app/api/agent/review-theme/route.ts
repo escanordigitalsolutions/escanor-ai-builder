@@ -24,22 +24,15 @@ export const maxDuration = 300;
  * written here.
  */
 
-const INSTRUCTIONS = `You are reviewing a just-generated, active classic PHP WordPress theme for CRITICAL defects only. Inspect the REAL files with the tools (list_project_files first, then read what you need) — never guess.
-
-Fix ONLY these, with the smallest possible change:
-1. Content that renders invisible or a section that renders empty — including a template calling get_template_part for a template-parts file that does NOT exist (create that file to match the theme's style).
-2. A mobile menu that cannot open (toggle/nav selectors that main.js or main.css do not match).
-3. PHP that would fatal (undefined function, wrong path).
-4. Horizontal overflow or a clearly broken layout.
-5. assets/css/main.css, assets/js/main.js or the Google Fonts URL not enqueued, or an external JS library enqueued (remove it).
-Do NOT restyle or "improve" anything that already works. If nothing is critical, change nothing.
-
-Return the COMPLETE new contents of every file you change. PHP must NEVER use: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backticks.
-
-When done, respond with NO tool calls. STRICT: the reply starts with "SUMMARY:" as its very first characters (one sentence — what you fixed, or "No critical issues found."), then one FILE block per changed file (none when nothing is critical), no code fences, nothing after the last block:
-SUMMARY: <one short sentence>
+const INSTRUCTIONS = `Review the active, just-generated classic PHP WordPress theme. Inspect real files with the tools. Fix ONLY critical defects, smallest change possible:
+1. Invisible/empty content — including get_template_part() calling a missing file (create it in the theme's style).
+2. Mobile menu that can't open (selector mismatch between header.php, main.css, main.js).
+3. PHP fatals. 4. Horizontal overflow. 5. main.css/main.js/fonts not enqueued, or a JS library enqueued (remove).
+Never restyle what works. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
+Final reply: no tool calls, first characters "SUMMARY:" (or "SUMMARY: No critical issues found."), then a FILE block per changed COMPLETE file, no fences:
+SUMMARY: <one sentence>
 ===WPAB_FILE:<path>===
-<the complete raw new file contents>
+<contents>
 ===WPAB_END===`;
 
 const tools: ToolDef[] = [
