@@ -926,7 +926,10 @@ final class WPAB_Editor {
 		if ( strlen( $instruction ) > 2000 ) {
 			$instruction = substr( $instruction, 0, 2000 );
 		}
-		$payload = array( 'instruction' => $instruction );
+		$payload = array(
+			'instruction' => $instruction,
+			'theme'       => (string) wp_get_theme()->get( 'Name' ),
+		);
 		if ( isset( $params['plan'] ) && is_array( $params['plan'] ) ) {
 			$payload['plan'] = array_slice( $params['plan'], 0, 8 );
 		}
@@ -1090,7 +1093,10 @@ final class WPAB_Editor {
 		if ( '' === $instruction ) {
 			return new WP_Error( 'wpab_plan_empty', 'An instruction is required.', array( 'status' => 400 ) );
 		}
-		$plan_payload = array( 'instruction' => $instruction );
+		$plan_payload = array(
+			'instruction' => $instruction,
+			'theme'       => (string) wp_get_theme()->get( 'Name' ),
+		);
 		if ( isset( $params['selected'] ) && is_string( $params['selected'] ) ) {
 			$plan_payload['selected'] = substr( $params['selected'], 0, 600 );
 		}
@@ -1135,6 +1141,12 @@ final class WPAB_Editor {
 		}
 
 		$body = array( 'message' => $message );
+
+		// Live theme identity — the SaaS keeps a snapshot from connection time
+		// which goes stale as soon as a new theme is generated; the site itself
+		// is the authority.
+		$body['theme']     = (string) wp_get_theme()->get( 'Name' );
+		$body['themeSlug'] = (string) get_stylesheet();
 
 		// Optional attached image: a data URL the editor already downscaled.
 		if ( isset( $params['image'] ) && is_string( $params['image'] ) ) {

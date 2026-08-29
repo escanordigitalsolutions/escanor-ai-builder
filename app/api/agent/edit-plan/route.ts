@@ -95,6 +95,8 @@ export async function POST(request: NextRequest) {
   const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
   const selected =
     typeof body.selected === "string" ? body.selected.trim().slice(0, 600) : "";
+  const themeName =
+    typeof body.theme === "string" ? body.theme.trim().slice(0, 80) : "";
   if (!instruction) {
     return NextResponse.json(
       { success: false, error: "An instruction is required." },
@@ -147,6 +149,7 @@ export async function POST(request: NextRequest) {
       system: INSTRUCTIONS,
       maxTokens: 1500,
       input:
+        (themeName ? `Active theme: ${themeName}\n\n` : "") +
         `Change request: ${instruction}` +
         `\n\nSelected element: ${selected || "none"}` +
         (structure ? `\n\nTheme structure:\n${JSON.stringify(structure)}` : ""),

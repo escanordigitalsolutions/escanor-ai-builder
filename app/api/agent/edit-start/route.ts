@@ -108,6 +108,8 @@ export async function POST(request: NextRequest) {
   const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
   const selected =
     typeof body.selected === "string" ? body.selected.trim().slice(0, 600) : "";
+  const themeName =
+    typeof body.theme === "string" ? body.theme.trim().slice(0, 80) : "";
   if (!instruction) {
     return NextResponse.json(
       { success: false, error: "An instruction is required." },
@@ -216,6 +218,7 @@ export async function POST(request: NextRequest) {
           {
             role: "user",
             content:
+              (themeName ? `ACTIVE THEME: ${themeName}\n\n` : "") +
               `REQUEST:\n${instruction}` +
               `\n\nSELECTED ELEMENT:\n${selected || "none"}` +
               (planSteps.length

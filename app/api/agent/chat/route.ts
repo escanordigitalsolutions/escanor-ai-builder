@@ -365,9 +365,33 @@ export async function POST(request: NextRequest) {
 
     const bridgeToken = decryptSecret(site.bridge_token_encrypted);
 
+    // The site reports its ACTIVE theme with every message — the stored
+    // theme_name is only a connection-time snapshot and goes stale the moment
+    // a new theme is generated. Trust the live value and refresh the record.
+    const liveTheme =
+      typeof body.theme === "string" ? body.theme.trim().slice(0, 80) : "";
+    const liveThemeSlug =
+      typeof body.themeSlug === "string" ? body.themeSlug.trim().slice(0, 80) : "";
+    if (liveTheme && liveTheme !== site.theme_name) {
+      void supabase
+        .from("wordpress_sites")
+        .update({
+          theme_name: liveTheme,
+          ...(liveThemeSlug ? { theme_slug: liveThemeSlug } : {}),
+        })
+        .eq("project_id", context.projectId)
+        .then(
+          () => {},
+          () => {}
+        );
+    }
+    const themeName = liveTheme || site.theme_name || "unknown";
+
     const instructions = `You are a concise WordPress development assistant inside wp-admin.
 
-Project: ${project.name} — ${site.site_url} (theme: ${site.theme_name ?? "unknown"}), acting for ${context.actor.login ?? "an administrator"}.
+Project: ${project.name} — ${site.site_url} (active theme: ${themeName}), acting for ${context.actor.login ?? "an administrator"}.
+
+The active theme name above is reported live by the site RIGHT NOW — trust it over any theme mentioned earlier in the conversation.
 
 You can inspect:
 - Theme code with project file tools.
