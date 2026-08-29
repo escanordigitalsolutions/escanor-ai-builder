@@ -1298,8 +1298,13 @@ final class WPAB_Editor {
 		?>
 		<div class="wpab-ed" id="wpab-ed">
 			<div class="wpab-ed__float">
-				<button type="button" id="wpab-ed-newtheme" class="wpab-ed__newtheme">✨ New theme</button>
-				<a href="<?php echo esc_url( admin_url( 'admin.php?page=wp-ai-builder' ) ); ?>" class="wpab-ed__exit">Exit</a>
+				<a href="<?php echo esc_url( admin_url() ); ?>" class="wpab-ed__wpbtn" title="Back to wp-admin">
+					<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 8.6l2.8 7.6 2.1-5.5 2.1 5.5L15.8 8.6" fill="none"/></svg>
+				</a>
+				<button type="button" id="wpab-ed-openpreview" class="wpab-ed__wpbtn" title="Open this page in a new tab">
+					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M20 14v5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19V6a1.5 1.5 0 0 1 1.5-1.5H10"/></svg>
+				</button>
+				<span class="wpab-ed__themetag" title="Active theme"><?php echo esc_html( wp_get_theme()->get( 'Name' ) ); ?></span>
 			</div>
 
 			<div id="wpab-ed-wizard" class="wpab-ed__wizard" hidden>
@@ -1384,6 +1389,7 @@ final class WPAB_Editor {
 					<textarea id="wpab-ed-input" class="wpab-ed__input" rows="1" placeholder="Ask about this site…"></textarea>
 					<div class="wpab-ed__formrow">
 						<span class="wpab-ed__formtools">
+							<button type="button" id="wpab-ed-newtheme" class="wpab-ed__newtheme wpab-ed__newtheme--dock">✨ New theme</button>
 							<button type="button" id="wpab-ed-new" class="wpab-ed__new">New chat</button>
 							<button type="button" id="wpab-ed-history" class="wpab-ed__new" title="Chat history">History</button>
 							<button type="button" id="wpab-ed-expand" class="wpab-ed__expand" title="Expand / shrink chat history">⤢</button>
@@ -1428,11 +1434,13 @@ final class WPAB_Editor {
 				--ed-bg: #f6f5f3; --ed-surface: #ffffff; --ed-surface-2: #faf9f7; --ed-border: #e8e5df; --ed-border-strong: #d9d5cc;
 				--ed-text: #1b1a18; --ed-muted: #6f6b64; --ed-faint: #9b968d; --ed-accent: #141312; --ed-accent-2: #454340; --ed-accent-soft: rgba(20,19,18,.08);
 				--ed-radius: 14px; --ed-shadow: 0 1px 2px rgba(20,18,16,.05), 0 10px 30px rgba(20,18,16,.09); --ed-shadow-lg: 0 24px 70px rgba(20,18,16,.20); }
-			.wpab-ed__float { position: absolute; top: 14px; right: 16px; z-index: 20; display: flex; align-items: center; gap: 10px; }
-			.wpab-ed__exit { color: var(--ed-muted); text-decoration: none; font-size: 13px; border: 1px solid var(--ed-border); border-radius: 9px; padding: 7px 14px; background: rgba(255,255,255,.85); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--ed-shadow); }
-			.wpab-ed__exit:hover { background: #fff; color: var(--ed-text); }
+			.wpab-ed__float { position: absolute; top: 12px; left: 14px; right: auto; z-index: 20; display: flex; align-items: center; gap: 8px; }
+			.wpab-ed__wpbtn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--ed-muted); border: 1px solid var(--ed-border); border-radius: 10px; background: rgba(255,255,255,.85); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--ed-shadow); cursor: pointer; text-decoration: none; transition: all .15s ease; }
+			.wpab-ed__wpbtn:hover { background: #141312; border-color: #141312; color: #fff; }
+			.wpab-ed__themetag { font-size: 11px; font-weight: 600; color: var(--ed-muted); background: rgba(255,255,255,.7); border: 1px solid var(--ed-border); border-radius: 999px; padding: 5px 11px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 			.wpab-ed__newtheme { background: var(--ed-accent); color: #fff; border: 0; border-radius: 9px; padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px rgba(20,19,18,.22); }
 			.wpab-ed__newtheme:hover { background: #000; }
+			.wpab-ed__newtheme--dock { padding: 6px 12px; font-size: 12px; box-shadow: none; white-space: nowrap; }
 			.wpab-ed__wizard { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 620px at 50% -12%, rgba(99,102,241,.14), transparent 60%), rgba(28,26,22,.32); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 24px; }
 			.wpab-ed__wizard[hidden] { display: none !important; }
 			.wpab-ed__wcard { position: relative; width: 100%; max-width: 500px; max-height: 88vh; overflow-y: auto; background: rgba(255,255,255,.86); border: 1px solid rgba(20,18,16,.08); border-radius: 20px; padding: 28px; box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); animation: wpab-ed-cardin .45s cubic-bezier(.2,.75,.25,1); }
@@ -1574,16 +1582,16 @@ final class WPAB_Editor {
 		.wpab-ed__dev:hover { color: #141312; }
 		.wpab-ed__dev.is-active { background: #141312; color: #fff; }
 		.wpab-ed__inspect.is-on { background: #141312; color: #fff; box-shadow: 0 0 0 3px rgba(20,19,18,.15); }
-		.wpab-ed__framewrap { flex: 1; display: flex; justify-content: center; overflow: auto; background: #f1f0ee; min-height: 0; position: relative; }
+		.wpab-ed__framewrap { flex: 1; display: flex; justify-content: center; overflow: auto; background: #f1f0ee; min-height: 0; position: relative; padding: 10px 12px; }
 		.wpab-ed__frameload[hidden] { display: none !important; }
-		.wpab-ed__frameload { position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(241,240,238,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+		.wpab-ed__frameload { position: absolute; inset: 10px 12px; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(241,240,238,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); border-radius: 8px; }
 		.wpab-ed__spin { width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(20,19,18,.15); border-top-color: #141312; animation: wpabspin .8s linear infinite; }
 		@keyframes wpabspin { to { transform: rotate(360deg); } }
 		.wpab-ed__frameloadtxt { font-size: 12.5px; color: #5c5955; font-weight: 500; }
-		.wpab-ed__framewrap .wpab-ed__frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; transition: width .25s ease; }
+		.wpab-ed__framewrap .wpab-ed__frame { width: 100%; height: 100%; border: 1px solid rgba(20,19,18,.07); border-radius: 8px; background: #fff; display: block; transition: width .25s ease; box-shadow: 0 1px 3px rgba(20,18,16,.05); }
 		.wpab-ed__framewrap.is-laptop .wpab-ed__frame { width: 1280px; max-width: 100%; }
-		.wpab-ed__framewrap.is-tablet .wpab-ed__frame { width: 834px; max-width: 100%; border-left: 1px solid rgba(20,19,18,.08); border-right: 1px solid rgba(20,19,18,.08); }
-		.wpab-ed__framewrap.is-mobile .wpab-ed__frame { width: 390px; max-width: 100%; border-left: 1px solid rgba(20,19,18,.08); border-right: 1px solid rgba(20,19,18,.08); }
+		.wpab-ed__framewrap.is-tablet .wpab-ed__frame { width: 834px; max-width: 100%; }
+		.wpab-ed__framewrap.is-mobile .wpab-ed__frame { width: 390px; max-width: 100%; }
 		.wpab-ed__wbtn { background: #141312 !important; box-shadow: none !important; border-radius: 10px; }
 		.wpab-ed__wbtn:hover { background: #000 !important; }
 		.wpab-ed__wbtn--ghost { background: transparent !important; color: #4b4945 !important; border: 1px solid rgba(20,19,18,.22) !important; }
@@ -1999,15 +2007,14 @@ final class WPAB_Editor {
 			if (newBtn) {
 				newBtn.addEventListener('click', function () {
 					conversationId = null;
-					try { localStorage.removeItem('wpabChatConv'); } catch (e) {}
 					thread.innerHTML = '<p class="wpab-ed__empty">Ask anything about this site — its theme, templates, pages or content.</p>';
 				});
 			}
 
-			// ---- Chat archive: restore the last conversation, browse older ones. ----
+			// ---- Chat archive: every visit starts a FRESH chat (nothing persisted
+			// in the browser); older conversations stay reachable via History. ----
 			function rememberConv(id) {
 				conversationId = id || conversationId;
-				try { if (conversationId) { localStorage.setItem('wpabChatConv', conversationId); } } catch (e) {}
 			}
 			function renderHistoryMessages(msgs) {
 				thread.innerHTML = '';
@@ -2061,13 +2068,8 @@ final class WPAB_Editor {
 					if (!histMenu.hidden && !histMenu.contains(e.target) && e.target !== histBtn) { closeHistMenu(); }
 				});
 			}
-			// Restore the last conversation on load.
-			(function () {
-				if (!cfg.connected) { return; }
-				var saved = null;
-				try { saved = localStorage.getItem('wpabChatConv'); } catch (e) {}
-				if (saved) { loadConversation(saved); }
-			})();
+			// One-time cleanup of the old per-browser chat pointer.
+			try { localStorage.removeItem('wpabChatConv'); } catch (e) {}
 
 			// Not connected to the cloud yet: show a notice, disable chat.
 			if (!cfg.connected) {
@@ -2095,6 +2097,21 @@ final class WPAB_Editor {
 				});
 				frame.src = cfg.siteUrl;
 			}
+
+			// Open the page currently shown in the preview in a real browser tab.
+			(function () {
+				var openPrev = $('wpab-ed-openpreview');
+				if (!openPrev) { return; }
+				openPrev.addEventListener('click', function () {
+					var fr = $('wpab-ed-frame');
+					var url = cfg.siteUrl || '';
+					try {
+						var u = fr && fr.contentWindow && fr.contentWindow.location.href;
+						if (u && u.indexOf('http') === 0 && u !== 'about:blank') { url = u; }
+					} catch (e) {}
+					if (url) { window.open(url, '_blank', 'noopener'); }
+				});
+			})();
 
 			// Preview device sizes.
 			// ---- Inspect tool: pick an element in the preview, paste its
