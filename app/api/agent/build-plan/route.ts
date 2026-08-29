@@ -5,6 +5,10 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { pickModel } from "@/lib/ai/resolve";
 import { generateText } from "@/lib/ai/provider";
 
+// Blueprint generation can take minutes on some models; don't let Vercel's
+// plan-default duration kill the function mid-generation.
+export const maxDuration = 300;
+
 /**
  * WordPress -> SaaS : theme BLUEPRINT.
  *
@@ -50,7 +54,7 @@ STRUCTURE (classic PHP theme):
 - Real .php templates using get_header()/get_footer(), the WordPress loop, get_template_part(), wp_head()/wp_footer().
 - Front page = front-page.php; every other content page = page-{slug}.php.
 - Reusable sections live in template-parts/section-{slug}.php; each page lists its section slugs in order.
-- SIZE ADAPTS TO THE BRIEF — do not force a fixed count. Match the number of pages and sections to what the site actually needs: a simple landing page or small brochure site gets fewer; a rich, feature-heavy or multi-service brief gets more. Reuse sections across pages instead of inventing near-duplicates, and never pad with filler. As a rough guide 3-7 pages and 5-12 unique sections, and never exceed ~22 files total.
+- SIZE ADAPTS TO THE BRIEF — do not force a fixed count. Match the number of pages and sections to what the site actually needs: a simple landing page or small brochure site gets fewer; a rich, feature-heavy or multi-service brief gets more. Reuse sections across pages instead of inventing near-duplicates, and never pad with filler. As a rough guide 3-7 pages and 5-12 unique sections. HARD LIMIT: the "files" array must contain AT MOST 22 entries — count them before answering; a longer list gets trimmed and breaks the theme.
 - The files list MUST include: style.css, functions.php, header.php, footer.php, index.php, page.php, single.php, 404.php, searchform.php, front-page.php, one page-{slug}.php per non-front page, one template-parts/section-{slug}.php per unique section, assets/css/main.css, assets/js/main.js.
 - The front page opens with a striking hero (with its animated background) and follows an opinionated order, e.g. hero -> logos/social-proof -> features/benefits -> showcase/gallery -> testimonials -> CTA. VARY the background and layout of adjacent sections so no two in a row look the same.
 
@@ -151,6 +155,7 @@ export async function POST(request: NextRequest) {
   }
 
   let text = "";
+  let usage = { inputTokens: 0, outputTokens: 0 };
   try {
     const gen = await generateText({
       model: pickModel(modelConfig, "build"),
@@ -159,6 +164,7 @@ export async function POST(request: NextRequest) {
       maxTokens: 12000,
     });
     text = gen.text;
+    usage = gen.usage;
   } catch (error) {
     console.error("build-plan generate error:", error);
     return NextResponse.json(
@@ -180,5 +186,92 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ success: true, blueprint });
+  clampBlueprint(blueprint);
+
+  return NextResponse.json({ success: true, blueprint, usage });
+}
+
+/**
+ * Enforce the size limit some models ignore. Keeps the core theme files plus
+ * the first pages/sections (in blueprint order) that fit, then drops orphaned
+ * sections, page references and menu entries so what remains is coherent.
+ * Mutates the blueprint in place.
+ */
+const MAX_BLUEPRINT_FILES = 26;
+const CORE_FILES = new Set([
+  "style.css",
+  "functions.php",
+  "header.php",
+  "footer.php",
+  "index.php",
+  "page.php",
+  "single.php",
+  "404.php",
+  "searchform.php",
+  "front-page.php",
+  "assets/css/main.css",
+  "assets/js/main.js",
+]);
+
+function clampBlueprint(blueprint: Json): void {
+  const raw = (blueprint.files as unknown[]).filter(
+    (f): f is string => typeof f === "string" && f.trim().length > 0
+  );
+  const deduped = [...new Set(raw.map((f) => f.trim()))];
+  if (deduped.length <= MAX_BLUEPRINT_FILES) {
+    blueprint.files = deduped;
+    return;
+  }
+
+  const core = deduped.filter((f) => CORE_FILES.has(f));
+  const rest = deduped.filter((f) => !CORE_FILES.has(f));
+  const files = core.concat(rest).slice(0, MAX_BLUEPRINT_FILES);
+  console.warn(
+    `build-plan: blueprint had ${deduped.length} files, clamped to ${files.length}`
+  );
+  blueprint.files = files;
+
+  const kept = new Set(files);
+  const sectionSlugs = new Set(
+    files
+      .filter((f) => f.startsWith("template-parts/section-") && f.endsWith(".php"))
+      .map((f) => f.slice("template-parts/section-".length, -".php".length))
+  );
+
+  if (Array.isArray(blueprint.sections)) {
+    blueprint.sections = (blueprint.sections as unknown[]).filter(
+      (s) =>
+        s &&
+        typeof s === "object" &&
+        sectionSlugs.has(String((s as { slug?: unknown }).slug ?? ""))
+    );
+  }
+
+  const front = typeof blueprint.frontPage === "string" ? blueprint.frontPage : "";
+  const pageSlugs = new Set<string>();
+  if (Array.isArray(blueprint.pages)) {
+    blueprint.pages = (blueprint.pages as unknown[]).filter((p) => {
+      if (!p || typeof p !== "object") return false;
+      const pg = p as { slug?: unknown; template?: unknown; sections?: unknown };
+      const slug = String(pg.slug ?? "");
+      const isFront = slug === front || pg.template === "front-page.php";
+      if (!isFront && !kept.has(`page-${slug}.php`)) return false;
+      if (Array.isArray(pg.sections)) {
+        pg.sections = pg.sections.filter(
+          (s: unknown) => typeof s === "string" && sectionSlugs.has(s)
+        );
+      }
+      pageSlugs.add(slug);
+      return true;
+    });
+  }
+
+  if (Array.isArray(blueprint.menu)) {
+    blueprint.menu = (blueprint.menu as unknown[]).filter(
+      (m) =>
+        m &&
+        typeof m === "object" &&
+        pageSlugs.has(String((m as { slug?: unknown }).slug ?? ""))
+    );
+  }
 }

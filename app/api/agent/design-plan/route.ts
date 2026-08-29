@@ -1,11 +1,16 @@
-import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
-import { GEN_MODEL } from "@/lib/ai/models";
+import { pickModel } from "@/lib/ai/resolve";
+import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
 import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
+
+// Model calls can run long; don't let Vercel's plan-default duration kill the
+// function mid-generation.
+export const maxDuration = 300;
+
 
 /**
  * WordPress -> SaaS : STAGED design revision — the critique step.
@@ -18,10 +23,6 @@ import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
  * small and timeout-safe, and the user sees per-file progress. Nothing is
  * written here.
  */
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const INSTRUCTIONS = `You are an award-winning art director reviewing a JUST-GENERATED WordPress theme against its intended design CONCEPT. Your job is to make it more DISTINCTIVE and closer to Awwwards-level craft — NOT to fix bugs (a separate pass handles correctness).
 
@@ -40,19 +41,15 @@ Return the 3-6 HIGHEST-IMPACT changes that would most elevate the design. For ea
 Respond with ONLY valid JSON, no markdown, no commentary:
 { "verdict": "one short sentence on how generic vs distinctive it is now", "targets": [ { "path": "template-parts/section-hero.php", "instruction": "concrete art-directed change" } ] }`;
 
-const tools = [
+const tools: ToolDef[] = [
   {
-    type: "function" as const,
     name: "list_project_files",
     description: "List readable files in the active theme so you never guess paths. Call this first.",
-    strict: true,
     parameters: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
   {
-    type: "function" as const,
     name: "read_project_files",
     description: "Read the full contents of up to 8 theme files by their relative paths.",
-    strict: true,
     parameters: {
       type: "object",
       properties: { paths: { type: "array", items: { type: "string" } } },
@@ -136,7 +133,7 @@ export async function POST(request: NextRequest) {
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
-    .select(`id, name, wordpress_sites ( site_url, bridge_token_encrypted )`)
+    .select(`id, name, model_config, wordpress_sites ( site_url, bridge_token_encrypted )`)
     .eq("id", context.projectId)
     .single();
 
@@ -162,62 +159,36 @@ export async function POST(request: NextRequest) {
     : `Review the active theme (infer its intended concept from the code) and return the highest-impact design elevations.`;
 
   try {
-    let response = await openai.responses.create({
-      model: GEN_MODEL,
-      instructions: INSTRUCTIONS,
-      input,
+    const result = await runToolLoop({
+      model: pickModel((project as { model_config?: unknown }).model_config, "edit"),
+      system: INSTRUCTIONS,
+      messages: [{ role: "user", content: input }],
       tools,
-      tool_choice: "auto",
-      parallel_tool_calls: true,
-      max_output_tokens: 4000,
+      maxTokens: 4000,
+      maxRounds: 5,
+      handler: async (name, args) => {
+        try {
+          if (name === "list_project_files") {
+            return await listProjectFiles(siteUrl, bridgeToken, "theme");
+          }
+          if (name === "read_project_files") {
+            return await readProjectFiles(siteUrl, bridgeToken, "theme", validatePaths(args.paths));
+          }
+          return { error: `Unknown tool: ${name}` };
+        } catch (e) {
+          return { error: e instanceof Error ? e.message : "Tool failed." };
+        }
+      },
     });
 
-    for (let round = 0; round < 5; round++) {
-      const calls = response.output.filter((item) => item.type === "function_call");
-
-      if (calls.length === 0) {
-        const parsed = extractJson(response.output_text || "");
-        const targets = normalizeTargets(parsed ? parsed.targets : []);
-        const verdict = parsed && typeof parsed.verdict === "string" ? parsed.verdict : "";
-        return NextResponse.json({ success: true, verdict, targets });
-      }
-
-      const outputs = await Promise.all(
-        calls.map(async (call) => {
-          let result: unknown;
-          try {
-            const args = JSON.parse(call.arguments || "{}");
-            if (call.name === "list_project_files") {
-              result = await listProjectFiles(siteUrl, bridgeToken, "theme");
-            } else if (call.name === "read_project_files") {
-              result = await readProjectFiles(siteUrl, bridgeToken, "theme", validatePaths(args.paths));
-            } else {
-              result = { error: `Unknown tool: ${call.name}` };
-            }
-          } catch (e) {
-            result = { error: e instanceof Error ? e.message : "Tool failed." };
-          }
-          return {
-            type: "function_call_output" as const,
-            call_id: call.call_id,
-            output: JSON.stringify(result),
-          };
-        })
-      );
-
-      response = await openai.responses.create({
-        model: GEN_MODEL,
-        instructions: INSTRUCTIONS,
-        previous_response_id: response.id,
-        input: outputs,
-        tools,
-        tool_choice: "auto",
-        parallel_tool_calls: true,
-        max_output_tokens: 4000,
-      });
+    if (result.exhausted) {
+      return NextResponse.json({ success: true, verdict: "", targets: [], usage: result.usage });
     }
 
-    return NextResponse.json({ success: true, verdict: "", targets: [] });
+    const parsed = extractJson(result.text);
+    const targets = normalizeTargets(parsed ? parsed.targets : []);
+    const verdict = parsed && typeof parsed.verdict === "string" ? parsed.verdict : "";
+    return NextResponse.json({ success: true, verdict, targets, usage: result.usage });
   } catch (error) {
     console.error("design-plan error:", error);
     return NextResponse.json({ success: false, error: "The design reviewer could not be reached." }, { status: 502 });

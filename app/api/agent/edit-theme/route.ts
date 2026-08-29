@@ -1,11 +1,16 @@
-import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
-import { GEN_MODEL } from "@/lib/ai/models";
+import { pickModel } from "@/lib/ai/resolve";
+import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
 import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
+
+// Model calls can run long; don't let Vercel's plan-default duration kill the
+// function mid-generation.
+export const maxDuration = 300;
+
 
 /**
  * WordPress -> SaaS : edit the active generated theme.
@@ -16,10 +21,6 @@ import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
  * WPAB_Theme_Writer::update() path (only the generated theme, validated, with a
  * one-level undo). Nothing is written here.
  */
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const INSTRUCTIONS = `You are a senior WordPress theme developer editing a MODERN, DEPENDENCY-FREE classic PHP theme in place, from a plain-language instruction. Your change must look like it always belonged — match the theme's existing design system, tokens and art-direction concept.
 
@@ -46,13 +47,11 @@ SUMMARY: <one short sentence describing the change>
 ===WPAB_END===
 (repeat the FILE/END block for every changed file; do not use code fences)`;
 
-const tools = [
+const tools: ToolDef[] = [
   {
-    type: "function" as const,
     name: "list_project_files",
     description:
       "List readable files in the active theme so you never guess paths. Call this first.",
-    strict: true,
     parameters: {
       type: "object",
       properties: {},
@@ -61,11 +60,9 @@ const tools = [
     },
   },
   {
-    type: "function" as const,
     name: "read_project_files",
     description:
       "Read the full contents of up to 8 theme files by their relative paths (from list_project_files).",
-    strict: true,
     parameters: {
       type: "object",
       properties: {
@@ -141,7 +138,7 @@ export async function POST(request: NextRequest) {
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
-    .select(`id, name, wordpress_sites ( site_url, bridge_token_encrypted )`)
+    .select(`id, name, model_config, wordpress_sites ( site_url, bridge_token_encrypted )`)
     .eq("id", context.projectId)
     .single();
 
@@ -169,69 +166,48 @@ export async function POST(request: NextRequest) {
   const siteUrl = site.site_url;
 
   try {
-    let response = await openai.responses.create({
-      model: GEN_MODEL,
-      instructions: INSTRUCTIONS,
-      input: `Instruction: ${instruction}`,
+    const result = await runToolLoop({
+      model: pickModel((project as { model_config?: unknown }).model_config, "edit"),
+      system: INSTRUCTIONS,
+      messages: [{ role: "user", content: `Instruction: ${instruction}` }],
       tools,
-      tool_choice: "auto",
-      parallel_tool_calls: true,
-      max_output_tokens: 16000,
+      maxTokens: 16000,
+      maxRounds: 6,
+      handler: async (name, args) => {
+        try {
+          if (name === "list_project_files") {
+            return await listProjectFiles(siteUrl, bridgeToken, "theme");
+          }
+          if (name === "read_project_files") {
+            return await readProjectFiles(siteUrl, bridgeToken, "theme", validatePaths(args.paths));
+          }
+          return { error: `Unknown tool: ${name}` };
+        } catch (e) {
+          return { error: e instanceof Error ? e.message : "Tool failed." };
+        }
+      },
     });
 
-    for (let round = 0; round < 6; round++) {
-      const calls = response.output.filter((item) => item.type === "function_call");
-
-      if (calls.length === 0) {
-        const parsed = parseOutput(response.output_text || "");
-        if (parsed.files.length === 0) {
-          return NextResponse.json(
-            { success: false, error: "The editor could not produce a change for that. Try rephrasing." },
-            { status: 502 }
-          );
-        }
-        return NextResponse.json({ success: true, summary: parsed.summary, files: parsed.files });
-      }
-
-      const outputs = await Promise.all(
-        calls.map(async (call) => {
-          let result: unknown;
-          try {
-            const args = JSON.parse(call.arguments || "{}");
-            if (call.name === "list_project_files") {
-              result = await listProjectFiles(siteUrl, bridgeToken, "theme");
-            } else if (call.name === "read_project_files") {
-              result = await readProjectFiles(siteUrl, bridgeToken, "theme", validatePaths(args.paths));
-            } else {
-              result = { error: `Unknown tool: ${call.name}` };
-            }
-          } catch (e) {
-            result = { error: e instanceof Error ? e.message : "Tool failed." };
-          }
-          return {
-            type: "function_call_output" as const,
-            call_id: call.call_id,
-            output: JSON.stringify(result),
-          };
-        })
+    if (result.exhausted) {
+      return NextResponse.json(
+        { success: false, usage: result.usage, error: "The edit took too many steps. Try a more specific instruction." },
+        { status: 502 }
       );
-
-      response = await openai.responses.create({
-        model: GEN_MODEL,
-        instructions: INSTRUCTIONS,
-        previous_response_id: response.id,
-        input: outputs,
-        tools,
-        tool_choice: "auto",
-        parallel_tool_calls: true,
-        max_output_tokens: 16000,
-      });
     }
 
-    return NextResponse.json(
-      { success: false, error: "The edit took too many steps. Try a more specific instruction." },
-      { status: 502 }
-    );
+    const parsed = parseOutput(result.text);
+    if (parsed.files.length === 0) {
+      return NextResponse.json(
+        { success: false, usage: result.usage, error: "The editor could not produce a change for that. Try rephrasing." },
+        { status: 502 }
+      );
+    }
+    return NextResponse.json({
+      success: true,
+      summary: parsed.summary,
+      files: parsed.files,
+      usage: result.usage,
+    });
   } catch (error) {
     console.error("edit-theme error:", error);
     return NextResponse.json(

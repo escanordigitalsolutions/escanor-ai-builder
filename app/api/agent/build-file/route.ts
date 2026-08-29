@@ -4,6 +4,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { SMART_MODEL } from "@/lib/ai/models";
 
+export const maxDuration = 300;
+
+
 /**
  * WordPress -> SaaS : generate ONE theme file (Phase C).
  *

@@ -1,11 +1,16 @@
-import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
-import { SMART_MODEL } from "@/lib/ai/models";
+import { pickModel } from "@/lib/ai/resolve";
+import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
 import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
+
+// Model calls can run long; don't let Vercel's plan-default duration kill the
+// function mid-generation.
+export const maxDuration = 300;
+
 
 /**
  * WordPress -> SaaS : automated QA review of the just-generated theme.
@@ -18,10 +23,6 @@ import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
  * Called once for the "check" pass and again for the "revise" pass. Nothing is
  * written here.
  */
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const INSTRUCTIONS = `You are a senior WordPress theme QA engineer reviewing a JUST-GENERATED, active CLASSIC PHP theme for CRITICAL, high-impact defects only. Inspect the REAL files with the tools (list_project_files first, then read the files you need) — never guess file contents or paths.
 
@@ -49,13 +50,11 @@ SUMMARY: <one short sentence: what you fixed, or "No critical issues found.">
 ===WPAB_END===
 (repeat the FILE/END block for every changed file; do not use code fences)`;
 
-const tools = [
+const tools: ToolDef[] = [
   {
-    type: "function" as const,
     name: "list_project_files",
     description:
       "List readable files in the active theme so you never guess paths. Call this first.",
-    strict: true,
     parameters: {
       type: "object",
       properties: {},
@@ -64,11 +63,9 @@ const tools = [
     },
   },
   {
-    type: "function" as const,
     name: "read_project_files",
     description:
       "Read the full contents of up to 8 theme files by their relative paths (from list_project_files).",
-    strict: true,
     parameters: {
       type: "object",
       properties: {
@@ -138,7 +135,7 @@ export async function POST(request: NextRequest) {
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
-    .select(`id, name, wordpress_sites ( site_url, bridge_token_encrypted )`)
+    .select(`id, name, model_config, wordpress_sites ( site_url, bridge_token_encrypted )`)
     .eq("id", context.projectId)
     .single();
 
@@ -170,70 +167,46 @@ export async function POST(request: NextRequest) {
     : `Review the active generated theme for CRITICAL defects and return fixes for any you find.`;
 
   try {
-    let response = await openai.responses.create({
-      model: SMART_MODEL,
-      instructions: INSTRUCTIONS,
-      input,
+    const result = await runToolLoop({
+      model: pickModel((project as { model_config?: unknown }).model_config, "review"),
+      system: INSTRUCTIONS,
+      messages: [{ role: "user", content: input }],
       tools,
-      tool_choice: "auto",
-      parallel_tool_calls: true,
-      max_output_tokens: 24000,
+      maxTokens: 24000,
+      maxRounds: 6,
+      handler: async (name, args) => {
+        try {
+          if (name === "list_project_files") {
+            return await listProjectFiles(siteUrl, bridgeToken, "theme");
+          }
+          if (name === "read_project_files") {
+            return await readProjectFiles(siteUrl, bridgeToken, "theme", validatePaths(args.paths));
+          }
+          return { error: `Unknown tool: ${name}` };
+        } catch (e) {
+          return { error: e instanceof Error ? e.message : "Tool failed." };
+        }
+      },
     });
 
-    for (let round = 0; round < 6; round++) {
-      const calls = response.output.filter((item) => item.type === "function_call");
-
-      if (calls.length === 0) {
-        const parsed = parseOutput(response.output_text || "");
-        return NextResponse.json({
-          success: true,
-          summary: parsed.summary,
-          files: parsed.files,
-          issuesFound: parsed.files.length,
-        });
-      }
-
-      const outputs = await Promise.all(
-        calls.map(async (call) => {
-          let result: unknown;
-          try {
-            const args = JSON.parse(call.arguments || "{}");
-            if (call.name === "list_project_files") {
-              result = await listProjectFiles(siteUrl, bridgeToken, "theme");
-            } else if (call.name === "read_project_files") {
-              result = await readProjectFiles(siteUrl, bridgeToken, "theme", validatePaths(args.paths));
-            } else {
-              result = { error: `Unknown tool: ${call.name}` };
-            }
-          } catch (e) {
-            result = { error: e instanceof Error ? e.message : "Tool failed." };
-          }
-          return {
-            type: "function_call_output" as const,
-            call_id: call.call_id,
-            output: JSON.stringify(result),
-          };
-        })
-      );
-
-      response = await openai.responses.create({
-        model: SMART_MODEL,
-        instructions: INSTRUCTIONS,
-        previous_response_id: response.id,
-        input: outputs,
-        tools,
-        tool_choice: "auto",
-        parallel_tool_calls: true,
-        max_output_tokens: 24000,
+    if (result.exhausted) {
+      // Ran out of rounds without a final answer — treat as "nothing applied".
+      return NextResponse.json({
+        success: true,
+        summary: "Review did not converge; no changes applied.",
+        files: [],
+        issuesFound: 0,
+        usage: result.usage,
       });
     }
 
-    // Ran out of rounds without a final answer — treat as "nothing applied".
+    const parsed = parseOutput(result.text);
     return NextResponse.json({
       success: true,
-      summary: "Review did not converge; no changes applied.",
-      files: [],
-      issuesFound: 0,
+      summary: parsed.summary,
+      files: parsed.files,
+      issuesFound: parsed.files.length,
+      usage: result.usage,
     });
   } catch (error) {
     console.error("review-theme error:", error);

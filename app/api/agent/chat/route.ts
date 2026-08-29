@@ -1,10 +1,15 @@
-import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
-import { FAST_MODEL } from "@/lib/ai/models";
+import { pickModel } from "@/lib/ai/resolve";
+import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
+
+// Model calls can run long; don't let Vercel's plan-default duration kill the
+// function mid-generation.
+export const maxDuration = 300;
+
 import {
   listProjectFiles,
   readProjectFiles,
@@ -24,19 +29,11 @@ import {
  * but this endpoint never writes.
  */
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const MODEL = FAST_MODEL;
-
-const tools = [
+const tools: ToolDef[] = [
   {
-    type: "function" as const,
     name: "list_project_files",
     description:
       "List readable files from the WordPress project's active theme, including its /features folder where site features live. Use this before reading files so you do not guess paths.",
-    strict: true,
     parameters: {
       type: "object",
       properties: {
@@ -51,11 +48,9 @@ const tools = [
     },
   },
   {
-    type: "function" as const,
     name: "read_project_files",
     description:
       "Read a small batch of relevant WordPress project files. Prefer one batch containing the most useful entrypoint files instead of calling repeatedly for individual files.",
-    strict: true,
     parameters: {
       type: "object",
       properties: {
@@ -76,11 +71,9 @@ const tools = [
     },
   },
   {
-    type: "function" as const,
     name: "list_content_types",
     description:
       "List the native WordPress content types on this site (pages, posts, any custom post type, WooCommerce products when active, menus, media) with a rough item count each. Call this first when the user asks about the site's actual content rather than its code.",
-    strict: true,
     parameters: {
       type: "object",
       properties: {},
@@ -89,11 +82,9 @@ const tools = [
     },
   },
   {
-    type: "function" as const,
     name: "list_content",
     description:
       "List recent items of one native content type. Use the exact type key from list_content_types (e.g. 'page', 'post', 'product', 'menu', 'media', or a custom post type slug). Returns id, title, status and url for each item.",
-    strict: true,
     parameters: {
       type: "object",
       properties: {
@@ -108,11 +99,9 @@ const tools = [
     },
   },
   {
-    type: "function" as const,
     name: "get_content",
     description:
       "Read one native content item in full: its content/body, status, template, URL, and (for products) price/SKU/stock, (for menus) the menu items, (for media) the file details. Use ids returned by list_content.",
-    strict: true,
     parameters: {
       type: "object",
       properties: {
@@ -130,11 +119,9 @@ const tools = [
     },
   },
   {
-    type: "function" as const,
     name: "edit_theme",
     description:
       "Call this when the user asks to CHANGE the active generated theme — edit a section, colour, text, layout, spacing, add or remove a section, tweak the header/footer, etc. Pass a single clear, self-contained instruction describing exactly what to change. The change is generated and applied inline (with an Undo), so you do NOT write code yourself — just confirm in one short sentence what you're changing. Only for theme/design/code changes, not for questions.",
-    strict: true,
     parameters: {
       type: "object",
       properties: {
@@ -154,12 +141,6 @@ type ActivityItem = {
   tool: string;
   scope?: string;
   paths?: string[];
-};
-
-type UsageTotals = {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
 };
 
 function validateScope(value: unknown): ProjectScope {
@@ -225,26 +206,6 @@ function makeConversationTitle(message: string) {
   return `${cleaned.slice(0, 51)}...`;
 }
 
-function addUsage(
-  totals: UsageTotals,
-  usage:
-    | {
-        input_tokens: number;
-        output_tokens: number;
-        total_tokens: number;
-      }
-    | null
-    | undefined
-) {
-  if (!usage) {
-    return;
-  }
-
-  totals.inputTokens += usage.input_tokens;
-  totals.outputTokens += usage.output_tokens;
-  totals.totalTokens += usage.total_tokens;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const auth = await authenticateSiteRequest(request);
@@ -305,6 +266,7 @@ export async function POST(request: NextRequest) {
       .select(`
         id,
         name,
+        model_config,
         wordpress_sites (
           site_url,
           bridge_token_encrypted,
@@ -435,215 +397,159 @@ Workflow rules:
       },
     ];
 
-    const usageTotals: UsageTotals = {
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-    };
+    const model = pickModel(
+      (project as { model_config?: unknown }).model_config,
+      "chat"
+    );
 
     await writeStep("Understanding your request…");
 
-    let response = await openai.responses.create({
-      model: MODEL,
-      instructions,
-      input: conversationInput,
-      tools,
-      tool_choice: "auto",
-      parallel_tool_calls: true,
-    });
-
-    addUsage(usageTotals, response.usage);
-
-    let totalToolCalls = 0;
     const activity: ActivityItem[] = [];
     // When the chat decides the user wants a theme change it captures a single
     // instruction here and hands it back to the editor, which runs the actual
     // edit (read + generate + write) inline — keeping this request fast.
     let editRequest: { instruction: string } | null = null;
-    for (let round = 0; round < 6; round++) {
-      if (response.status !== "completed") {
-        throw new Error(
-          `OpenAI response did not complete: ${response.status}`
-        );
-      }
 
-      const calls = response.output.filter(
-        (item) => item.type === "function_call"
-      );
-
-      if (calls.length === 0) {
-        const answer = response.output_text || "Analysis completed.";
-
-        if (!conversation) {
-          const { data: createdConversation, error: createConversationError } =
-            await supabase
-              .from("ai_conversations")
-              .insert({
-                project_id: context.projectId,
-                title: makeConversationTitle(message),
-              })
-              .select("id, title")
-              .single();
-
-          if (createConversationError || !createdConversation) {
-            throw new Error(
-              createConversationError?.message ??
-                "Could not create conversation."
-            );
+    const result = await runToolLoop({
+      model,
+      system: instructions,
+      messages: conversationInput,
+      tools,
+      maxRounds: 6,
+      maxToolCalls: 20,
+      handler: async (name, args) => {
+        if (name === "list_project_files") {
+          const scope = validateScope(args.scope);
+          activity.push({ tool: name, scope });
+          await writeStep(`Listing ${scope} files…`);
+          return listProjectFiles(site.site_url, bridgeToken, scope);
+        }
+        if (name === "read_project_files") {
+          const scope = validateScope(args.scope);
+          const paths = validatePaths(args.paths);
+          activity.push({ tool: name, scope, paths });
+          await writeStep(`Reading ${scope}: ${paths.slice(0, 4).join(", ")}`);
+          return readProjectFiles(site.site_url, bridgeToken, scope, paths);
+        }
+        if (name === "list_content_types") {
+          activity.push({ tool: name });
+          await writeStep("Looking at the site's content types…");
+          return listSiteContentTypes(site.site_url, bridgeToken);
+        }
+        if (name === "list_content") {
+          const type = validateContentType(args.type);
+          activity.push({ tool: name, scope: type });
+          await writeStep(`Listing ${type} content…`);
+          return listSiteContent(site.site_url, bridgeToken, type);
+        }
+        if (name === "get_content") {
+          const type = validateContentType(args.type);
+          const id = validateContentId(args.id);
+          activity.push({ tool: name, scope: type, paths: [String(id)] });
+          await writeStep(`Reading ${type} #${id}…`);
+          return getSiteContentItem(site.site_url, bridgeToken, type, id);
+        }
+        if (name === "edit_theme") {
+          const instruction =
+            typeof args.instruction === "string" ? args.instruction.trim().slice(0, 2000) : "";
+          if (!instruction) {
+            throw new Error("An edit instruction is required.");
           }
-
-          conversation = createdConversation;
-        }
-
-        const now = new Date().toISOString();
-
-        const { error: messageError } = await supabase
-          .from("ai_messages")
-          .insert([
-            {
-              conversation_id: conversation.id,
-              role: "user",
-              content: message,
-              activity: [],
-            },
-            {
-              conversation_id: conversation.id,
-              role: "assistant",
-              content: answer,
-              activity,
-            },
-          ]);
-
-        if (messageError) {
-          throw new Error(messageError.message);
-        }
-
-        await supabase
-          .from("ai_conversations")
-          .update({ updated_at: now })
-          .eq("id", conversation.id);
-
-        const { error: runError } = await supabase.from("ai_runs").insert({
-          conversation_id: conversation.id,
-          model: MODEL,
-          input_tokens: usageTotals.inputTokens,
-          output_tokens: usageTotals.outputTokens,
-          total_tokens: usageTotals.totalTokens,
-          tool_calls: totalToolCalls,
-          activity,
-        });
-
-        if (runError) {
-          console.error("AI run persistence error:", runError);
-        }
-
-        return NextResponse.json({
-          success: true,
-          answer,
-          conversation: {
-            id: conversation.id,
-            title: conversation.title,
-            updatedAt: now,
-          },
-          usage: usageTotals,
-          toolCalls: totalToolCalls,
-          activity,
-          editRequest,
-        });
-      }
-
-      totalToolCalls += calls.length;
-
-      if (totalToolCalls > 20) {
-        throw new Error(
-          "AI exceeded the safe project inspection limit. Ask a narrower question."
-        );
-      }
-
-      const outputs = await Promise.all(
-        calls.map(async (call) => {
-          const args = JSON.parse(call.arguments);
-          let result: unknown;
-
-          if (call.name === "list_project_files") {
-            const scope = validateScope(args.scope);
-            activity.push({ tool: call.name, scope });
-            await writeStep(`Listing ${scope} files…`);
-            result = await listProjectFiles(site.site_url, bridgeToken, scope);
-          } else if (call.name === "read_project_files") {
-            const scope = validateScope(args.scope);
-            const paths = validatePaths(args.paths);
-            activity.push({ tool: call.name, scope, paths });
-            await writeStep(`Reading ${scope}: ${paths.slice(0, 4).join(", ")}`);
-            result = await readProjectFiles(
-              site.site_url,
-              bridgeToken,
-              scope,
-              paths
-            );
-          } else if (call.name === "list_content_types") {
-            activity.push({ tool: call.name });
-            await writeStep("Looking at the site's content types…");
-            result = await listSiteContentTypes(site.site_url, bridgeToken);
-          } else if (call.name === "list_content") {
-            const type = validateContentType(args.type);
-            activity.push({ tool: call.name, scope: type });
-            await writeStep(`Listing ${type} content…`);
-            result = await listSiteContent(site.site_url, bridgeToken, type);
-          } else if (call.name === "get_content") {
-            const type = validateContentType(args.type);
-            const id = validateContentId(args.id);
-            activity.push({ tool: call.name, scope: type, paths: [String(id)] });
-            await writeStep(`Reading ${type} #${id}…`);
-            result = await getSiteContentItem(
-              site.site_url,
-              bridgeToken,
-              type,
-              id
-            );
-          } else if (call.name === "edit_theme") {
-            const instruction =
-              typeof args.instruction === "string" ? args.instruction.trim().slice(0, 2000) : "";
-            if (!instruction) {
-              throw new Error("An edit instruction is required.");
-            }
-            if (!editRequest) {
-              editRequest = { instruction };
-              activity.push({ tool: call.name });
-              await writeStep("Preparing a theme edit…");
-            }
-            result = {
-              queued: true,
-              note: "A theme edit has been queued and will be generated and applied inline, with an Undo. Tell the user in one short sentence what you are changing. Do NOT paste code.",
-            };
-          } else {
-            throw new Error(`Unknown tool: ${call.name}`);
+          if (!editRequest) {
+            editRequest = { instruction };
+            activity.push({ tool: name });
+            await writeStep("Preparing a theme edit…");
           }
-
           return {
-            type: "function_call_output" as const,
-            call_id: call.call_id,
-            output: JSON.stringify(result),
+            queued: true,
+            note: "A theme edit has been queued and will be generated and applied inline, with an Undo. Tell the user in one short sentence what you are changing. Do NOT paste code.",
           };
-        })
+        }
+        throw new Error(`Unknown tool: ${name}`);
+      },
+    });
+
+    if (result.exhausted) {
+      throw new Error(
+        "AI inspection took too many rounds. Ask a narrower project question."
       );
-
-      response = await openai.responses.create({
-        model: MODEL,
-        instructions,
-        previous_response_id: response.id,
-        input: outputs,
-        tools,
-        tool_choice: "auto",
-        parallel_tool_calls: true,
-      });
-
-      addUsage(usageTotals, response.usage);
     }
 
-    throw new Error(
-      "AI inspection took too many rounds. Ask a narrower project question."
-    );
+    const answer = result.text || "Analysis completed.";
+
+    if (!conversation) {
+      const { data: createdConversation, error: createConversationError } =
+        await supabase
+          .from("ai_conversations")
+          .insert({
+            project_id: context.projectId,
+            title: makeConversationTitle(message),
+          })
+          .select("id, title")
+          .single();
+
+      if (createConversationError || !createdConversation) {
+        throw new Error(
+          createConversationError?.message ?? "Could not create conversation."
+        );
+      }
+
+      conversation = createdConversation;
+    }
+
+    const now = new Date().toISOString();
+
+    const { error: messageError } = await supabase.from("ai_messages").insert([
+      {
+        conversation_id: conversation.id,
+        role: "user",
+        content: message,
+        activity: [],
+      },
+      {
+        conversation_id: conversation.id,
+        role: "assistant",
+        content: answer,
+        activity,
+      },
+    ]);
+
+    if (messageError) {
+      throw new Error(messageError.message);
+    }
+
+    await supabase
+      .from("ai_conversations")
+      .update({ updated_at: now })
+      .eq("id", conversation.id);
+
+    const { error: runError } = await supabase.from("ai_runs").insert({
+      conversation_id: conversation.id,
+      model,
+      input_tokens: result.usage.inputTokens,
+      output_tokens: result.usage.outputTokens,
+      total_tokens: result.usage.totalTokens,
+      tool_calls: result.toolCalls,
+      activity,
+    });
+
+    if (runError) {
+      console.error("AI run persistence error:", runError);
+    }
+
+    return NextResponse.json({
+      success: true,
+      answer,
+      conversation: {
+        id: conversation.id,
+        title: conversation.title,
+        updatedAt: now,
+      },
+      usage: result.usage,
+      toolCalls: result.toolCalls,
+      activity,
+      editRequest,
+    });
   } catch (error) {
     console.error("Agent chat error:", error);
 

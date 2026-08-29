@@ -6,16 +6,15 @@ import { useRouter } from "next/navigation";
 type Tier = "build" | "edit" | "chat" | "review";
 type Cfg = Partial<Record<Tier, string>>;
 
-const TIERS: { key: Tier; label: string; hint: string; live: boolean }[] = [
+const TIERS: { key: Tier; label: string; hint: string }[] = [
   {
     key: "build",
     label: "Theme generation",
     hint: "Blueprint + files. Runs on OpenAI or Claude.",
-    live: true,
   },
-  { key: "edit", label: "Edits & design", hint: "Chat edits + design elevation.", live: false },
-  { key: "chat", label: "Chat", hint: "AI Editor conversation.", live: false },
-  { key: "review", label: "Quality check", hint: "Correctness review pass.", live: false },
+  { key: "edit", label: "Edits & design", hint: "Chat edits + design elevation. OpenAI or Claude." },
+  { key: "chat", label: "Chat", hint: "AI Editor conversation. OpenAI or Claude." },
+  { key: "review", label: "Quality check", hint: "Correctness review pass. OpenAI or Claude." },
 ];
 
 const SUGGESTIONS = [
@@ -76,11 +75,6 @@ export default function ProjectModelPanel({
           <div key={t.key}>
             <label className="mb-1 flex items-center gap-2 text-xs font-medium text-neutral-700">
               {t.label}
-              {!t.live && (
-                <span className="rounded-full bg-[rgba(20,18,16,0.05)] px-2 py-0.5 text-[10px] font-medium text-neutral-500">
-                  OpenAI now · Claude soon
-                </span>
-              )}
             </label>
             <input
               list="wpab-model-suggestions"

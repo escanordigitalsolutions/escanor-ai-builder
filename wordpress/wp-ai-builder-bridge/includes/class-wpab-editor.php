@@ -91,6 +91,24 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/build/files-start',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_files_start' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/build/job',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_build_job' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/edit-theme',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -138,6 +156,7 @@ final class WPAB_Editor {
 
 	/** Phase B: ask the SaaS for a theme blueprint from the wizard brief. */
 	public static function rest_build_plan( WP_REST_Request $request ) {
+		if ( function_exists( 'set_time_limit' ) ) { @set_time_limit( 300 ); }
 		$params = self::json_params( $request );
 		$brief  = isset( $params['brief'] ) && is_array( $params['brief'] ) ? $params['brief'] : array();
 
@@ -174,6 +193,7 @@ final class WPAB_Editor {
 
 	/** Generate a BATCH of theme files in one SaaS call (fewer wizard steps). */
 	public static function rest_build_files( WP_REST_Request $request ) {
+		if ( function_exists( 'set_time_limit' ) ) { @set_time_limit( 300 ); }
 		$params    = self::json_params( $request );
 		$blueprint = isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ? $params['blueprint'] : array();
 		$paths     = array();
@@ -203,8 +223,58 @@ final class WPAB_Editor {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
+	/**
+	 * Async batch generation: START a build-files job on the SaaS. Returns a
+	 * jobId immediately; the browser polls rest_build_job. Every request in the
+	 * chain stays short, so no host/proxy timeout can kill a long generation.
+	 */
+	public static function rest_build_files_start( WP_REST_Request $request ) {
+		$params    = self::json_params( $request );
+		$blueprint = isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ? $params['blueprint'] : array();
+		$paths     = array();
+
+		if ( isset( $params['paths'] ) && is_array( $params['paths'] ) ) {
+			foreach ( $params['paths'] as $p ) {
+				$p = trim( (string) $p );
+				if ( '' !== $p ) {
+					$paths[] = $p;
+				}
+			}
+		}
+
+		if ( empty( $blueprint ) || empty( $paths ) ) {
+			return new WP_Error( 'wpab_files_bad', 'A blueprint and paths are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request(
+			'agent/build-files-start',
+			array(
+				'blueprint' => $blueprint,
+				'paths'     => $paths,
+			),
+			30
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Async batch generation: poll one SaaS job for its status/result. */
+	public static function rest_build_job( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$job_id = isset( $params['jobId'] ) ? trim( (string) $params['jobId'] ) : '';
+
+		if ( '' === $job_id ) {
+			return new WP_Error( 'wpab_job_bad', 'A jobId is required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/job-status', array( 'jobId' => $job_id ), 20 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
 	/** Phase F: edit the active generated theme from a plain-language instruction. */
 	public static function rest_edit_theme( WP_REST_Request $request ) {
+		if ( function_exists( 'set_time_limit' ) ) { @set_time_limit( 300 ); }
 		$params      = self::json_params( $request );
 		$instruction = isset( $params['instruction'] ) ? trim( (string) $params['instruction'] ) : '';
 
@@ -247,6 +317,7 @@ final class WPAB_Editor {
 				'summary'        => isset( $result['summary'] ) ? (string) $result['summary'] : 'Updated the theme.',
 				'updated'        => isset( $applied['updated'] ) ? (int) $applied['updated'] : count( $files ),
 				'files'          => $changed,
+				'usage'          => isset( $result['usage'] ) && is_array( $result['usage'] ) ? $result['usage'] : null,
 				'undo_available' => true,
 			),
 			200
@@ -266,6 +337,7 @@ final class WPAB_Editor {
 	 * already created and working, so a failed or empty review never errors.
 	 */
 	public static function rest_review_theme( WP_REST_Request $request ) {
+		if ( function_exists( 'set_time_limit' ) ) { @set_time_limit( 300 ); }
 		$params  = self::json_params( $request );
 		$focus   = isset( $params['focus'] ) ? trim( (string) $params['focus'] ) : '';
 		$payload = array();
@@ -285,9 +357,11 @@ final class WPAB_Editor {
 		$files   = ( isset( $result['files'] ) && is_array( $result['files'] ) ) ? $result['files'] : array();
 		$summary = isset( $result['summary'] ) ? (string) $result['summary'] : 'Reviewed the theme.';
 
+		$usage = isset( $result['usage'] ) && is_array( $result['usage'] ) ? $result['usage'] : null;
+
 		if ( empty( $files ) ) {
 			return new WP_REST_Response(
-				array( 'success' => true, 'applied' => false, 'updated' => 0, 'summary' => $summary ),
+				array( 'success' => true, 'applied' => false, 'updated' => 0, 'summary' => $summary, 'usage' => $usage ),
 				200
 			);
 		}
@@ -297,7 +371,7 @@ final class WPAB_Editor {
 		if ( is_wp_error( $applied ) ) {
 			// Keep the already-working theme rather than failing generation.
 			return new WP_REST_Response(
-				array( 'success' => true, 'applied' => false, 'updated' => 0, 'summary' => $summary ),
+				array( 'success' => true, 'applied' => false, 'updated' => 0, 'summary' => $summary, 'usage' => $usage ),
 				200
 			);
 		}
@@ -308,6 +382,7 @@ final class WPAB_Editor {
 				'applied' => true,
 				'updated' => isset( $applied['updated'] ) ? (int) $applied['updated'] : count( $files ),
 				'summary' => $summary,
+				'usage'   => $usage,
 			),
 			200
 		);
@@ -319,6 +394,7 @@ final class WPAB_Editor {
 	 * via the edit-theme path so every call stays small and timeout-safe.
 	 */
 	public static function rest_design_plan( WP_REST_Request $request ) {
+		if ( function_exists( 'set_time_limit' ) ) { @set_time_limit( 300 ); }
 		$params  = self::json_params( $request );
 		$payload = array();
 		if ( isset( $params['concept'] ) && is_array( $params['concept'] ) ) {
@@ -762,6 +838,8 @@ final class WPAB_Editor {
 			'restBuildPlan'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
 			'restBuildFile'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/file' ) ),
 			'restBuildFiles'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files' ) ),
+			'restBuildFilesStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files-start' ) ),
+			'restBuildJob'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/job' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
@@ -991,7 +1069,13 @@ final class WPAB_Editor {
 					headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce, 'Accept': 'application/json' },
 					credentials: 'same-origin',
 					body: body ? JSON.stringify(body) : undefined
-				}).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, data: j }; }); });
+				}).then(function (r) {
+					return r.text().then(function (t) {
+						var j = null;
+						try { j = t ? JSON.parse(t) : null; } catch (pe) { j = null; }
+						return { ok: r.ok, status: r.status, data: j };
+					});
+				});
 			}
 			function addMessage(role, body) {
 				var empty = thread.querySelector('.wpab-ed__empty');
@@ -1184,6 +1268,7 @@ final class WPAB_Editor {
 				if (wForm) { wForm.style.display = ''; }
 				if (wGo) { wGo.disabled = false; wGo.hidden = false; wGo.textContent = 'Generate theme'; }
 				wizard.hidden = false;
+				offerResume();
 				var p = $('wpab-ed-prompt'); if (p) { p.focus(); }
 			}
 			function closeWizard() { if (wizard && !busy) { wizard.hidden = true; } }
@@ -1192,22 +1277,29 @@ final class WPAB_Editor {
 			var wOpen2 = $('wpab-ed-newtheme2');
 			if (wOpen) { wOpen.addEventListener('click', openWizard); }
 			if (wOpen2) { wOpen2.addEventListener('click', openWizard); }
-			if (wCancel) { wCancel.addEventListener('click', closeWizard); }
+			if (wCancel) { wCancel.addEventListener('click', function () { cancelGeneration(); }); }
 			if (wizard) { wizard.addEventListener('click', function (e) { if (e.target === wizard) { closeWizard(); } }); }
 
-			function wpost(url, payload) {
+			function wpost(url, payload, signal) {
 				return fetch(url, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce, 'Accept': 'application/json' },
 					credentials: 'same-origin',
-					body: JSON.stringify(payload || {})
-				}).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, data: j }; }); });
+					body: JSON.stringify(payload || {}),
+					signal: signal || undefined
+				}).then(function (r) {
+					return r.text().then(function (t) {
+						var j = null;
+						try { j = t ? JSON.parse(t) : null; } catch (pe) { j = null; }
+						return { ok: r.ok, status: r.status, data: j };
+					});
+				});
 			}
 			function setProgress(done, total, label) {
 				if (wBarFill && total) { wBarFill.style.width = Math.round((done / total) * 100) + '%'; }
 				if (wStepEl) { wStepEl.textContent = label || ''; }
 			}
-			function errText(out, fallback) { return (out && out.data && (out.data.message || out.data.error)) || fallback; }
+			function errText(out, fallback) { return (out && out.data && (out.data.message || out.data.error)) || (out && !out.ok && out.status ? 'HTTP ' + out.status : fallback); }
 
 			// Animated step feedback ------------------------------------------------
 			var PHASES = ['plan', 'build', 'write', 'refine', 'check'];
@@ -1248,8 +1340,288 @@ final class WPAB_Editor {
 			}
 			function setBuildDetail(text) { if (wStepEl) { wStepEl.textContent = text || ''; } }
 
+			// ---- Run state: cancel, token accounting, resume ---------------------
+			var genToken = 0;      // incremented on every start/cancel; stale runs see it change
+			var genAbort = null;   // AbortController for the in-flight request
+			var themeWritten = false;
+			var tokIn = 0, tokOut = 0;
+			var GEN_STATE_KEY = 'wpabGenState';
+
+			function alive(tok) { return tok === genToken; }
+			function delay(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+			function addTok(d) {
+				var u = d && d.usage;
+				if (u) { tokIn += (u.inputTokens || u.input_tokens || 0); tokOut += (u.outputTokens || u.output_tokens || 0); }
+			}
+			function tokLabel() {
+				var t = tokIn + tokOut;
+				if (!t) { return ''; }
+				return ' · ~' + (t >= 1000 ? (Math.round(t / 100) / 10) + 'k' : t) + ' tokens';
+			}
+			function saveGenState(brand, blueprint, built) {
+				try { localStorage.setItem(GEN_STATE_KEY, JSON.stringify({ brand: brand, blueprint: blueprint, built: built, tokIn: tokIn, tokOut: tokOut, t: Date.now() })); } catch (e) {}
+			}
+			function loadGenState() {
+				try {
+					var s = localStorage.getItem(GEN_STATE_KEY);
+					var st = s ? JSON.parse(s) : null;
+					if (!st || !st.blueprint || !Array.isArray(st.built) || !st.built.length) { return null; }
+					if (st.t && (Date.now() - st.t) > 86400000) { return null; }
+					return st;
+				} catch (e) { return null; }
+			}
+			function clearGenState() { try { localStorage.removeItem(GEN_STATE_KEY); } catch (e) {} }
+
+			function cancelGeneration() {
+				if (!busy) { closeWizard(); return; }
+				genToken++; // every checkpoint in the running chain now fails alive()
+				if (genAbort) { try { genAbort.abort(); } catch (e) {} }
+				busy = false;
+				var st = loadGenState();
+				if (wResult) {
+					wResult.className = 'wpab-ed__wresult is-err';
+					wResult.textContent = themeWritten
+						? 'Stopped. The theme was already written and stays active — only the remaining polish was skipped' + tokLabel() + '. Reloading…'
+						: 'Generation stopped' + tokLabel() + (st ? '. Progress (' + st.built.length + ' files) is saved — reopen “New theme” to continue.' : '.');
+				}
+				if (wProgress) { wProgress.hidden = true; }
+				if (wForm) { wForm.style.display = ''; }
+				if (wGo) { wGo.disabled = false; wGo.textContent = 'Generate theme'; }
+				if (wCancel) { wCancel.textContent = 'Cancel'; }
+				if (themeWritten) { clearGenState(); setTimeout(function () { location.reload(); }, 1800); }
+			}
+
+			function offerResume() {
+				var st = loadGenState();
+				if (!st || !wResult || busy) { return; }
+				var total = (st.blueprint.files || []).length;
+				wResult.className = 'wpab-ed__wresult';
+				wResult.textContent = '';
+				var note = document.createElement('div');
+				note.textContent = 'An earlier run for “' + (st.brand || 'your theme') + '” stopped after ' + st.built.length + ' of ' + total + ' files.';
+				var row = document.createElement('div');
+				row.style.marginTop = '8px';
+				var go = document.createElement('button');
+				go.type = 'button'; go.className = 'wpab-ed__wbtn'; go.textContent = 'Continue where it stopped';
+				go.addEventListener('click', function () { resumeRun(st); });
+				var drop = document.createElement('button');
+				drop.type = 'button'; drop.className = 'wpab-ed__wbtn wpab-ed__wbtn--ghost'; drop.textContent = 'Discard';
+				drop.style.marginLeft = '8px';
+				drop.addEventListener('click', function () { clearGenState(); wResult.textContent = ''; });
+				row.appendChild(go); row.appendChild(drop);
+				wResult.appendChild(note); wResult.appendChild(row);
+			}
+
+			function beginBusyUI() {
+				busy = true;
+				themeWritten = false;
+				if (wGo) { wGo.disabled = true; wGo.textContent = 'Generating…'; }
+				if (wCancel) { wCancel.textContent = 'Stop'; }
+				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = ''; }
+				if (wForm) { wForm.style.display = 'none'; }
+				if (wProgress) { wProgress.hidden = false; }
+				for (var pi = 0; pi < PHASES.length; pi++) { stepState(PHASES[pi], ''); }
+			}
+
+			function genFail(myRun) {
+				return function (err) {
+					if (!alive(myRun)) { return; } // cancelled — the cancel handler already reset the UI
+					busy = false;
+					var st = loadGenState();
+					if (wResult) {
+						wResult.className = 'wpab-ed__wresult is-err';
+						wResult.textContent = ((err && err.message) || 'Theme generation failed.') + tokLabel() + (st ? ' Progress (' + st.built.length + ' files) is saved — reopen “New theme” to continue.' : '');
+					}
+					if (wForm) { wForm.style.display = ''; }
+					if (wProgress) { wProgress.hidden = true; }
+					if (wGo) { wGo.disabled = false; wGo.textContent = 'Generate theme'; }
+					if (wCancel) { wCancel.textContent = 'Cancel'; }
+				};
+			}
+
+			// Correctness pass — non-fatal; resolves even if it fails.
+			function reviewPass(myRun, sig, phase, focus) {
+				if (!alive(myRun)) { return Promise.resolve(); }
+				phaseProgress(phase);
+				setBuildDetail('Scanning the theme for issues…');
+				if (!cfg.restReviewTheme) { stepState(phase, 'done'); return Promise.resolve(); }
+				return wpost(cfg.restReviewTheme, focus ? { focus: focus } : {}, sig).then(function (rOut) {
+					addTok(rOut.data);
+					var d = (rOut && rOut.data) || {};
+					var meta = d.applied ? ('fixed ' + (d.updated || 0)) : 'clean';
+					stepState(phase, 'done', meta);
+				}).catch(function () { if (alive(myRun)) { stepState(phase, 'done'); } });
+			}
+
+			// Staged design elevation: get a punch-list, then apply each target
+			// one at a time (small, timeout-safe calls with live per-file steps).
+			function designRevise(myRun, sig, blueprint) {
+				if (!alive(myRun)) { return Promise.resolve(); }
+				phaseProgress('refine');
+				setBuildDetail('Reviewing the design against its concept…');
+				if (!cfg.restDesignPlan || !cfg.restEditTheme) { stepState('refine', 'done'); return Promise.resolve(); }
+				return wpost(cfg.restDesignPlan, { concept: (blueprint && blueprint.concept) || null, blueprint: blueprint }, sig).then(function (pOut) {
+					addTok(pOut.data);
+					var targets = (pOut && pOut.data && Array.isArray(pOut.data.targets)) ? pOut.data.targets.slice(0, 6) : [];
+					if (!targets.length) { stepState('refine', 'done', 'no changes'); return; }
+					var i = 0, applied = 0;
+					function nextTarget() {
+						if (!alive(myRun)) { return; }
+						if (i >= targets.length) { stepState('refine', 'done', 'elevated ' + applied); return; }
+						var t = targets[i]; i++;
+						stepState('refine', 'active', i + '/' + targets.length);
+						setBuildDetail('Elevating ' + friendlyName(t.path) + '…');
+						if (!t || typeof t.instruction !== 'string' || !t.instruction) { return nextTarget(); }
+						return wpost(cfg.restEditTheme, { instruction: t.instruction }, sig).then(function (eOut) {
+							addTok(eOut.data);
+							if (eOut && eOut.data && eOut.data.success) { applied++; }
+							return nextTarget();
+						}).catch(function () { if (alive(myRun)) { return nextTarget(); } });
+					}
+					return nextTarget();
+				}).catch(function () { if (alive(myRun)) { stepState('refine', 'done'); } });
+			}
+
+			// The build pipeline from a blueprint: batches -> write -> refine -> check.
+			// prevBuilt carries already-generated files when resuming an earlier run.
+			function runPipeline(myRun, sig, brand, blueprint, prevBuilt) {
+				var files = (blueprint.files || []).filter(function (pp) { return typeof pp === 'string' && pp; });
+				if (!files.length) { throw new Error('The plan returned no files.'); }
+				if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
+
+				var built = [];
+				var doneMap = {};
+				for (var di = 0; di < (prevBuilt || []).length; di++) {
+					var bf = prevBuilt[di];
+					if (bf && typeof bf.path === 'string' && typeof bf.contents === 'string' && !doneMap[bf.path]) { built.push(bf); doneMap[bf.path] = 1; }
+				}
+				var remaining = files.filter(function (p) { return !doneMap[p]; });
+
+				// Big, critical files each get their own batch so they never share a
+				// token budget and get truncated; everything else is chunked by 3.
+				var SOLO = { 'assets/css/main.css': 1, 'assets/js/main.js': 1, 'functions.php': 1 };
+				var solo = [], rest = [];
+				for (var fi = 0; fi < remaining.length; fi++) { (SOLO[remaining[fi]] ? solo : rest).push(remaining[fi]); }
+				var batches = [];
+				for (var si = 0; si < solo.length; si++) { batches.push([solo[si]]); }
+				for (var bi = 0; bi < rest.length; bi += 3) { batches.push(rest.slice(bi, bi + 3)); }
+				var totalB = batches.length;
+
+				// Request one batch. Preferred path: start an async job on the SaaS
+				// and poll it every few seconds — every HTTP request stays short, so
+				// no host/proxy/function timeout can kill a long model call. Falls
+				// back to the one-shot endpoint when the async pair is unavailable.
+				function requestBatch(paths) {
+					if (!cfg.restBuildFilesStart || !cfg.restBuildJob) {
+						return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: paths }, sig);
+					}
+					return wpost(cfg.restBuildFilesStart, { blueprint: blueprint, paths: paths }, sig).then(function (sOut) {
+						var jobId = sOut && sOut.data && sOut.data.jobId;
+						if (!jobId) {
+							// Older SaaS without the async endpoints — one-shot fallback.
+							return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: paths }, sig);
+						}
+						var started = Date.now();
+						function poll() {
+							if (!alive(myRun)) { return Promise.reject(new Error('Stopped.')); }
+							if (Date.now() - started > 480000) { return Promise.reject(new Error('Timed out waiting for the generator.')); }
+							return delay(3500).then(function () {
+								if (!alive(myRun)) { throw new Error('Stopped.'); }
+								return wpost(cfg.restBuildJob, { jobId: jobId }, sig);
+							}).then(function (jOut) {
+								var d = (jOut && jOut.data) || {};
+								if (d.status === 'done') { return { ok: true, status: 200, data: d.result || {} }; }
+								if (d.status === 'error') { return { ok: false, status: 502, data: { error: d.error || 'Generation failed.' } }; }
+								if (!jOut.ok) { return { ok: false, status: jOut.status || 0, data: d }; }
+								var secs = Math.round((Date.now() - started) / 1000);
+								setBuildDetail('Building ' + batchLabel(paths) + '… ' + secs + 's');
+								return poll();
+							});
+						}
+						return poll();
+					});
+				}
+
+				// Fetch a batch resiliently. Missing paths are re-requested (up to 3
+				// passes); a transport-level failure (timeout, 5xx) gets ONE more try
+				// after a pause — repeating an expensive failure twice mostly burns
+				// tokens for nothing.
+				function fetchBatchFiles(wanted, bIndex, total) {
+					var collected = {};
+					function attempt(paths, left) {
+						if (!alive(myRun)) { return Promise.reject(new Error('Stopped.')); }
+						return requestBatch(paths).then(function (fOut) {
+							addTok(fOut.data);
+							var got = (fOut && fOut.data && Array.isArray(fOut.data.files)) ? fOut.data.files : [];
+							for (var k = 0; k < got.length; k++) {
+								var f = got[k];
+								if (f && typeof f.path === 'string' && typeof f.contents === 'string') { collected[f.path] = f.contents; }
+							}
+							var missing = paths.filter(function (p) { return !collected[p]; });
+							if (!missing.length) { return; }
+							if (left > 1 && alive(myRun)) { phaseProgress('build', (bIndex + 1) + '/' + total + ' · retry — ' + String(errText(fOut, got.length ? 'missing ' + missing.length + ' of ' + paths.length : 'no files returned')).slice(0, 70)); return delay(800).then(function () { return attempt(missing, left - 1); }); }
+							throw new Error(errText(fOut, 'Could not generate: ' + missing.join(', ')));
+						}).catch(function (e) {
+							if (!alive(myRun)) { throw e; }
+							var missing = wanted.filter(function (p) { return !collected[p]; });
+							if (left > 2 && missing.length) { phaseProgress('build', (bIndex + 1) + '/' + total + ' · retry — ' + String((e && e.message) || 'request failed').slice(0, 70)); return delay(2000).then(function () { return attempt(missing, 1); }); }
+							throw e;
+						});
+					}
+					return attempt(wanted, 3).then(function () {
+						return wanted.map(function (p) { return { path: p, contents: collected[p] }; }).filter(function (x) { return x.contents; });
+					});
+				}
+
+				function runBatch(b) {
+					if (!alive(myRun)) { return; }
+					if (b >= totalB) {
+						stepState('build', 'done', built.length + ' files');
+						phaseProgress('write');
+						setBuildDetail('Creating pages, front page and menu…');
+						return wpost(cfg.restCreateTheme, {
+							brand: brand,
+							description: (blueprint.theme && blueprint.theme.description) || '',
+							files: built,
+							blueprint: blueprint
+						}, sig).then(function (cOut) {
+							if (!alive(myRun)) { return; }
+							if (!cOut.ok || !cOut.data || cOut.data.success === false) {
+								throw new Error(errText(cOut, 'Could not write the theme.'));
+							}
+							themeWritten = true;
+							clearGenState();
+							var fin = cOut.data.finalize || {};
+							var extra = fin.pages_created ? (fin.pages_created + ' pages' + (fin.menu_built ? ' + menu' : '')) : (cOut.data.files_written || built.length) + ' files';
+							stepState('write', 'done', extra);
+							var themeName = cOut.data.name || brand;
+							// Elevate the design (staged, per-file), then a final correctness
+							// check to clean up anything the elevation touched. Both non-fatal.
+							return designRevise(myRun, sig, blueprint).then(function () {
+								return reviewPass(myRun, sig, 'check', 'any invisible or hidden content, header/nav or mobile-menu selector mismatches, JS using a library that functions.php does not enqueue, PHP errors, horizontal overflow, or empty image placeholders');
+							}).then(function () {
+								if (!alive(myRun)) { return; }
+								finishAllSteps();
+								if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + tokLabel() + '), designed and activated. Reloading…'; }
+								setTimeout(function () { location.reload(); }, 1500);
+							});
+						});
+					}
+					phaseProgress('build', (b + 1) + '/' + totalB);
+					setBuildDetail('Building ' + batchLabel(batches[b]) + '…');
+					return fetchBatchFiles(batches[b], b, totalB).then(function (got) {
+						if (!alive(myRun)) { return; }
+						for (var k = 0; k < got.length; k++) { built.push(got[k]); doneMap[got[k].path] = 1; }
+						saveGenState(brand, blueprint, built);
+						return runBatch(b + 1);
+					});
+				}
+
+				return runBatch(0);
+			}
+
 			function generateTheme() {
-				if (!wGo || !cfg.restBuildPlan) { return; }
+				if (!wGo || !cfg.restBuildPlan || busy) { return; }
 				var brief = collectBrief();
 				if (!brief.prompt) {
 					if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = 'Please describe the website you want.'; }
@@ -1257,147 +1629,41 @@ final class WPAB_Editor {
 					return;
 				}
 
-				busy = true;
-				wGo.disabled = true;
-				wGo.textContent = 'Generating…';
-				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = ''; }
-				if (wForm) { wForm.style.display = 'none'; }
-				if (wProgress) { wProgress.hidden = false; }
-				for (var pi = 0; pi < PHASES.length; pi++) { stepState(PHASES[pi], ''); }
+				genToken++;
+				var myRun = genToken;
+				genAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+				var sig = genAbort ? genAbort.signal : undefined;
+				tokIn = 0; tokOut = 0;
+				clearGenState();
+				beginBusyUI();
 				phaseProgress('plan');
 				setBuildDetail('Designing the layout, palette and sections…');
 
-				// Correctness pass — non-fatal; resolves even if it fails.
-				function reviewPass(phase, focus) {
-					phaseProgress(phase);
-					setBuildDetail('Scanning the theme for issues…');
-					if (!cfg.restReviewTheme) { stepState(phase, 'done'); return Promise.resolve(); }
-					return wpost(cfg.restReviewTheme, focus ? { focus: focus } : {}).then(function (rOut) {
-						var d = (rOut && rOut.data) || {};
-						var meta = d.applied ? ('fixed ' + (d.updated || 0)) : 'clean';
-						stepState(phase, 'done', meta);
-					}).catch(function () { stepState(phase, 'done'); });
-				}
-
-				// Staged design elevation: get a punch-list, then apply each target
-				// one at a time (small, timeout-safe calls with live per-file steps).
-				function designRevise(blueprint) {
-					phaseProgress('refine');
-					setBuildDetail('Reviewing the design against its concept…');
-					if (!cfg.restDesignPlan || !cfg.restEditTheme) { stepState('refine', 'done'); return Promise.resolve(); }
-					return wpost(cfg.restDesignPlan, { concept: (blueprint && blueprint.concept) || null, blueprint: blueprint }).then(function (pOut) {
-						var targets = (pOut && pOut.data && Array.isArray(pOut.data.targets)) ? pOut.data.targets.slice(0, 6) : [];
-						if (!targets.length) { stepState('refine', 'done', 'no changes'); return; }
-						var i = 0, applied = 0;
-						function nextTarget() {
-							if (i >= targets.length) { stepState('refine', 'done', 'elevated ' + applied); return; }
-							var t = targets[i]; i++;
-							stepState('refine', 'active', i + '/' + targets.length);
-							setBuildDetail('Elevating ' + friendlyName(t.path) + '…');
-							if (!t || typeof t.instruction !== 'string' || !t.instruction) { return nextTarget(); }
-							return wpost(cfg.restEditTheme, { instruction: t.instruction }).then(function (eOut) {
-								if (eOut && eOut.data && eOut.data.success) { applied++; }
-								return nextTarget();
-							}).catch(function () { return nextTarget(); });
-						}
-						return nextTarget();
-					}).catch(function () { stepState('refine', 'done'); });
-				}
-
-				wpost(cfg.restBuildPlan, { brief: brief }).then(function (out) {
+				wpost(cfg.restBuildPlan, { brief: brief }, sig).then(function (out) {
+					if (!alive(myRun)) { return; }
 					if (!out.ok || !out.data || out.data.success === false || !out.data.blueprint) {
 						throw new Error(errText(out, 'Could not plan the theme.'));
 					}
+					addTok(out.data);
 					stepState('plan', 'done');
 					var blueprint = out.data.blueprint;
 					var brand = brief.name || (blueprint.theme && blueprint.theme.name) || 'Custom Theme';
-					var files = (blueprint.files || []).filter(function (pp) { return typeof pp === 'string' && pp; });
-					if (!files.length) { throw new Error('The plan returned no files.'); }
-					if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
+					return runPipeline(myRun, sig, brand, blueprint, []);
+				}).catch(genFail(myRun));
+			}
 
-					var built = [];
-					// Big, critical files each get their own batch so they never share a
-					// token budget and get truncated; everything else is chunked by 3.
-					var SOLO = { 'assets/css/main.css': 1, 'assets/js/main.js': 1, 'functions.php': 1 };
-					var solo = [], rest = [];
-					for (var fi = 0; fi < files.length; fi++) { (SOLO[files[fi]] ? solo : rest).push(files[fi]); }
-					var batches = [];
-					for (var si = 0; si < solo.length; si++) { batches.push([solo[si]]); }
-					for (var bi = 0; bi < rest.length; bi += 3) { batches.push(rest.slice(bi, bi + 3)); }
-					var totalB = batches.length;
-
-					// Fetch a batch resiliently: retry on failure and re-request ONLY the
-					// paths still missing (so a truncated final file never kills the run).
-					function fetchBatchFiles(wanted, bIndex, total) {
-						var collected = {};
-						function attempt(paths, left) {
-							return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: paths }).then(function (fOut) {
-								var got = (fOut && fOut.data && Array.isArray(fOut.data.files)) ? fOut.data.files : [];
-								for (var k = 0; k < got.length; k++) {
-									var f = got[k];
-									if (f && typeof f.path === 'string' && typeof f.contents === 'string') { collected[f.path] = f.contents; }
-								}
-								var missing = paths.filter(function (p) { return !collected[p]; });
-								if (!missing.length) { return; }
-								if (left > 1) { phaseProgress('build', (bIndex + 1) + '/' + total + ' · retry'); return attempt(missing, left - 1); }
-								throw new Error(errText(fOut, 'Could not generate: ' + missing.join(', ')));
-							}).catch(function (e) {
-								var missing = wanted.filter(function (p) { return !collected[p]; });
-								if (left > 1 && missing.length) { phaseProgress('build', (bIndex + 1) + '/' + total + ' · retry'); return attempt(missing, left - 1); }
-								throw e;
-							});
-						}
-						return attempt(wanted, 3).then(function () {
-							return wanted.map(function (p) { return { path: p, contents: collected[p] }; }).filter(function (x) { return x.contents; });
-						});
-					}
-
-					function runBatch(b) {
-						if (b >= totalB) {
-							stepState('build', 'done', totalB + ' batches');
-							phaseProgress('write');
-							setBuildDetail('Creating pages, front page and menu…');
-							return wpost(cfg.restCreateTheme, {
-								brand: brand,
-								description: (blueprint.theme && blueprint.theme.description) || '',
-								files: built,
-								blueprint: blueprint
-							}).then(function (cOut) {
-								if (!cOut.ok || !cOut.data || cOut.data.success === false) {
-									throw new Error(errText(cOut, 'Could not write the theme.'));
-								}
-								var fin = cOut.data.finalize || {};
-								var extra = fin.pages_created ? (fin.pages_created + ' pages' + (fin.menu_built ? ' + menu' : '')) : (cOut.data.files_written || built.length) + ' files';
-								stepState('write', 'done', extra);
-								var themeName = cOut.data.name || brand;
-								// Elevate the design (staged, per-file), then a final correctness
-								// check to clean up anything the elevation touched. Both non-fatal.
-								return designRevise(blueprint).then(function () {
-									return reviewPass('check', 'any invisible or hidden content, header/nav or mobile-menu selector mismatches, JS using a library that functions.php does not enqueue, PHP errors, horizontal overflow, or empty image placeholders');
-								}).then(function () {
-									finishAllSteps();
-									if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + '), designed and activated. Reloading…'; }
-									setTimeout(function () { location.reload(); }, 1500);
-								});
-							});
-						}
-						phaseProgress('build', (b + 1) + '/' + totalB);
-						setBuildDetail('Building ' + batchLabel(batches[b]) + '…');
-						return fetchBatchFiles(batches[b], b, totalB).then(function (got) {
-							for (var k = 0; k < got.length; k++) { built.push(got[k]); }
-							return runBatch(b + 1);
-						});
-					}
-
-					return runBatch(0);
-				}).catch(function (err) {
-					busy = false;
-					if (wResult) { wResult.className = 'wpab-ed__wresult is-err'; wResult.textContent = (err && err.message) || 'Theme generation failed.'; }
-					if (wForm) { wForm.style.display = ''; }
-					if (wProgress) { wProgress.hidden = true; }
-					wGo.disabled = false;
-					wGo.textContent = 'Generate theme';
-				});
+			function resumeRun(st) {
+				if (busy) { return; }
+				genToken++;
+				var myRun = genToken;
+				genAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+				var sig = genAbort ? genAbort.signal : undefined;
+				tokIn = st.tokIn || 0; tokOut = st.tokOut || 0;
+				beginBusyUI();
+				stepState('plan', 'done');
+				Promise.resolve().then(function () {
+					return runPipeline(myRun, sig, st.brand || 'Custom Theme', st.blueprint, st.built);
+				}).catch(genFail(myRun));
 			}
 
 			if (wGo) { wGo.addEventListener('click', generateTheme); }
