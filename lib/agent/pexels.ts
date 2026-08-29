@@ -113,18 +113,45 @@ export async function fetchBriefImages(brief: unknown): Promise<BriefImage[]> {
   const text = [b.name, b.prompt]
     .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
     .join(" ");
-  const query =
-    text
-      .replace(/https?:\S+/g, " ")
-      .replace(/[^\p{L}\p{N} ]+/gu, " ")
-      .split(/\s+/)
-      .filter((w) => w.length > 2)
-      .slice(0, 8)
-      .join(" ") || "business";
+
+  // Generic web/builder words that poison an image search ("underground
+  // festival website" once returned a mole photo for "underground").
+  const STOP = new Set([
+    "website", "site", "page", "landing", "homepage", "web",
+    "svetaine", "svetainė", "puslapis", "tinklalapis",
+    "modern", "modernus", "moderni", "custom", "unique", "professional",
+    "premium", "digital", "online", "design", "dizainas", "dizaino",
+    "brand", "theme", "tema", "temos", "wordpress", "experimental",
+    "creative", "elegant", "minimal", "minimalist", "stylish",
+    "the", "and", "for", "with",
+  ]);
+
+  const words = text
+    .replace(/https?:\S+/g, " ")
+    .replace(/[^\p{L}\p{N} ]+/gu, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP.has(w.toLowerCase()));
+
+  // 2-3 queries instead of one: more variety, better odds of on-topic photos.
+  const queries = [...new Set(
+    [
+      words.slice(0, 4).join(" "),
+      words.slice(4, 8).join(" "),
+      typeof b.name === "string" ? b.name.trim() : "",
+    ].filter((q) => q.length > 2)
+  )].slice(0, 3);
+  if (!queries.length) {
+    queries.push("business");
+  }
 
   const out: BriefImage[] = [];
+  const seen = new Set<string>();
 
-  async function search(orientation: "landscape" | "portrait", count: number) {
+  async function search(
+    query: string,
+    orientation: "landscape" | "portrait",
+    count: number
+  ) {
     try {
       const res = await fetch(
         `${SEARCH}?query=${encodeURIComponent(query)}&per_page=${count}&orientation=${orientation}`,
@@ -139,7 +166,8 @@ export async function fetchBriefImages(brief: unknown): Promise<BriefImage[]> {
       };
       for (const ph of data.photos ?? []) {
         const base = (ph.src?.original ?? "").split("?")[0];
-        if (!base) continue;
+        if (!base || seen.has(base)) continue;
+        seen.add(base);
         const w = orientation === "landscape" ? 1600 : 900;
         const h = orientation === "landscape" ? 1000 : 1200;
         out.push({
@@ -155,7 +183,16 @@ export async function fetchBriefImages(brief: unknown): Promise<BriefImage[]> {
     }
   }
 
-  await Promise.all([search("landscape", 9), search("portrait", 5)]);
-  console.log(`pexels: fetched ${out.length} brief images for "${query}"`);
-  return out;
+  // Primary query carries most of the set; secondary queries add range.
+  const tasks: Promise<void>[] = [];
+  queries.forEach((q, i) => {
+    if (i === 0) {
+      tasks.push(search(q, "landscape", 6), search(q, "portrait", 4));
+    } else {
+      tasks.push(search(q, "landscape", 4), search(q, "portrait", 2));
+    }
+  });
+  await Promise.all(tasks);
+
+  return out.slice(0, 18);
 }

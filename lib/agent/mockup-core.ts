@@ -21,9 +21,35 @@ Avoid default website composition: no predictable split hero, equal card grid, r
 
 The result should feel art-directed, intentional and difficult to reproduce with a template, while remaining readable, responsive and conversion-focused.
 
-TECHNICAL: all CSS in one <style> block in <head>; <body> begins with <header data-part="header">, followed by 4-6 top-level <section data-section="<kebab-slug>"> elements, never nested, and ends with <footer data-part="footer">. Use only supplied PEXELS IMAGES URLs as <img src="<url>" width="<w>" height="<h>" alt="...">.
+TECHNICAL: all CSS in one <style> block in <head>; load 1-2 Google Fonts via <link> tags in <head>; <body> begins with <header data-part="header">, followed by 4-6 top-level <section data-section="<kebab-slug>"> elements, never nested, and ends with <footer data-part="footer">. Use only supplied PEXELS IMAGES URLs as <img src="<url>" width="<w>" height="<h>" alt="...">.
+
+THE HERO must be unconventional: never a centered headline block and never a symmetric text-left / image-right split. Use asymmetry, oversized or fragmented typography, layering, rotation, an unexpected focal point, or composition that bleeds off the edges.
+
+NO HORIZONTAL OVERFLOW at any width: clip decorative absolutely-positioned elements (overflow-x:clip on body and overflow:hidden on sections that contain them), never use fixed-width background patterns wider than the viewport, and make sure the layout holds at 390px.
 
 Output only the complete HTML document from <!DOCTYPE html> to </html>.`;
+
+/**
+ * Art-direction seeds: one is picked at random for every generation, so the
+ * same brief produces visibly different designs run after run. The direction
+ * is a starting mood, not a cage — the prompt tells the model to adapt it.
+ */
+const ART_DIRECTIONS = [
+  "Brutalist poster: raw modular grid, oversized type, hard 1px borders, zero rounded corners, stark contrast.",
+  "Swiss editorial: strict columns, generous whitespace, precise small type against one huge headline, restrained palette.",
+  "Retro print / risograph: limited ink palette, grainy overlays, slightly offset layers, print-shop charm.",
+  "Technical blueprint: schematics, rulers, annotation labels, monospace data blocks, thin diagram lines.",
+  "Organic naturalist: irregular hand-drawn shapes, botanical rhythm, soft earth palette, asymmetric calm.",
+  "Luxury minimal: vast whitespace, serif display type, monochrome plus one precious accent, slow pacing.",
+  "Neo-noir: deep blacks, one neon accent color, cinematic image treatment, dramatic scale jumps.",
+  "Playful maximalist: loud clashing colors, sticker-like elements, rotation, humor, dense energetic composition.",
+  "Archival museum catalogue: catalog numbers, specimen labels, figures and plates, captioned imagery.",
+  "Type-led kinetic: typography IS the layout — words as structure, images small and supporting.",
+  "Collage scrapbook: layered cutouts, taped and torn edges, overlapping photos, handwritten-style accents.",
+  "Soft pastel editorial: muted airy palette, rounded forms, light rhythm, quiet confidence.",
+  "Industrial utilitarian: stencil type, warning-stripe accents, cargo-label details, functional grid.",
+  "Deco geometry: ornamental line-work, symmetry deliberately broken in one place, metallic-feeling accents.",
+] as const;
 
 export type MockupSection = { slug: string; html: string };
 
@@ -99,12 +125,16 @@ export async function generateMockup(
         .join("\n")
     : `\n\nPEXELS IMAGES: none supplied — design without <img> elements.`;
 
+  const direction =
+    ART_DIRECTIONS[Math.floor(Math.random() * ART_DIRECTIONS.length)];
+
   const gen = await generateText({
     model,
     system: MOCKUP_INSTRUCTIONS,
     maxTokens: 32000,
     input:
       `Brief:\n${JSON.stringify(brief, null, 2)}` +
+      `\n\nART DIRECTION FOR THIS RUN (commit to it fully, adapted to the brand's subject):\n${direction}` +
       imageBlock +
       (variation ? `\n\n${variation}` : ""),
   });
