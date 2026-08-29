@@ -1,4 +1,4 @@
-import { BUILD_MODEL, GEN_MODEL, FAST_MODEL, SMART_MODEL } from "./models";
+import { BUILD_MODEL, SMART_MODEL } from "./models";
 
 /**
  * Per-project model selection.
@@ -20,8 +20,10 @@ export type ModelTier = "plan" | "build" | "edit" | "chat" | "review" | "cheap";
 export const TIER_DEFAULTS: Record<ModelTier, string> = {
   plan: process.env.MODEL_PLAN ?? BUILD_MODEL,
   build: BUILD_MODEL,
-  edit: GEN_MODEL,
-  chat: FAST_MODEL,
+  // Edits and chat default to the cheap OpenAI model — many small tool-loop
+  // steps are cheap there; override per project or with MODEL_EDIT/MODEL_CHAT.
+  edit: process.env.MODEL_EDIT ?? "gpt-5.6-luna",
+  chat: process.env.MODEL_CHAT ?? "gpt-5.6-luna",
   review: SMART_MODEL,
   // Cheap helper steps (design concept, quick design review) — a fast, low-cost
   // model. Defaults to OpenAI's gpt-5.6-luna; override with MODEL_CHEAP.

@@ -17,8 +17,8 @@ const TIERS: { key: Tier; label: string; hint: string }[] = [
     label: "File generation",
     hint: "Writes the theme files from the blueprint — a fast, cheap model does fine.",
   },
-  { key: "edit", label: "Edits & design", hint: "Chat edits + design elevation. A strong model pays off here too." },
-  { key: "chat", label: "Chat", hint: "AI Editor conversation — fast model recommended." },
+  { key: "edit", label: "Edits & design", hint: "Chat edits — multi-step file reading before changes. Default: gpt-5.6-luna (cheap)." },
+  { key: "chat", label: "Chat", hint: "AI Editor conversation. Default: gpt-5.6-luna (cheap)." },
   { key: "review", label: "Quality check", hint: "Correctness review pass." },
   {
     key: "cheap",

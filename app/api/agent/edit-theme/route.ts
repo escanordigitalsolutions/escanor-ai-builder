@@ -23,11 +23,13 @@ export const maxDuration = 300;
  * one-level undo). Nothing is written here.
  */
 
-const INSTRUCTIONS = `Edit the active classic PHP WordPress theme per the instruction.
-1. Inspect first: list_project_files, then read the files you'll change + assets/css/main.css.
-2. Fewest files possible; reuse existing classes and tokens; responsive; COMPLETE file contents, never diffs.
-3. No JS libraries. Never require/include a PHP file that does not exist in the theme. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
-Final reply (no tool calls), starting with the first characters "SUMMARY:":
+const INSTRUCTIONS = `Edit the active classic PHP WordPress theme per the instruction. Work in steps — understand first, change second.
+
+1. The theme's file structure is provided in the message. Read the files you plan to change PLUS assets/css/main.css with read_project_files before writing anything.
+2. After reading, if you discover the change also involves other files (a template part, functions.php, main.js), read those too — several read rounds are expected and encouraged. Never edit a file you have not read in this conversation.
+3. Fewest files possible; reuse existing classes and design tokens; responsive; COMPLETE file contents, never diffs.
+4. No JS libraries. Never require/include a PHP file that does not exist in the theme. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
+Final reply (no tool calls), starting with the first characters "SUMMARY:" — one sentence saying WHAT changed and WHERE, in plain user-facing language:
 SUMMARY: <one sentence>
 ===WPAB_FILE:<path>===
 <complete new contents>
@@ -37,7 +39,7 @@ const tools: ToolDef[] = [
   {
     name: "list_project_files",
     description:
-      "List readable files in the active theme so you never guess paths. Call this first.",
+      "Re-list the readable theme files (the structure is already in the message; call this only if it seems stale).",
     parameters: {
       type: "object",
       properties: {},
@@ -153,20 +155,36 @@ export async function POST(request: NextRequest) {
 
   const editModel = pickModel((project as { model_config?: unknown }).model_config, "edit");
   try {
+    // Always hand the model the real theme structure up front — it never
+    // guesses paths and saves a tool round.
+    let structureBlock = "";
+    try {
+      const structure = await listProjectFiles(siteUrl, bridgeToken, "theme");
+      structureBlock = `\n\nTheme structure (current, read-only):\n${JSON.stringify(structure)}`;
+    } catch {
+      structureBlock = "";
+    }
+
+    const inspected: string[] = [];
+
     const result = await runToolLoop({
       model: editModel,
       system: INSTRUCTIONS,
-      messages: [{ role: "user", content: `Instruction: ${instruction}` }],
+      messages: [{ role: "user", content: `Instruction: ${instruction}` + structureBlock }],
       tools,
       maxTokens: 16000,
-      maxRounds: 6,
+      maxRounds: 10,
       handler: async (name, args) => {
         try {
           if (name === "list_project_files") {
             return await listProjectFiles(siteUrl, bridgeToken, "theme");
           }
           if (name === "read_project_files") {
-            return await readProjectFiles(siteUrl, bridgeToken, "theme", validatePaths(args.paths));
+            const paths = validatePaths(args.paths);
+            for (const pth of paths) {
+              if (!inspected.includes(pth)) inspected.push(pth);
+            }
+            return await readProjectFiles(siteUrl, bridgeToken, "theme", paths);
           }
           return { error: `Unknown tool: ${name}` };
         } catch (e) {
@@ -195,6 +213,7 @@ export async function POST(request: NextRequest) {
       success: true,
       summary: parsed.summary,
       files: parsed.files,
+      inspected: inspected.slice(0, 12),
       usage: result.usage,
     });
   } catch (error) {

@@ -410,6 +410,7 @@ final class WPAB_Editor {
 				'summary'        => isset( $result['summary'] ) ? (string) $result['summary'] : 'Updated the theme.',
 				'updated'        => isset( $applied['updated'] ) ? (int) $applied['updated'] : count( $files ),
 				'files'          => $changed,
+				'inspected'      => ( isset( $result['inspected'] ) && is_array( $result['inspected'] ) ) ? array_map( 'strval', $result['inspected'] ) : array(),
 				'usage'          => isset( $result['usage'] ) && is_array( $result['usage'] ) ? $result['usage'] : null,
 				'undo_available' => true,
 			),
@@ -1211,7 +1212,7 @@ final class WPAB_Editor {
 			.wpab-ed__editdone { font-weight: 600; color: var(--ed-text); }
 			.wpab-ed__chips2 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 			.wpab-ed__chipslead { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ed-faint); margin-right: 2px; }
-			.wpab-ed__filechip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--ed-accent-soft); border: 1px solid rgba(99,102,241,.2); color: var(--ed-accent); font-size: 11.5px; font-weight: 600; }
+			.wpab-ed__filechip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--ed-accent-soft); border: 1px solid rgba(99,102,241,.2); color: var(--ed-accent); font-size: 11.5px; font-weight: 600; }			.wpab-ed__filechip--soft { opacity: .6; }
 			.wpab-ed__editdone + .wpab-ed__chips2 + .wpab-ed__undo, .wpab-ed__chips2 + .wpab-ed__undo { margin-top: 10px; }
 		.wpab-ed__preview { display: flex; flex-direction: column; }
 		.wpab-ed__devbar { display: flex; justify-content: center; gap: 4px; padding: 8px 0 6px; background: transparent; }
@@ -1302,7 +1303,7 @@ final class WPAB_Editor {
 				if (!fr) { return; }
 				try { fr.contentWindow.location.reload(); } catch (e) { fr.src = fr.src; }
 			}
-			function addUndoMessage(summary, files) {
+			function addUndoMessage(summary, files, inspected) {
 				var wrap = addMessage('assistant', '');
 				var mbody = wrap.querySelector('.wpab-msg__body');
 				if (!mbody) { return; }
@@ -1329,6 +1330,25 @@ final class WPAB_Editor {
 					}
 					mbody.appendChild(chips);
 				}
+				if (inspected && inspected.length) {
+					var ichips = document.createElement('div');
+					ichips.className = 'wpab-ed__chips2';
+					var ilead = document.createElement('span');
+					ilead.className = 'wpab-ed__chipslead'; ilead.textContent = 'Inspected';
+					ichips.appendChild(ilead);
+					var iseen = {};
+					for (var ii = 0; ii < inspected.length; ii++) {
+						var ip = inspected[ii];
+						if (!ip || iseen[ip]) { continue; }
+						iseen[ip] = 1;
+						var ic = document.createElement('span');
+						ic.className = 'wpab-ed__filechip wpab-ed__filechip--soft';
+						ic.textContent = friendlyName(ip);
+						ic.title = ip;
+						ichips.appendChild(ic);
+					}
+					mbody.appendChild(ichips);
+				}
 				if (cfg.restUndoEdit) {
 					var b = document.createElement('button');
 					b.type = 'button'; b.className = 'wpab-ed__undo'; b.textContent = 'Undo';
@@ -1344,16 +1364,25 @@ final class WPAB_Editor {
 			}
 			function runEdit(instruction) {
 				var typing = addTyping();
-				var t = typing.querySelector('.wpab-typing'); if (t) { t.textContent = 'Applying your change…'; }
+				var t = typing.querySelector('.wpab-typing');
+				if (t) { t.textContent = 'Reading the theme files…'; }
+				var phase = 0;
+				var phases = ['Reading the theme files…', 'Understanding the change…', 'Writing the update…', 'Almost there…'];
+				var ticker = setInterval(function () {
+					phase = Math.min(phase + 1, phases.length - 1);
+					if (t) { t.textContent = phases[phase]; }
+				}, 9000);
 				return api('POST', cfg.restEditTheme, { instruction: instruction }).then(function (out) {
+					clearInterval(ticker);
 					typing.remove();
 					if (!out.ok || !out.data || out.data.success === false) {
 						addMessage('assistant', (out.data && (out.data.message || out.data.error)) || 'Could not apply the change.');
 						return;
 					}
-					addUndoMessage(out.data.summary, out.data.files);
+					addUndoMessage(out.data.summary, out.data.files, out.data.inspected);
 					reloadPreview();
 				}).catch(function () {
+					clearInterval(ticker);
 					typing.remove();
 					addMessage('assistant', 'Network error applying the change.');
 				});
