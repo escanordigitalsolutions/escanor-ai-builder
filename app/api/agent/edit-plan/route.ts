@@ -18,9 +18,18 @@ export const maxDuration = 120;
  * edit stage executes the steps as its work queue.
  */
 
-const INSTRUCTIONS = `You are the planning step of a WordPress theme editor. Given the user's change request and the theme's file list, produce a short execution plan that another model will follow step by step. Answer with ONLY this JSON (no markdown, no text outside it):
-{"summary":"one sentence of what will be done","steps":[{"title":"3-6 word action","detail":"one sentence: exactly what to change and where","files":["relative/path.php"]}]}
-Rules: 2-5 steps; each step is one concrete change; reference only files that exist in the provided structure; the last step must verify consistency (styles reuse the theme's tokens, layout stays responsive). Plain user-facing language in title and detail.`;
+const INSTRUCTIONS = `Create a minimal execution plan for the requested WordPress theme change.
+
+Return only:
+{"summary":"...","steps":[{"title":"...","detail":"...","files":["..."]}]}
+
+Rules:
+- 1-4 steps.
+- Use only existing files.
+- Prefer the fewest files necessary.
+- Do not add unrelated improvements.
+- The final step verifies responsive layout and consistency; it may use an empty files array.
+- If the selected element is provided, use it to identify the correct section.`;
 
 type Json = Record<string, unknown>;
 
@@ -84,6 +93,8 @@ export async function POST(request: NextRequest) {
   }
 
   const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
+  const selected =
+    typeof body.selected === "string" ? body.selected.trim().slice(0, 600) : "";
   if (!instruction) {
     return NextResponse.json(
       { success: false, error: "An instruction is required." },
@@ -137,6 +148,7 @@ export async function POST(request: NextRequest) {
       maxTokens: 1500,
       input:
         `Change request: ${instruction}` +
+        `\n\nSelected element: ${selected || "none"}` +
         (structure ? `\n\nTheme structure:\n${JSON.stringify(structure)}` : ""),
     });
 

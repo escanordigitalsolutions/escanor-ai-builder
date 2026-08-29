@@ -418,6 +418,9 @@ final class WPAB_Editor {
 		if ( isset( $params['plan'] ) && is_array( $params['plan'] ) ) {
 			$edit_payload['plan'] = array_slice( $params['plan'], 0, 8 );
 		}
+		if ( isset( $params['selected'] ) && is_string( $params['selected'] ) ) {
+			$edit_payload['selected'] = substr( $params['selected'], 0, 600 );
+		}
 		$result = WPAB_Cloud::request( 'agent/edit-theme', $edit_payload, 180 );
 
 		if ( is_wp_error( $result ) ) {
@@ -890,6 +893,9 @@ final class WPAB_Editor {
 		if ( isset( $params['plan'] ) && is_array( $params['plan'] ) ) {
 			$payload['plan'] = array_slice( $params['plan'], 0, 8 );
 		}
+		if ( isset( $params['selected'] ) && is_string( $params['selected'] ) ) {
+			$payload['selected'] = substr( $params['selected'], 0, 600 );
+		}
 		$result = WPAB_Cloud::request( 'agent/edit-start', $payload, 30 );
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -931,7 +937,11 @@ final class WPAB_Editor {
 		if ( '' === $instruction ) {
 			return new WP_Error( 'wpab_plan_empty', 'An instruction is required.', array( 'status' => 400 ) );
 		}
-		$result = WPAB_Cloud::request( 'agent/edit-plan', array( 'instruction' => $instruction ), 90 );
+		$plan_payload = array( 'instruction' => $instruction );
+		if ( isset( $params['selected'] ) && is_string( $params['selected'] ) ) {
+			$plan_payload['selected'] = substr( $params['selected'], 0, 600 );
+		}
+		$result = WPAB_Cloud::request( 'agent/edit-plan', $plan_payload, 90 );
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
@@ -1574,7 +1584,7 @@ final class WPAB_Editor {
 				if (t) { t.textContent = 'Planning the change…'; }
 				frameBusy(true, 'Planning the change…');
 				var planPromise = cfg.restEditPlan
-					? api('POST', cfg.restEditPlan, { instruction: instruction }).then(function (pOut) {
+					? api('POST', cfg.restEditPlan, { instruction: instruction, selected: lastSelFull || '' }).then(function (pOut) {
 						return (pOut.ok && pOut.data && pOut.data.success && pOut.data.plan) ? pOut.data.plan : null;
 					}).catch(function () { return null; })
 					: Promise.resolve(null);
@@ -1591,7 +1601,7 @@ final class WPAB_Editor {
 						if (t) { t.textContent = phases[phase]; }
 						frameBusy(true, phases[phase]);
 					}, 9000);
-					var payload = { instruction: instruction };
+					var payload = { instruction: instruction, selected: lastSelFull || '' };
 					if (plan && plan.steps) { payload.plan = plan.steps; }
 					function finishOk(data) {
 						clearInterval(ticker);
@@ -1686,6 +1696,7 @@ final class WPAB_Editor {
 					var sel = selTarget;
 					selTarget = null;
 					renderSelChip();
+					lastSelFull = sel ? sel.full : null;
 					var full = sel ? sel.full + ' \u2014 ' + v : v;
 					sendChat(full, v, sel);
 				});
@@ -1835,6 +1846,7 @@ final class WPAB_Editor {
 			}
 
 			var selTarget = null;
+			var lastSelFull = null;
 			var selRow = $('wpab-ed-selrow');
 			function renderSelChip() {
 				if (!selRow) { return; }

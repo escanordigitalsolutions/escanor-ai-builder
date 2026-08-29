@@ -20,16 +20,21 @@ export const maxDuration = 300;
  * applies them via its own /editor/edit-apply endpoint.
  */
 
-const INSTRUCTIONS = `Edit the active classic PHP WordPress theme per the instruction. Work in steps — understand first, change second.
+const INSTRUCTIONS = `Edit the active classic PHP WordPress theme exactly as requested.
 
-1. The theme's file structure is provided in the message. Read the files you plan to change PLUS assets/css/main.css with read_project_files before writing anything.
-2. After reading, if you discover the change also involves other files (a template part, functions.php, main.js), read those too — several read rounds are expected and encouraged. Never edit a file you have not read in this conversation.
-3. Fewest files possible; reuse existing classes and design tokens; responsive; COMPLETE file contents, never diffs.
-4. No JS libraries. Never require/include a PHP file that does not exist in the theme. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
-Final reply (no tool calls), starting with the first characters "SUMMARY:" — one sentence saying WHAT changed and WHERE, in plain user-facing language:
-SUMMARY: <one sentence>
-===WPAB_FILE:<path>===
-<complete new contents>
+Rules:
+1. Read every file before changing it. Start with the files in the plan, then read only direct dependencies if required.
+2. Make the smallest complete change. Do not redesign, rewrite, reformat or alter unrelated content.
+3. Preserve existing structure, classes, tokens and responsive behavior where possible.
+4. Return only changed files, each with its complete contents. Never return diffs.
+5. Do not create references to missing files or add external JS libraries.
+6. Do not use unsafe PHP, filesystem access, network calls or dynamic code execution.
+7. If the request cannot be completed safely from the available files, return no file blocks and explain the blocker in SUMMARY.
+
+Final format:
+SUMMARY: <what changed and where>
+===WPAB_FILE:<relative-path>===
+<complete contents>
 ===WPAB_END===`;
 
 const tools: ToolDef[] = [
@@ -101,6 +106,8 @@ export async function POST(request: NextRequest) {
   }
 
   const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
+  const selected =
+    typeof body.selected === "string" ? body.selected.trim().slice(0, 600) : "";
   if (!instruction) {
     return NextResponse.json(
       { success: false, error: "An instruction is required." },
@@ -209,9 +216,10 @@ export async function POST(request: NextRequest) {
           {
             role: "user",
             content:
-              `Instruction: ${instruction}` +
+              `REQUEST:\n${instruction}` +
+              `\n\nSELECTED ELEMENT:\n${selected || "none"}` +
               (planSteps.length
-                ? `\n\nPLAN (your work queue — execute the steps in this order, one by one):\n` +
+                ? `\n\nPLAN:\n` +
                   planSteps
                     .map(
                       (st, i) =>
@@ -221,7 +229,7 @@ export async function POST(request: NextRequest) {
                     )
                     .join("\n")
                 : "") +
-              structureBlock,
+              structureBlock.replace("Theme structure (current, read-only):", "THEME FILES:"),
           },
         ],
         tools,
@@ -262,13 +270,17 @@ export async function POST(request: NextRequest) {
       });
 
       if (result.exhausted || parsed.files.length === 0) {
+        const blocker =
+          parsed.summary && parsed.summary !== "Updated the theme."
+            ? parsed.summary.slice(0, 400)
+            : "The editor could not produce a change for that. Try rephrasing.";
         await db
           .from("ai_jobs")
           .update({
             status: "error",
             error: result.exhausted
               ? "The edit took too many steps. Try a more specific instruction."
-              : "The editor could not produce a change for that. Try rephrasing.",
+              : blocker,
             updated_at: new Date().toISOString(),
           })
           .eq("id", jobId);
