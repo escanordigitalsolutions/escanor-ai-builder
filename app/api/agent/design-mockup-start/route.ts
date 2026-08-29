@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
-import { generateMockup } from "@/lib/agent/mockup-core";
+import { generateMockup, resolveStyle } from "@/lib/agent/mockup-core";
 import { logUsage } from "@/lib/ai/usage";
 
 // The response returns immediately with a job id; the mockup itself renders in
@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
   const brief = body.brief ?? {};
   const variation =
     typeof body.variation === "string" ? body.variation.trim().slice(0, 500) : "";
+  const style = resolveStyle(body.designStyle);
 
   const projectId = auth.context.projectId;
   const supabase = createServiceClient();
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
   after(async () => {
     const db = createServiceClient();
     try {
-      const mock = await generateMockup(modelConfig, brief, variation);
+      const mock = await generateMockup(modelConfig, brief, variation, style);
       await logUsage(projectId, "design", mock.model, mock.usage);
       const ok = mock.sections.length >= 3 && mock.css.length > 200 && !mock.truncated;
 
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
             .from("ai_designs")
             .insert({
               project_id: projectId,
-              brief,
+              brief: { ...(typeof brief === "object" && brief ? brief : {}), style },
               model: mock.model,
               html: mock.html,
               status: "pending",

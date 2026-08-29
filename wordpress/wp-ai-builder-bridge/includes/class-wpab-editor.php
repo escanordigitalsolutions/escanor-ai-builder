@@ -320,6 +320,9 @@ final class WPAB_Editor {
 		if ( isset( $params['variation'] ) && is_string( $params['variation'] ) ) {
 			$payload['variation'] = substr( $params['variation'], 0, 500 );
 		}
+		if ( isset( $params['designStyle'] ) && is_string( $params['designStyle'] ) ) {
+			$payload['designStyle'] = preg_replace( '/[^a-z]/', '', strtolower( $params['designStyle'] ) );
+		}
 
 		$result = WPAB_Cloud::request( 'agent/design-mockup-start', $payload, 30 );
 
@@ -1009,6 +1012,13 @@ final class WPAB_Editor {
 						<textarea id="wpab-ed-prompt" class="wpab-ed__winput wpab-ed__wprompt" rows="8" placeholder="e.g. A modern site for Aurora Studio, a boutique design agency for tech startups. Clean and minimal with lots of whitespace and a deep-indigo accent. Pages: Home, Work, Services, About, Contact. Include a hero, a logo strip, a case-study grid, testimonials and a bold call to action. Confident, professional voice."></textarea>
 						<label class="wpab-ed__wlabel" for="wpab-ed-name">Site / theme name <span class="wpab-ed__wopt">— optional, AI names it if left blank</span></label>
 						<input type="text" id="wpab-ed-name" class="wpab-ed__winput" placeholder="e.g. Aurora Studio" />
+						<label class="wpab-ed__wlabel">Design style</label>
+						<div class="wpab-ed__wstyles" id="wpab-ed-wstyles">
+							<button type="button" class="wpab-ed__wstyle is-on" data-style="concept"><b>Concept</b><span>Surprising — brand becomes the layout</span></button>
+							<button type="button" class="wpab-ed__wstyle" data-style="minimal"><b>Minimal</b><span>Editorial luxury, whitespace, calm</span></button>
+							<button type="button" class="wpab-ed__wstyle" data-style="bold"><b>Bold</b><span>Loud, experimental, art-led</span></button>
+							<button type="button" class="wpab-ed__wstyle" data-style="business"><b>Business</b><span>Clean, credible, conversion-first</span></button>
+						</div>
 					</div>
 
 					<div id="wpab-ed-wprogress" class="wpab-ed__wprogress" hidden>
@@ -1141,6 +1151,14 @@ final class WPAB_Editor {
 			.wpab-ed__wtitle { margin: 0 0 6px; font-size: 20px; font-weight: 650; letter-spacing: -.01em; color: var(--ed-text); }
 			.wpab-ed__whint { margin: 0 0 18px; font-size: 13px; color: var(--ed-muted); line-height: 1.55; }
 			.wpab-ed__wlabel { display: block; font-size: 12px; color: var(--ed-muted); margin-bottom: 6px; }
+			.wpab-ed__wstyles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+			.wpab-ed__wstyle { text-align: left; background: rgba(255,255,255,.7); border: 1px solid rgba(20,18,16,.12); border-radius: 12px; padding: 10px 12px; cursor: pointer; transition: border-color .15s, background .15s; font: inherit; }
+			.wpab-ed__wstyle b { display: block; font-size: 13px; color: #141312; }
+			.wpab-ed__wstyle span { display: block; font-size: 11px; color: var(--ed-muted); margin-top: 2px; line-height: 1.35; }
+			.wpab-ed__wstyle:hover { border-color: #141312; }
+			.wpab-ed__wstyle.is-on { background: #141312; border-color: #141312; }
+			.wpab-ed__wstyle.is-on b { color: #fff; }
+			.wpab-ed__wstyle.is-on span { color: rgba(255,255,255,.65); }
 			.wpab-ed__winput { width: 100%; box-sizing: border-box; background: var(--ed-surface); border: 1px solid var(--ed-border-strong); border-radius: 10px; color: var(--ed-text); font-size: 14px; padding: 11px 13px; }
 			.wpab-ed__winput::placeholder { color: var(--ed-faint); }
 			.wpab-ed__winput:focus { outline: none; border-color: var(--ed-accent); box-shadow: 0 0 0 3px var(--ed-accent-soft); }
@@ -1456,6 +1474,21 @@ final class WPAB_Editor {
 
 			function collectBrief() {
 				return { name: val('wpab-ed-name'), prompt: val('wpab-ed-prompt') };
+			}
+
+			var wStyles = $('wpab-ed-wstyles');
+			function selectedStyle() {
+				var on = wStyles ? wStyles.querySelector('.wpab-ed__wstyle.is-on') : null;
+				return on ? on.getAttribute('data-style') : 'concept';
+			}
+			if (wStyles) {
+				wStyles.addEventListener('click', function (e) {
+					var b = e.target && e.target.closest ? e.target.closest('.wpab-ed__wstyle') : null;
+					if (!b) { return; }
+					var all = wStyles.querySelectorAll('.wpab-ed__wstyle');
+					for (var i = 0; i < all.length; i++) { all[i].classList.remove('is-on'); }
+					b.classList.add('is-on');
+				});
 			}
 
 			function openWizard() {
@@ -1920,7 +1953,7 @@ final class WPAB_Editor {
 				phaseProgress('design');
 				setBuildDetail(variation ? 'Designing a different direction…' : 'Designing the homepage…');
 				var started = Date.now();
-				wpost(cfg.restMockupStart, { brief: brief, variation: variation || '' }, sig).then(function (sOut) {
+				wpost(cfg.restMockupStart, { brief: brief, variation: variation || '', designStyle: selectedStyle() }, sig).then(function (sOut) {
 					if (!alive(myRun)) { return; }
 					var jobId = sOut && sOut.data && sOut.data.jobId;
 					if (!jobId) { throw new Error(errText(sOut, 'Could not start the design step.')); }

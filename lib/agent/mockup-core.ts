@@ -13,21 +13,63 @@ import { replacePlaceholderImages, fetchBriefImages } from "./pexels";
  * one fragment per section) that the cheap build model PORTS to PHP files.
  */
 
-const MOCKUP_INSTRUCTIONS = `Create an original digital experience as ONE self-contained HTML file.
-
-Before coding, silently imagine three visual concepts for the brand, reject the two most obvious, and build the most surprising usable direction. Transform the brand's subject or process into the page's structure — not merely its colors, fonts or decorations.
-
-Avoid default website composition: no predictable split hero, equal card grid, repeated rectangular panels or centered CTA block. Give information unexpected hierarchy, scale and placement. Use custom CSS composition, expressive typography, unusual image crops and one brand-specific visual rule that evolves throughout the page. Each section must have a distinct spatial idea while remaining part of one coherent system.
-
-The result should feel art-directed, intentional and difficult to reproduce with a template, while remaining readable, responsive and conversion-focused.
-
-TECHNICAL: all CSS in one <style> block in <head>; load 1-2 Google Fonts via <link> tags in <head>; <body> begins with <header data-part="header">, followed by 4-6 top-level <section data-section="<kebab-slug>"> elements, never nested, and ends with <footer data-part="footer">. Use only supplied PEXELS IMAGES URLs as <img src="<url>" width="<w>" height="<h>" alt="...">.
+const SHARED_RULES = `TECHNICAL: all CSS in one <style> block in <head>; load 1-2 Google Fonts via <link> tags in <head>; <body> begins with <header data-part="header">, followed by 4-6 top-level <section data-section="<kebab-slug>"> elements, never nested, and ends with <footer data-part="footer">. JavaScript is allowed only as one tiny inline <script> for the mobile menu. Use only supplied PEXELS IMAGES URLs as <img src="<url>" width="<w>" height="<h>" alt="...">; if none are provided, design purely with typography and CSS.
 
 THE HERO must be unconventional: never a centered headline block and never a symmetric text-left / image-right split. Use asymmetry, oversized or fragmented typography, layering, rotation, an unexpected focal point, or composition that bleeds off the edges.
 
 NO HORIZONTAL OVERFLOW at any width: clip decorative absolutely-positioned elements (overflow-x:clip on body and overflow:hidden on sections that contain them), never use fixed-width background patterns wider than the viewport, and make sure the layout holds at 390px.
 
-Output only the complete HTML document from <!DOCTYPE html> to </html>.`;
+Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown, explanations or questions.`;
+
+/**
+ * Four selectable design styles — the wizard lets the user pick one before
+ * generation. Each is a different creative brief; SHARED_RULES is appended to
+ * every one so the page always splits and ports cleanly.
+ */
+const STYLE_PROMPTS = {
+  concept: {
+    seed: true,
+    body: `Create an original digital experience as ONE self-contained HTML file.
+
+Before coding, silently imagine three visual concepts for the brand, reject the two most obvious, and build the most surprising usable direction. Transform the brand's subject or process into the page's structure — not merely its colors, fonts or decorations.
+
+Avoid default website composition: no predictable split hero, equal card grid, repeated rectangular panels or centered CTA block. Give information unexpected hierarchy, scale and placement. Use custom CSS composition, expressive typography, unusual image crops and one brand-specific visual rule that evolves throughout the page. Each section must have a distinct spatial idea while remaining part of one coherent system.
+
+The result should feel art-directed, intentional and difficult to reproduce with a template, while remaining readable, responsive and conversion-focused.`,
+  },
+  minimal: {
+    seed: false,
+    body: `Design a refined editorial homepage as ONE self-contained HTML file, in the spirit of a luxury print magazine.
+
+Vast whitespace, one exceptional display typeface paired with a quiet text face, and a restrained near-monochrome palette with a single precious accent. Few elements, each placed with intent — let emptiness carry the brand. Treat images as art plates: generous margins, thin rules, small captions, numbered figures.
+
+Pace the page slowly. Hierarchy comes from scale and space, never from boxes, borders or shadows. The result should feel expensive, calm and precise — closer to a gallery catalogue than a website.`,
+  },
+  bold: {
+    seed: true,
+    body: `Design ONE self-contained HTML homepage like an award-chasing digital artist with no client to please.
+
+Extreme scale contrast, fragmented or overlapping typography, clashing but controlled color, rotation, layering, CSS-drawn shapes and patterns, and an unexpected rhythm from section to section. Let elements collide, crop and bleed off the edges. Every section is a new scene in the same strange world.
+
+Take real risks — push the composition until it almost breaks, then keep it readable and usable. Nothing on the page may look like it came from a component library.`,
+  },
+  business: {
+    seed: false,
+    body: `Design a polished, credible business homepage as ONE self-contained HTML file.
+
+Clear hierarchy, comfortable spacing, a professional palette derived from the brand, and a strong conversion path: benefit-led copy, visible calls to action, trust signals. Familiar patterns are allowed where they serve clarity — but execute them with distinctive typography, considered detail and one memorable visual idea, so the page never reads as a template.
+
+Accessible contrast, impeccable alignment and a confident, professional voice throughout.`,
+  },
+} as const;
+
+export type DesignStyle = keyof typeof STYLE_PROMPTS;
+
+export function resolveStyle(value: unknown): DesignStyle {
+  return typeof value === "string" && value in STYLE_PROMPTS
+    ? (value as DesignStyle)
+    : "concept";
+}
 
 /**
  * Art-direction seeds: one is picked at random for every generation, so the
@@ -110,9 +152,12 @@ export function splitMockup(html: string): {
 export async function generateMockup(
   modelConfig: unknown,
   brief: unknown,
-  variation?: string
+  variation?: string,
+  style?: unknown
 ): Promise<MockupResult> {
   const model = pickModel(modelConfig, "plan");
+  const styleKey = resolveStyle(style);
+  const stylePrompt = STYLE_PROMPTS[styleKey];
 
   const images = await fetchBriefImages(brief);
   const imageBlock = images.length
@@ -125,16 +170,19 @@ export async function generateMockup(
         .join("\n")
     : `\n\nPEXELS IMAGES: none supplied — design without <img> elements.`;
 
-  const direction =
-    ART_DIRECTIONS[Math.floor(Math.random() * ART_DIRECTIONS.length)];
+  const direction = stylePrompt.seed
+    ? `\n\nART DIRECTION FOR THIS RUN (commit to it fully, adapted to the brand's subject):\n${
+        ART_DIRECTIONS[Math.floor(Math.random() * ART_DIRECTIONS.length)]
+      }`
+    : "";
 
   const gen = await generateText({
     model,
-    system: MOCKUP_INSTRUCTIONS,
+    system: stylePrompt.body + "\n\n" + SHARED_RULES,
     maxTokens: 32000,
     input:
       `Brief:\n${JSON.stringify(brief, null, 2)}` +
-      `\n\nART DIRECTION FOR THIS RUN (commit to it fully, adapted to the brand's subject):\n${direction}` +
+      direction +
       imageBlock +
       (variation ? `\n\n${variation}` : ""),
   });
@@ -159,7 +207,7 @@ export async function generateMockup(
   const split = splitMockup(html);
 
   console.log(
-    `mockup model=${model} chars=${html.length} sections=[${split.sections
+    `mockup model=${model} style=${styleKey} chars=${html.length} sections=[${split.sections
       .map((s) => s.slug)
       .join(", ")}] fonts=${split.fonts.length} truncated=${gen.truncated}`
   );
