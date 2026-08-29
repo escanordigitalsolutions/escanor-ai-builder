@@ -5,6 +5,7 @@ import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
 import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
+import { logUsage } from "@/lib/ai/usage";
 
 // Model calls can run long; don't let Vercel's plan-default duration kill the
 // function mid-generation.
@@ -468,6 +469,8 @@ Workflow rules:
         throw new Error(`Unknown tool: ${name}`);
       },
     });
+
+    void logUsage(context.projectId, "chat", model, result.usage);
 
     if (result.exhausted) {
       throw new Error(

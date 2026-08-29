@@ -3,6 +3,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { generateBuildFiles, readMockupCtx } from "@/lib/agent/build-files-core";
+import { logUsage } from "@/lib/ai/usage";
 
 // The response returns immediately with a job id, but the generation itself
 // runs in after() — it needs the full duration budget.
@@ -110,6 +111,7 @@ export async function POST(request: NextRequest) {
     const db = createServiceClient();
     try {
       const result = await generateBuildFiles(modelConfig, blueprint, paths, mockup);
+      await logUsage(projectId, "build", result.model, result.usage);
       const ok = result.files.length > 0;
       await db
         .from("ai_jobs")

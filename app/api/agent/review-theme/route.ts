@@ -5,6 +5,7 @@ import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
 import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
+import { logUsage } from "@/lib/ai/usage";
 import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
 
 // Model calls can run long; don't let Vercel's plan-default duration kill the
@@ -25,9 +26,11 @@ export const maxDuration = 300;
  */
 
 const INSTRUCTIONS = `Review the active, just-generated classic PHP WordPress theme. Inspect real files with the tools. Fix ONLY critical defects, smallest change possible:
-1. Invisible/empty content — including get_template_part() calling a missing file (create it in the theme's style).
-2. Mobile menu that can't open (selector mismatch between header.php, main.css, main.js).
-3. PHP fatals. 4. Horizontal overflow. 5. main.css/main.js/fonts not enqueued, or a JS library enqueued (remove).
+1. PHP that would fatal — especially a require/include of a file that does not exist (remove the require or create the file), an undefined function, a wrong path.
+2. Invisible or empty content — including get_template_part() calling a missing file (create it in the theme's style).
+3. Mobile menu that can't open (selector mismatch between header.php, main.css, main.js).
+4. Horizontal overflow or clearly broken layout.
+5. main.css/main.js/fonts not enqueued, or a JS library enqueued (remove it).
 Never restyle what works. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
 Final reply: no tool calls, first characters "SUMMARY:" (or "SUMMARY: No critical issues found."), then a FILE block per changed COMPLETE file, no fences:
 SUMMARY: <one sentence>
@@ -151,9 +154,10 @@ export async function POST(request: NextRequest) {
     ? `Review the active generated theme for CRITICAL defects. Pay special attention to: ${focus}`
     : `Review the active generated theme for CRITICAL defects and return fixes for any you find.`;
 
+  const reviewModel = pickModel((project as { model_config?: unknown }).model_config, "review");
   try {
     const result = await runToolLoop({
-      model: pickModel((project as { model_config?: unknown }).model_config, "review"),
+      model: reviewModel,
       system: INSTRUCTIONS,
       messages: [{ role: "user", content: input }],
       tools,
@@ -173,6 +177,8 @@ export async function POST(request: NextRequest) {
         }
       },
     });
+
+    void logUsage(context.projectId, "review", reviewModel, result.usage);
 
     if (result.exhausted) {
       // Ran out of rounds without a final answer — treat as "nothing applied".

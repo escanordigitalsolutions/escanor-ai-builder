@@ -3,6 +3,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { generateMockup } from "@/lib/agent/mockup-core";
+import { logUsage } from "@/lib/ai/usage";
 
 // The response returns immediately with a job id; the mockup itself renders in
 // after() and can take a couple of minutes on a strong model.
@@ -79,6 +80,7 @@ export async function POST(request: NextRequest) {
     const db = createServiceClient();
     try {
       const mock = await generateMockup(modelConfig, brief, variation);
+      await logUsage(projectId, "design", mock.model, mock.usage);
       const ok = mock.sections.length >= 3 && mock.css.length > 200 && !mock.truncated;
       await db
         .from("ai_jobs")

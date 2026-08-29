@@ -4,6 +4,7 @@ import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { pickModel } from "@/lib/ai/resolve";
 import { generateText } from "@/lib/ai/provider";
+import { logUsage } from "@/lib/ai/usage";
 
 // Blueprint generation can take a while on some models; don't let Vercel's
 // plan-default duration kill the function mid-generation.
@@ -19,22 +20,22 @@ export const maxDuration = 300;
  * generated.
  */
 
-const INSTRUCTIONS = `Design a classic PHP WordPress theme from the brief — a bespoke site, not a template.
+const INSTRUCTIONS = `Plan a classic PHP WordPress theme from the brief.
 
-Invent a distinctive visual identity for this brand: a bold Google Fonts pairing, a confident palette, and one signature visual idea. Describe it in design.style (2-3 sentences). Plan 3-5 pages and 5-8 unique sections reused across pages; no two adjacent sections may use the same layout. Each section gets "copy" (one sentence of real content direction) and "look" (one phrase describing its visual treatment, e.g. "full-bleed photo, overlay headline", "oversized numbered list", "asymmetric 60/40 split").
+Decide the theme name (brief.name if given), 3-5 pages, the sections each page uses (5-8 unique sections total, reused across pages), a simple color palette and a Google Fonts pairing (a valid https://fonts.googleapis.com/css2 URL with display=swap). Each section's "copy" is one sentence of content direction.
 
 Reply with ONLY this JSON — first character {, last }:
 {
   "theme": { "name": string, "description": string, "textDomain": string },
   "design": {
     "palette": { "bg": hex, "surface": hex, "fg": hex, "muted": hex, "border": hex, "accent": hex },
-    "fonts": { "heading": string, "body": string, "googleUrl": "https://fonts.googleapis.com/css2?... with display=swap" },
-    "radius": string, "dark": boolean, "style": string
+    "fonts": { "heading": string, "body": string, "googleUrl": string },
+    "radius": string, "dark": boolean
   },
   "menu": [ { "title": string, "slug": string } ],
   "frontPage": string,
   "pages": [ { "slug": string, "title": string, "template": string, "sections": [string], "headline": string } ],
-  "sections": [ { "slug": string, "type": string, "layout": string, "look": string, "copy": string } ]
+  "sections": [ { "slug": string, "type": string, "layout": string, "copy": string } ]
 }`;
 
 type Json = Record<string, unknown>;
@@ -206,9 +207,10 @@ export async function POST(request: NextRequest) {
 
   let text = "";
   let usage = { inputTokens: 0, outputTokens: 0 };
+  const planModel = pickModel(modelConfig, "plan");
   try {
     const gen = await generateText({
-      model: pickModel(modelConfig, "plan"),
+      model: planModel,
       system: INSTRUCTIONS,
       input:
         `Brief:\n${JSON.stringify(brief, null, 2)}` +
@@ -221,6 +223,7 @@ export async function POST(request: NextRequest) {
     });
     text = gen.text;
     usage = gen.usage;
+    void logUsage(auth.context.projectId, "plan", planModel, gen.usage);
   } catch (error) {
     console.error("build-plan generate error:", error);
     return NextResponse.json(

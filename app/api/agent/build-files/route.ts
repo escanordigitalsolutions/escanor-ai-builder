@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { generateBuildFiles, readMockupCtx } from "@/lib/agent/build-files-core";
+import { logUsage } from "@/lib/ai/usage";
 
 // Long generations (a solo main.css/main.js on Claude can take 1-2+ minutes).
 // Without this Vercel kills the function at the plan default and the WordPress
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await generateBuildFiles(modelConfig, blueprint, paths, mockup);
+    void logUsage(auth.context.projectId, "build", result.model, result.usage);
 
     if (result.files.length > 0) {
       return NextResponse.json({

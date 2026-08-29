@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import ProjectConnectionPanel from "@/components/project-connection-panel";
 import ProjectSiteKeys from "@/components/project-site-keys";
 import ProjectModelPanel from "@/components/project-model-panel";
+import ProjectUsagePanel from "@/components/project-usage-panel";
 
 type Props = {
   params: Promise<{
@@ -94,6 +95,10 @@ export default async function ProjectPage({ params }: Props) {
             projectId={project.id}
             initial={(project as { model_config?: Record<string, string> }).model_config ?? {}}
           />
+        </div>
+
+        <div className="mt-4">
+          <ProjectUsagePanel projectId={project.id} />
         </div>
       </div>
     </main>

@@ -449,6 +449,49 @@ final class WPAB_Editor {
 		return new WP_REST_Response( $result, 200 );
 	}
 
+	/**
+	 * A require/include of a theme file that is not part of the generated set
+	 * fatals on every page load (WordPress then deactivates the theme). Scan
+	 * every PHP file for get_template_directory()/get_theme_file_path requires
+	 * and reject the OFFENDING file when the target is missing — the wizard's
+	 * repair flow then regenerates that one file.
+	 *
+	 * @param array $files [ [ 'path' => ..., 'contents' => ... ], ... ].
+	 * @return true|WP_Error
+	 */
+	private static function find_missing_requires( array $files ) {
+		$have = array();
+		foreach ( $files as $f ) {
+			$have[ ltrim( (string) $f['path'], '/' ) ] = true;
+		}
+
+		foreach ( $files as $f ) {
+			$path = (string) $f['path'];
+			if ( substr( $path, -4 ) !== '.php' ) {
+				continue;
+			}
+			if ( ! preg_match_all(
+				'/(?:require|include)(?:_once)?\s*\(?\s*(?:get_template_directory\(\)\s*\.\s*|get_theme_file_path\(\s*)[\'"]\/?([^\'"]+)[\'"]/',
+				(string) $f['contents'],
+				$m
+			) ) {
+				continue;
+			}
+			foreach ( $m[1] as $target ) {
+				$target = ltrim( $target, '/' );
+				if ( ! isset( $have[ $target ] ) ) {
+					return new WP_Error(
+						'wpab_missing_require',
+						'PHP error in ' . $path . ': it requires ' . $target . ', which does not exist in the theme. Remove the require or generate that file.',
+						array( 'status' => 422 )
+					);
+				}
+			}
+		}
+
+		return true;
+	}
+
 	public static function rest_create_theme( WP_REST_Request $request ) {
 		$params = self::json_params( $request );
 		$brand  = isset( $params['brand'] ) ? trim( (string) $params['brand'] ) : '';
@@ -486,6 +529,11 @@ final class WPAB_Editor {
 		$meta = array();
 		if ( isset( $params['description'] ) ) {
 			$meta['description'] = (string) $params['description'];
+		}
+
+		$missing_req = self::find_missing_requires( $files );
+		if ( is_wp_error( $missing_req ) ) {
+			return $missing_req;
 		}
 
 		$result = WPAB_Theme_Writer::create( $brand, $files, $meta );

@@ -5,6 +5,7 @@ import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
 import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
+import { logUsage } from "@/lib/ai/usage";
 import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
 
 // Model calls can run long; don't let Vercel's plan-default duration kill the
@@ -25,8 +26,8 @@ export const maxDuration = 300;
 const INSTRUCTIONS = `Edit the active classic PHP WordPress theme per the instruction.
 1. Inspect first: list_project_files, then read the files you'll change + assets/css/main.css.
 2. Fewest files possible; reuse existing classes and tokens; responsive; COMPLETE file contents, never diffs.
-3. No JS libraries. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
-Final reply: no tool calls, first characters "SUMMARY:", then FILE blocks, no fences:
+3. No JS libraries. Never require/include a PHP file that does not exist in the theme. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
+Final reply (no tool calls), starting with the first characters "SUMMARY:":
 SUMMARY: <one sentence>
 ===WPAB_FILE:<path>===
 <complete new contents>
@@ -150,9 +151,10 @@ export async function POST(request: NextRequest) {
   const bridgeToken = decryptSecret(site.bridge_token_encrypted);
   const siteUrl = site.site_url;
 
+  const editModel = pickModel((project as { model_config?: unknown }).model_config, "edit");
   try {
     const result = await runToolLoop({
-      model: pickModel((project as { model_config?: unknown }).model_config, "edit"),
+      model: editModel,
       system: INSTRUCTIONS,
       messages: [{ role: "user", content: `Instruction: ${instruction}` }],
       tools,
@@ -172,6 +174,8 @@ export async function POST(request: NextRequest) {
         }
       },
     });
+
+    void logUsage(context.projectId, "edit", editModel, result.usage);
 
     if (result.exhausted) {
       return NextResponse.json(

@@ -8,23 +8,22 @@ import { generateText, type Usage } from "@/lib/ai/provider";
  * exact requested paths.
  */
 
-const INSTRUCTIONS = `Build files for a CUSTOM classic PHP WordPress theme. Express the blueprint's design.style and each section's "look" boldly: dramatic clamp() type scale, generous whitespace, varied section layouts. It must not look like a default template.
+const INSTRUCTIONS = `Generate the requested files of a classic PHP WordPress theme, matching the blueprint. Other files are generated in separate calls — follow these rules so everything connects:
 
-Glue rules (other files are generated in separate calls):
-1. Templates: get_header()/get_footer(); sections via get_template_part('template-parts/section','<slug>') in blueprint order; escaped output (esc_html, esc_url, esc_attr).
-2. A section renders <section class="section section-<slug>">. assets/css/main.css: :root tokens from the palette/fonts, base typography, .container, .btn/.btn--primary/.btn--ghost, header + mobile nav, footer, and one .section-<slug> block per blueprint section. Mobile-first, no horizontal overflow, nothing hidden waiting for JS.
-3. header.php: doctype, wp_head(), body_class(), wp_body_open(); <header class="site-header" data-header> with the site title/logo, <nav class="site-nav" data-nav> holding wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false) ), <button class="site-header__toggle" data-nav-toggle>; open <main>. footer.php: close </main>, footer, wp_footer(), </body></html>.
-4. functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the fonts googleUrl, style.css, main.css, main.js (footer). No JS libraries.
-5. assets/js/main.js: vanilla only — nav toggle (.is-open on [data-nav], .nav-open on body) and .is-scrolled on [data-header] on scroll.
-6. style.css: WordPress theme header comment (Theme Name from blueprint) + minimal base.
-7. Real on-topic copy, never lorem ipsum. Photos: <img src="https://loremflickr.com/<w>/<h>/<keywords>?lock=<n>" width height alt loading="lazy">.
-8. No PHP that executes code or touches the filesystem/network (eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback or similar).
+1. Templates start with get_header() and end with get_footer(); pages include sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output (esc_html, esc_url, esc_attr).
+2. A section file renders <section class="section section-<slug>">. assets/css/main.css has :root tokens from the blueprint palette/fonts, base typography, .container, .btn/.btn--primary/.btn--ghost, header + mobile nav (open/closed states), footer, and one .section-<slug> block for EVERY blueprint section. Mobile-first, no horizontal overflow, never hide content that JS must reveal.
+3. header.php: doctype, wp_head(), body_class(), wp_body_open(); sticky <header class="site-header" data-header> with the site title/logo, <nav class="site-nav" data-nav> holding wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ), and a mobile <button class="site-header__toggle" data-nav-toggle aria-expanded="false">; then open <main>. footer.php: close </main>, a simple footer, wp_footer(), </body></html>.
+4. functions.php: after_setup_theme (title-tag, post-thumbnails, custom-logo, html5), register_nav_menus 'primary'; enqueue design.fonts.googleUrl, get_stylesheet_uri(), assets/css/main.css and assets/js/main.js (in the footer). No external JS libraries. Prefix functions with the textDomain. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files).
+5. assets/js/main.js: vanilla JS only — the mobile nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header] when scrollY > 8.
+6. style.css: the standard WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base styles.
+7. Real on-topic copy from each section's "copy" — never lorem ipsum. Photos: <img src="https://loremflickr.com/<w>/<h>/<keywords>?lock=<n>" width="" height="" alt="" loading="lazy">.
+8. PHP never calls eval, exec, system, shell_exec, file_get_contents, file_put_contents, fopen, unlink, curl_exec, wp_remote_get/post, base64_decode, call_user_func, preg_replace_callback or similar code-exec, filesystem or network functions.
 
-Output each requested path, in order:
+Output every requested path, in order, exactly:
 ===WPAB_FILE:<path>===
-<complete raw contents>
+<complete raw file contents>
 ===WPAB_END===
-Your reply starts at the first marker and ends at the last ===WPAB_END===; paths copied exactly; no other text, no fences.`;
+The first characters of your reply are the first marker. Copy each path character-for-character. No other text, no code fences.`;
 
 function parseFiles(text: string): { path: string; contents: string }[] {
   const out: { path: string; contents: string }[] = [];
@@ -49,14 +48,14 @@ function parseFiles(text: string): { path: string; contents: string }[] {
   return out;
 }
 
-const PORT_INSTRUCTIONS = `You are porting an APPROVED homepage design mockup into classic PHP WordPress theme files. The design is FINAL — reproduce it faithfully; adapt to WordPress, never redesign.
+const PORT_INSTRUCTIONS = `Port the approved homepage mockup into classic PHP WordPress theme files. Do not redesign — reproduce the mockup.
 
-1. assets/css/main.css: start from the MOCKUP CSS essentially verbatim — keep its selectors, tokens and values. Add only what is missing: the mobile nav open/close states (.site-nav.is-open, .site-header.is-scrolled, body.nav-open) and styles for files that have no mockup fragment, written in the same design system.
-2. A file that has a FRAGMENT below: convert that fragment to PHP keeping its markup, classes, copy and images EXACTLY. Replace the brand name with bloginfo('name') where natural and internal links with esc_url(home_url('/<slug>')). Keep <img> placeholder URLs as-is.
-3. header.php: the header fragment plus the WordPress head — <!DOCTYPE html>, wp_head(), body_class(), wp_body_open(). Give the header element data-header, replace the mockup's nav list with wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ) inside <nav class="site-nav" data-nav>, give the hamburger button data-nav-toggle and aria-expanded="false"; then open <main>. footer.php: close </main>, the footer fragment, wp_footer(), </body></html>.
-4. Files WITHOUT a fragment (inner page templates, index/single/404/searchform, extra sections): build them in the mockup's design system — reuse its classes, tokens, spacing and rhythm so they look like the same site.
-5. Templates start with get_header() and end with get_footer(); pages include sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output (esc_html, esc_url, esc_attr). functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the GOOGLE FONTS URLS listed below, get_stylesheet_uri(), assets/css/main.css and assets/js/main.js (footer) with filemtime() cache-busting; no external JS libraries; prefix functions with the textDomain. assets/js/main.js: vanilla only — the nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header] on scroll. style.css: the WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base.
-6. No PHP that executes code or touches the filesystem/network (eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback or similar).
+1. assets/css/main.css: the MOCKUP CSS mostly verbatim (keep selectors, tokens, values), plus the mobile nav open/close states (.site-nav.is-open, .site-header.is-scrolled, body.nav-open) and styles for files that have no fragment, in the same system.
+2. A file with a FRAGMENT below: convert it to PHP keeping markup, classes, copy and images exactly. Brand name -> bloginfo('name') where natural; internal links -> esc_url(home_url('/<slug>')); keep <img> URLs as-is.
+3. header.php: doctype, wp_head(), body_class(), wp_body_open(); the header fragment with data-header on the header element, the nav list replaced by wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ) inside <nav class="site-nav" data-nav>, the hamburger button with data-nav-toggle and aria-expanded="false"; then open <main>. footer.php: close </main>, the footer fragment, wp_footer(), </body></html>.
+4. Files WITHOUT a fragment (inner page templates, index/single/404/searchform): reuse the mockup's classes and tokens so they look like the same site.
+5. Templates start with get_header() and end with get_footer(); pages include sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output. functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the GOOGLE FONTS URLS listed below, get_stylesheet_uri(), assets/css/main.css and assets/js/main.js (footer); prefix functions with the textDomain; no external JS libraries. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files). assets/js/main.js: vanilla only — the nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header]. style.css: the WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base.
+6. PHP never calls eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_get/post, base64_decode, call_user_func, preg_replace_callback or similar.
 
 Output each requested path, in order:
 ===WPAB_FILE:<path>===
