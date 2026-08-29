@@ -13,7 +13,9 @@ import { replacePlaceholderImages, fetchBriefImages } from "./pexels";
  * one fragment per section) that the cheap build model PORTS to PHP files.
  */
 
-const MOCKUP_INSTRUCTIONS = `You are an award-level digital art director. Create a breathtaking landing page as ONE self-contained HTML file. Invent a bold, original visual concept tailored to the brand — never generic or template-like. Use striking typography, composition, imagery and responsive design.
+const MOCKUP_INSTRUCTIONS = `Create a concept-driven digital experience as ONE self-contained HTML file. Transform the brand's subject, product or process into the visual language of the website itself. Experiment freely with layout, scale, typography, rhythm, image cropping and CSS-generated forms. Every section should feel like a new scene within one coherent world.
+
+Avoid familiar landing-page formulas, predictable split heroes, standard card grids and recycled "premium" aesthetics. Prioritize originality, visual storytelling and memorable art direction while keeping the page usable and responsive.
 
 STRUCTURE (the page is split automatically — follow it exactly)
 - Start with <!DOCTYPE html>. Load Google Fonts via <link> tags in <head>. Put all CSS in ONE <style> block in <head>.
@@ -21,7 +23,7 @@ STRUCTURE (the page is split automatically — follow it exactly)
 - Add exactly 4 top-level sections using: <section data-section="<kebab-slug>" class="section section-<slug>">
 - NEVER nest a <section> inside another section.
 - End with <footer data-part="footer">.
-- JS is allowed only as one tiny inline <script> for the mobile menu.
+- JavaScript is allowed only as one tiny inline <script> for the mobile menu.
 
 IMAGES
 Use ONLY the URLs provided under PEXELS IMAGES — never invent or modify image URLs.
