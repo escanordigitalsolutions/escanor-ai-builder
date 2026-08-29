@@ -14,7 +14,7 @@ const INSTRUCTIONS = `Generate the requested files of a classic PHP WordPress th
 2. A section file renders <section class="section section-<slug>">. CSS is split per component: assets/css/base.css holds :root tokens from the blueprint palette/fonts, base typography, .container and .btn/.btn--primary/.btn--ghost; assets/css/header.css the header + mobile nav (open/closed states); assets/css/footer.css the footer; assets/css/sections/<slug>.css ONLY that section's rules. Mobile-first, no horizontal overflow, never hide content that JS must reveal.
 3. header.php: doctype, wp_head(), body_class(), wp_body_open(); sticky <header class="site-header" data-header> with the site title/logo, <nav class="site-nav" data-nav> holding wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ), and a mobile <button class="site-header__toggle" data-nav-toggle aria-expanded="false">; then open <main>. footer.php: close </main>, a simple footer, wp_footer(), </body></html>.
 4. functions.php: after_setup_theme (title-tag, post-thumbnails, custom-logo, html5), register_nav_menus 'primary'; enqueue design.fonts.googleUrl, get_stylesheet_uri(), then EVERY stylesheet listed under CSS FILES TO ENQUEUE in that exact order, and assets/js/main.js (in the footer). No external JS libraries. Prefix functions with the textDomain. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files).
-5. assets/js/main.js: vanilla JS only — the mobile nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header] when scrollY > 8.
+5. assets/js/main.js: vanilla JS only — the mobile nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body), .is-scrolled on [data-header] when scrollY > 8, and a scroll-reveal (IntersectionObserver adding .in-view to [data-reveal]; content stays visible without JS).
 6. style.css: the standard WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base styles.
 7. Real on-topic copy from each section's "copy" — never lorem ipsum. Photos: <img src="https://loremflickr.com/<w>/<h>/<keywords>?lock=<n>" width="" height="" alt="" loading="lazy">.
 8. PHP never calls eval, exec, system, shell_exec, file_get_contents, file_put_contents, fopen, unlink, curl_exec, wp_remote_get/post, base64_decode, call_user_func, preg_replace_callback or similar code-exec, filesystem or network functions.
@@ -58,9 +58,9 @@ CSS is split per component:
 PHP files:
 4. A file with a FRAGMENT below: convert it to PHP keeping markup, classes, copy and images exactly. Brand name -> bloginfo('name') where natural; internal links -> esc_url(home_url('/<slug>')); keep <img> URLs as-is.
 5. header.php: doctype, wp_head(), body_class(), wp_body_open(); the header fragment with data-header on the header element, the nav list replaced by wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ) inside <nav class="site-nav" data-nav>, the hamburger button with data-nav-toggle and aria-expanded="false"; then open <main>. footer.php: close </main>, the footer fragment, wp_footer(), </body></html>.
-6. Templates start with get_header() and end with get_footer(); front-page.php includes the designed sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output. page.php, every page-<slug>.php and single.php are CONTENT-DRIVEN: a compact page hero built from the mockup's tokens (the_title(); single.php also the date), then the loop rendering the_content() inside <article><div class="entry container">. NEVER hardcode page copy in these templates — the real copy lives in WordPress and renders through the_content(). Files WITHOUT a fragment reuse the mockup's classes and tokens so they look like the same site.
+6. Templates start with get_header() and end with get_footer(); front-page.php includes the designed sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output. page.php, every page-<slug>.php and single.php are CONTENT-DRIVEN: the page hero, then the loop rendering the_content() inside <article><div class="entry container">. When a PAGE HERO FRAGMENT is provided, convert it keeping markup and classes exactly (the heading becomes the_title(); single.php may add the date); without one, build a compact hero from the mockup's tokens. NEVER hardcode page copy in these templates — the real copy lives in WordPress and renders through the_content(). assets/css/inner.css: exactly the INNER PAGE CSS rules when provided (do not re-derive them); otherwise the page-hero + .entry rules these templates need. Files WITHOUT a fragment reuse the mockup's classes and tokens so they look like the same site.
 7. functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the GOOGLE FONTS URLS, get_stylesheet_uri(), then EVERY stylesheet listed under CSS FILES TO ENQUEUE in that exact order (handle = file name without extension), and assets/js/main.js in the footer. Prefix functions with the textDomain; no external JS libraries. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files).
-8. assets/js/main.js: vanilla JS only — the nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header]. style.css: the WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base.
+8. assets/js/main.js: vanilla JS only, no libraries — the nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body), .is-scrolled on [data-header], AND every behavior the mockup's inline script implements: the scroll-reveal (IntersectionObserver adding .in-view to [data-reveal]) and any accordion/tabs the mockup uses — port them exactly so the live site feels like the preview. style.css: the WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base.
 9. PHP never calls eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_get/post, base64_decode, call_user_func, preg_replace_callback or similar.
 
 Output each requested path, in order:
@@ -73,6 +73,8 @@ export type MockupCtx = {
   css?: string;
   fonts?: string[];
   fragments?: Record<string, string>;
+  /** Inner-page design pack: extra CSS over the mockup css, and the page-hero fragment. */
+  inner?: { css?: string; pageHero?: string };
 };
 
 export type BuildFilesResult = {
@@ -99,6 +101,10 @@ export async function generateBuildFiles(
     return null;
   };
 
+  // Content templates that reuse the designed page hero + inner.css.
+  const isInnerTemplate = (path: string): boolean =>
+    /^page(-[a-z0-9-]+)?\.php$/.test(path) || path === "single.php";
+
   const wantsCss = paths.some((p) => p.endsWith(".css") && p !== "style.css");
 
   let input = `Blueprint:\n${JSON.stringify(blueprint)}\n\n`;
@@ -117,6 +123,7 @@ export async function generateBuildFiles(
       "assets/css/header.css",
       ...slugs.map((sl) => `assets/css/sections/${sl}.css`),
       "assets/css/footer.css",
+      "assets/css/inner.css",
     ];
     input += `CSS FILES TO ENQUEUE (in this order):\n${enqueue.join("\n")}\n\n`;
   }
@@ -141,6 +148,18 @@ export async function generateBuildFiles(
           added.add(key);
           input += `FRAGMENT for ${key} (extract this markup's styles for ${p}):\n${mockup.fragments[key]}\n\n`;
         }
+      }
+    }
+    // Inner-page design pack: the page-hero fragment for content templates,
+    // and the extra CSS that assets/css/inner.css ports.
+    if (mockup.inner) {
+      const needsInner =
+        paths.includes("assets/css/inner.css") || paths.some(isInnerTemplate);
+      if (needsInner && mockup.inner.pageHero) {
+        input += `PAGE HERO FRAGMENT (the designed inner-page title area — reuse it in every content template, title via the_title()):\n${mockup.inner.pageHero}\n\n`;
+      }
+      if (needsInner && mockup.inner.css) {
+        input += `INNER PAGE CSS (additional rules over MOCKUP CSS — assets/css/inner.css ports exactly these):\n${mockup.inner.css}\n\n`;
       }
     }
   }
@@ -221,9 +240,23 @@ export function readMockupCtx(value: unknown): MockupCtx | null {
     }
     out.fragments = frags;
   }
+  if (v.inner && typeof v.inner === "object") {
+    const inn = v.inner as Record<string, unknown>;
+    const inner: { css?: string; pageHero?: string } = {};
+    if (typeof inn.css === "string" && inn.css.length <= 100000) {
+      inner.css = inn.css;
+    }
+    if (typeof inn.pageHero === "string" && inn.pageHero.length <= 60000) {
+      inner.pageHero = inn.pageHero;
+    }
+    if (inner.css || inner.pageHero) {
+      out.inner = inner;
+    }
+  }
   return out.css ||
     (out.fragments && Object.keys(out.fragments).length) ||
-    (out.fonts && out.fonts.length)
+    (out.fonts && out.fonts.length) ||
+    out.inner
     ? out
     : null;
 }

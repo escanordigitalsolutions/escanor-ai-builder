@@ -1336,6 +1336,10 @@ final class WPAB_Editor {
 					</div>
 
 					<div id="wpab-ed-mockwrap" class="wpab-ed__mockwrap" hidden>
+						<div id="wpab-ed-mocktabs" class="wpab-ed__mocktabs" hidden>
+							<button type="button" class="wpab-ed__mocktab is-on" data-mocktab="home">Homepage</button>
+							<button type="button" class="wpab-ed__mocktab" data-mocktab="inner">Inner page</button>
+						</div>
 						<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-scripts"></iframe>
 						<div id="wpab-ed-mockmeta" class="wpab-ed__mockmeta" hidden></div>
 						<div class="wpab-ed__mockactions">
@@ -1589,6 +1593,11 @@ final class WPAB_Editor {
 		.wpab-ed__mockmeta b { color: #141312; }
 		.wpab-ed__wizard.is-design .wpab-ed__mockframe { height: 68vh; }
 		.wpab-ed__mockwrap { margin-top: 14px; }
+		.wpab-ed__mocktabs { display: flex; gap: 4px; margin-bottom: 8px; }
+		.wpab-ed__mocktabs[hidden] { display: none !important; }
+		.wpab-ed__mocktab { appearance: none; border: 1px solid rgba(20,19,18,.16); background: transparent; color: #5c5955; border-radius: 999px; padding: 6px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .15s ease; }
+		.wpab-ed__mocktab:hover { color: #141312; }
+		.wpab-ed__mocktab.is-on { background: #141312; border-color: #141312; color: #fff; }
 		.wpab-ed__mockframe { width: 100%; height: 440px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: #fff; display: block; }
 		.wpab-ed__mockactions { display: flex; gap: 8px; margin-top: 10px; }
 		</style>
@@ -2721,6 +2730,11 @@ final class WPAB_Editor {
 				if (take('footer.php')) { ftr.push('footer.php'); }
 				if (take('assets/css/footer.css')) { ftr.push('assets/css/footer.css'); }
 				if (ftr.length) { batches.push(ftr); }
+				// 2b) the generic content template with its inner-page stylesheet
+				var inr = [];
+				if (take('page.php')) { inr.push('page.php'); }
+				if (take('assets/css/inner.css')) { inr.push('assets/css/inner.css'); }
+				if (inr.length) { batches.push(inr); }
 				// 3) one batch per section: its template part + its css
 				for (var s2 = 0; s2 < remaining.length; s2++) {
 					var mSec = remaining[s2].match(/^template-parts\/section-([a-z0-9-]+)\.php$/);
@@ -2756,6 +2770,10 @@ final class WPAB_Editor {
 							if (mockCtx.fragments && mockCtx.fragments[mp2]) { mk.fragments[mp2] = mockCtx.fragments[mp2]; any = true; }
 							var fk = cssFragKey(mp2);
 							if (fk && mockCtx.fragments && mockCtx.fragments[fk]) { mk.fragments[fk] = mockCtx.fragments[fk]; any = true; }
+							// Content templates + inner.css carry the inner design pack.
+							if (mockCtx.inner && (mp2 === 'assets/css/inner.css' || /^page(-[a-z0-9-]+)?\.php$/.test(mp2) || mp2 === 'single.php')) {
+								mk.inner = mockCtx.inner; any = true;
+							}
 						}
 						if (any) { payload.mockup = mk; }
 					}
@@ -3003,8 +3021,31 @@ final class WPAB_Editor {
 				if (!wrap || !frame) { return proceedFromMockup(myRun, sig, brief, mock); }
 				if (wProgress) { wProgress.hidden = true; }
 				var guard = '<script>document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a"):null;if(a){e.preventDefault();}},true);document.addEventListener("submit",function(e){e.preventDefault();},true);<' + '/script>';
-				var doc = String(mock.html || '');
-				frame.srcdoc = (doc.indexOf('</body>') !== -1) ? doc.replace('</body>', guard + '</body>') : doc + guard;
+				function guarded(d) { d = String(d || ''); return (d.indexOf('</body>') !== -1) ? d.replace('</body>', guard + '</body>') : d + guard; }
+				frame.srcdoc = guarded(mock.html);
+				// Homepage / Inner page preview tabs — shown only when the design
+				// pack includes an inner page.
+				var mtabs = $('wpab-ed-mocktabs');
+				if (mtabs) {
+					var tabBtns = mtabs.querySelectorAll('[data-mocktab]');
+					for (var tb = 0; tb < tabBtns.length; tb++) {
+						tabBtns[tb].classList.toggle('is-on', tabBtns[tb].getAttribute('data-mocktab') === 'home');
+					}
+					if (mock.innerHtml) {
+						mtabs.hidden = false;
+						mtabs.onclick = function (e) {
+							var t = e.target;
+							while (t && t !== mtabs && !t.getAttribute('data-mocktab')) { t = t.parentNode; }
+							if (!t || t === mtabs) { return; }
+							var which = t.getAttribute('data-mocktab');
+							for (var tb2 = 0; tb2 < tabBtns.length; tb2++) { tabBtns[tb2].classList.toggle('is-on', tabBtns[tb2] === t); }
+							frame.srcdoc = guarded(which === 'inner' ? mock.innerHtml : mock.html);
+						};
+					} else {
+						mtabs.hidden = true;
+						mtabs.onclick = null;
+					}
+				}
 				if (wizard) { wizard.classList.add('is-design'); }
 				wrap.hidden = false;
 				setBuildDetail('');
@@ -3051,7 +3092,13 @@ final class WPAB_Editor {
 					var sc = secs[si2];
 					if (sc && sc.slug && sc.html) { frags['template-parts/section-' + sc.slug + '.php'] = sc.html; }
 				}
-				return { css: mock.css || '', fonts: mock.fonts || [], fragments: frags };
+				var ctx = { css: mock.css || '', fonts: mock.fonts || [], fragments: frags };
+				// Inner-page design pack: page-hero fragment + extra CSS for the
+				// content templates and assets/css/inner.css.
+				if (mock.pageHero || mock.innerCss) {
+					ctx.inner = { css: mock.innerCss || '', pageHero: mock.pageHero || '' };
+				}
+				return ctx;
 			}
 
 			function proceedFromMockup(myRun, sig, brief, mock) {

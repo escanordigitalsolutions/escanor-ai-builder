@@ -75,6 +75,7 @@ const CORE_FILES = [
   "assets/css/base.css",
   "assets/css/header.css",
   "assets/css/footer.css",
+  "assets/css/inner.css",
   "assets/js/main.js",
 ];
 

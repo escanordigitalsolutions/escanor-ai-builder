@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
-import { generateMockup, generateConcept, critiqueMockup, resolveStyle } from "@/lib/agent/mockup-core";
+import { generateMockup, generateConcept, generateInnerMockup, critiqueMockup, resolveStyle } from "@/lib/agent/mockup-core";
 import { logUsage } from "@/lib/ai/usage";
 
 // The response returns immediately with a job id; the mockup itself renders in
@@ -94,8 +94,8 @@ export async function POST(request: NextRequest) {
     };
 
     try {
-      // ---- Stage 1/3 (cheap model): creative concept ----
-      await setProgress("concept", "Stage 1/3 — inventing the creative concept…");
+      // ---- Stage 1/4 (cheap model): creative concept ----
+      await setProgress("concept", "Stage 1/4 — inventing the creative concept…");
       let concept = null;
       try {
         const c = await generateConcept(modelConfig, brief, style);
@@ -105,12 +105,12 @@ export async function POST(request: NextRequest) {
         console.error("concept stage error (continuing without):", conceptError);
       }
 
-      // ---- Stage 2/3 (strong model): the homepage itself ----
+      // ---- Stage 2/4 (strong model): the homepage itself ----
       await setProgress(
         "design",
         concept?.concept
-          ? `Stage 2/3 — concept "${concept.concept}" chosen, drawing the homepage…`
-          : "Stage 2/3 — drawing the homepage…"
+          ? `Stage 2/4 — concept "${concept.concept}" chosen, drawing the homepage…`
+          : "Stage 2/4 — drawing the homepage…"
       );
       const mock = await generateMockup(modelConfig, brief, variation, style, concept);
       await logUsage(projectId, "design", mock.model, mock.usage, {
@@ -122,16 +122,43 @@ export async function POST(request: NextRequest) {
       });
       const ok = mock.sections.length >= 3 && mock.css.length > 200 && !mock.truncated;
 
-      // ---- Stage 3/3 (cheap model): short review for the user ----
+      // ---- Stage 3/4 (cheap model): short review for the user ----
       let critique = "";
       if (ok) {
-        await setProgress("critique", "Stage 3/3 — quick design review…");
+        await setProgress("critique", "Stage 3/4 — quick design review…");
         try {
           const r = await critiqueMockup(modelConfig, mock.html);
           await logUsage(projectId, "critique", r.model, r.usage, { critique: r.data.slice(0, 300) });
           critique = r.data;
         } catch (critiqueError) {
           console.error("critique stage error (continuing without):", critiqueError);
+        }
+      }
+
+      // ---- Stage 4/4 (cheap model): a representative inner page ----
+      // Constrained by the homepage's CSS and chrome, so a cheap model works.
+      // Non-fatal: without it the build simply falls back to today's behavior.
+      let inner: { html: string; css: string; pageHero: string } | null = null;
+      if (ok) {
+        await setProgress("inner", "Stage 4/4 — designing an inner page…");
+        try {
+          const inn = await generateInnerMockup(modelConfig, brief, concept, {
+            css: mock.css,
+            header: mock.header,
+            footer: mock.footer,
+            fonts: mock.fonts,
+          });
+          await logUsage(projectId, "inner", inn.model, inn.usage, {
+            chars: inn.html.length,
+            heroFound: !!inn.pageHero,
+            cssChars: inn.css.length,
+            truncated: inn.truncated,
+          });
+          if (!inn.truncated && inn.pageHero && inn.html.length > 1000) {
+            inner = { html: inn.html, css: inn.css, pageHero: inn.pageHero };
+          }
+        } catch (innerError) {
+          console.error("inner-page stage error (continuing without):", innerError);
         }
       }
 
@@ -180,6 +207,9 @@ export async function POST(request: NextRequest) {
                 footer: mock.footer,
                 fonts: mock.fonts,
                 sections: mock.sections,
+                innerHtml: inner?.html ?? null,
+                innerCss: inner?.css ?? null,
+                pageHero: inner?.pageHero ?? null,
                 usage: mock.usage,
                 model: mock.model,
               }

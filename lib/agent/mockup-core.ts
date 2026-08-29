@@ -15,10 +15,12 @@ import { replacePlaceholderImages, fetchBriefImages } from "./pexels";
 
 const SHARED_RULES = `Design a modern, visually distinctive homepage that feels specifically created for this brand. Interpret the brief freely and make your own decisions about layout, typography, color, imagery, scale, rhythm and composition. Aim for a coherent, memorable experience rather than a recognizable website template. Keep it readable, responsive and useful, but do not default to conventional SaaS sections or component-library patterns.
 
-You have full creative authority over layout, typography, palette, imagery, section count and order, scale, rhythm and composition. The concept notes and style direction are inspiration, not a specification. CSS shapes, gradients, masks, pseudo-elements and inline SVG decoration are welcome. The supplied photos are optional — use only the ones that serve the design, or build typography- and CSS-led sections without images.
+You have full creative authority over layout, typography, palette, imagery, section count and order, scale, rhythm and composition. The concept notes and style direction are inspiration, not a specification. CSS shapes, gradients, masks, pseudo-elements and inline SVG decoration are welcome. The supplied photos are optional — use only the ones that serve the design, or build typography- and CSS-led sections without images. Use a consistent spacing scale, give images a deliberate treatment (crop, radius, duotone, frame — your call), and make every word of microcopy real and on-voice.
 
 TECHNICAL CONTRACT (required by the automatic splitter):
-- ONE self-contained HTML document; all CSS in one <style> block in <head>; Google Fonts may be loaded via <link> tags; JavaScript only as one tiny inline <script> for the mobile menu.
+- ONE self-contained HTML document; all CSS in one <style> block in <head>; Google Fonts may be loaded via <link> tags.
+- JavaScript: exactly one inline <script> before </body>, vanilla only, under ~80 lines. It MUST implement: the mobile menu toggle; a scroll-reveal — an IntersectionObserver that adds .in-view to every [data-reveal] element (CSS handles the transition; elements stay fully visible without JS); and .is-scrolled on the header when scrolled. Accordions or tabs are welcome where the content genuinely calls for them. Everything must stay readable and usable with JavaScript disabled.
+- Interactive elements (links, buttons, cards, form fields) have designed hover AND focus-visible states; motion is subtle and purposeful, never decorative for its own sake.
 - <body> starts with <header data-part="header">, then 4-7 top-level <section data-section="<kebab-slug>"> elements (never nested), and ends with <footer data-part="footer">.
 - Any photos must come from the supplied PEXELS IMAGES URLs, written as <img src="<url>" width="<w>" height="<h>" alt="...">.
 - No horizontal overflow at any width.
@@ -184,6 +186,91 @@ export function splitMockup(html: string): {
   }
 
   return { css, header, footer, fonts: [...new Set(fonts)], sections };
+}
+
+/**
+ * Stage 4 (cheap model): ONE representative INNER PAGE, constrained by the
+ * approved homepage's CSS and chrome. The model never echoes the homepage CSS
+ * back — it writes a placeholder that we replace server-side, so its output is
+ * only the new markup + the few extra rules. The page-hero fragment and the
+ * extra CSS feed the build (page.php / page-<slug>.php / assets/css/inner.css).
+ */
+const INNER_RULES = `Design ONE representative INNER PAGE (an About-style content page) for the same site, matching the approved homepage exactly — same tokens, typography, palette, spacing, motion and voice.
+
+You are given the homepage's CSS (by reference), its Google Fonts links and its header/footer markup. The header and footer markup must be copied VERBATIM. Do not restyle anything the homepage CSS already defines, and do NOT repeat the homepage CSS.
+
+TECHNICAL CONTRACT (required by the automatic splitter):
+- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim, nothing else inside), then <style data-part="inner"> containing ONLY the additional rules this page needs.
+- <body>: the given header markup verbatim; then <section data-part="page-hero"> — the designed page-title area (title, optional intro line or breadcrumb) — this is reused on EVERY inner page, so keep it content-agnostic; then <article><div class="entry container"> demonstrating WordPress content typography (h2, h3, paragraphs, a list, a blockquote, a link — realistic on-brand copy); then ONE <section data-part="components"> block (e.g. value cards or a small grid); then the given footer markup verbatim.
+- Hover/focus states and the [data-reveal] pattern follow the homepage. One tiny vanilla script only if the homepage has one.
+- No new Google Fonts, no <img> unless its URL already appears in the given markup. No horizontal overflow.
+
+Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;
+
+export type InnerResult = {
+  html: string;
+  css: string;
+  pageHero: string;
+  truncated: boolean;
+  usage: Usage;
+  model: string;
+};
+
+export async function generateInnerMockup(
+  modelConfig: unknown,
+  brief: unknown,
+  concept: DesignConcept | null,
+  home: { css: string; header: string; footer: string; fonts: string[] }
+): Promise<InnerResult> {
+  const model = pickModel(modelConfig, "cheap");
+  const gen = await generateText({
+    model,
+    system: INNER_RULES,
+    maxTokens: 12000,
+    input:
+      `Brief:\n${JSON.stringify(brief)}` +
+      (concept ? `\n\nCONCEPT NOTES:\n${JSON.stringify(concept)}` : "") +
+      (home.fonts.length ? `\n\nGOOGLE FONTS URLS (link these):\n${home.fonts.join("\n")}` : "") +
+      `\n\nHOMEPAGE CSS (reference only — do NOT repeat it; the placeholder block stands in for it):\n${home.css}` +
+      `\n\nHEADER MARKUP (copy verbatim):\n${home.header}` +
+      `\n\nFOOTER MARKUP (copy verbatim):\n${home.footer}`,
+  });
+
+  let html = gen.text.trim();
+  const fence = html.match(/```(?:html)?\s*([\s\S]*?)```/i);
+  if (fence) html = fence[1].trim();
+  const start = html.search(/<!DOCTYPE/i);
+  if (start > 0) html = html.slice(start);
+  const endIdx = html.lastIndexOf("</html>");
+  if (endIdx !== -1) html = html.slice(0, endIdx + "</html>".length);
+
+  const cssM = html.match(
+    /<style[^>]*data-part=["']inner["'][^>]*>([\s\S]*?)<\/style>/i
+  );
+  const heroM = html.match(
+    /<section[^>]*data-part=["']page-hero["'][\s\S]*?<\/section>/i
+  );
+
+  // Inject the real homepage CSS so the preview iframe renders standalone.
+  if (html.includes("/*HOMEPAGE-CSS*/")) {
+    html = html.replace("/*HOMEPAGE-CSS*/", () => home.css);
+  } else {
+    // Placeholder missing — prepend the homepage CSS so the preview still looks right.
+    html = html.replace(/<head([^>]*)>/i, (m) => `${m}\n<style>${home.css}</style>`);
+  }
+
+  console.log(
+    `inner-mockup model=${model} chars=${html.length} hero=${heroM ? "yes" : "MISSING"} css=${cssM ? cssM[1].trim().length : 0} truncated=${gen.truncated}`
+  );
+
+  return {
+    html,
+    css: cssM ? cssM[1].trim() : "",
+    pageHero: heroM ? heroM[0] : "",
+    truncated: gen.truncated,
+    usage: gen.usage,
+    model,
+  };
 }
 
 export async function generateMockup(

@@ -18,6 +18,7 @@ const STAGE_LABELS: Record<string, string> = {
   concept: "Concept",
   critique: "Design review",
   design: "Design",
+  inner: "Inner design",
   plan: "Page plan",
   content: "Page content",
   build: "Build",
