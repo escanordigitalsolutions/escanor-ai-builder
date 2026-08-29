@@ -24,22 +24,12 @@ export const maxDuration = 300;
  * written here.
  */
 
-const INSTRUCTIONS = `You are an award-winning art director reviewing a JUST-GENERATED WordPress theme against its intended design CONCEPT. Your job is to make it more DISTINCTIVE and closer to Awwwards-level craft — NOT to fix bugs (a separate pass handles correctness).
+const INSTRUCTIONS = `You are an art director reviewing a just-generated WordPress theme. Inspect the real files with the tools (list_project_files first, then read assets/css/main.css, header.php, front-page.php and the template-parts that carry the design).
 
-Inspect the real theme with the tools (list_project_files first, then read the files that carry the design — assets/css/main.css, header.php, footer.php, front-page.php and the template-parts/section-*.php). Judge it honestly against the concept and against these questions:
-- Distinctiveness: does it look like a bespoke site, or a generic template? Would it stand out?
-- Concept adherence: does it actually express the archetype, mood and SIGNATURE from the concept?
-- Typography: is the scale bold and the hierarchy strong, or is everything the same safe size?
-- Sectional variety: do adjacent sections genuinely differ (background, layout, rhythm), or do they blur together?
-- Imagery: are photos used as a design element (full-bleed, treated, confident), or just small boxes?
-- Layout ambition: is there asymmetry, full-bleed, overlap, negative space — or is everything centered and boxed?
+Name the changes with the MOST visual impact — a stronger hero, a bolder type scale, a more distinctive section layout, better use of imagery or whitespace. Concrete, specific instructions; CSS + vanilla JS only (no libraries); keep it responsive. At most 3 targets, most impactful first.
 
-The theme is intentionally DEPENDENCY-FREE (vanilla JS + modern CSS only, no libraries). Never propose adding GSAP, Swiper, tsParticles, GLightbox or any CDN library — achieve every effect with CSS and small vanilla JS (IntersectionObserver, scroll-snap, requestAnimationFrame).
-
-Return the 3-6 HIGHEST-IMPACT changes that would most elevate the design. For each, name the exact file and give a CONCRETE, art-directed instruction (what to change and how, in the language of the concept) — bold but still responsive, accessible and consistent with the theme's design tokens. Order most impactful first. Prefer changes to section template-parts and main.css. Do not propose more than 6.
-
-Respond with ONLY valid JSON, no markdown, no commentary — the very first character of that final reply is { and the very last is }:
-{ "verdict": "one short sentence on how generic vs distinctive it is now", "targets": [ { "path": "template-parts/section-hero.php", "instruction": "concrete art-directed change" } ] }`;
+Final reply: NO tool calls, ONLY valid JSON — first character { and last character }, no markdown, no commentary:
+{ "verdict": "one short sentence", "targets": [ { "path": "template-parts/section-hero.php", "instruction": "concrete change" } ] }`;
 
 const tools: ToolDef[] = [
   {

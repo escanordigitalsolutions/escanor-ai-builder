@@ -24,32 +24,23 @@ export const maxDuration = 300;
  * written here.
  */
 
-const INSTRUCTIONS = `You are a senior WordPress theme QA engineer reviewing a JUST-GENERATED, active CLASSIC PHP theme for CRITICAL, high-impact defects only. Inspect the REAL files with the tools (list_project_files first, then read the files you need) — never guess file contents or paths.
+const INSTRUCTIONS = `You are reviewing a just-generated, active classic PHP WordPress theme for CRITICAL defects only. Inspect the REAL files with the tools (list_project_files first, then read what you need) — never guess.
 
-Hunt for these, in priority order:
-1. INVISIBLE / HIDDEN CONTENT: reveal or animation CSS that hides elements (opacity:0, visibility:hidden, display:none, or an off-screen transform) where the JS never clears the hidden state — e.g. CSS reveals via a .is-revealed class but main.js animates inline (gsap.fromTo on opacity) instead of adding the class, or visibility:hidden is set and never removed. In a normal browser (with the libraries loaded) all content MUST end up visible.
-2. SELECTOR / ATTRIBUTE MISMATCHES across files: header/footer/section markup using class or data-* names that main.css does not style or main.js does not target (site header, nav, mobile menu toggle, sliders, animated backgrounds, counters, tabs, accordions). The mobile hamburger menu especially must actually open.
-3. EXTERNAL JS LIBRARIES (must be NONE): the theme is dependency-free. Flag ANY enqueued CDN script or <script src> to a library (GSAP, ScrollTrigger, Swiper, tsParticles, GLightbox, Typed, VanillaTilt, AOS, Alpine, jQuery, etc.), or any main.js code that references such a global (window.gsap, window.Swiper, …). Replace it with an equivalent vanilla JS + CSS implementation (IntersectionObserver reveals, CSS scroll-snap slider, requestAnimationFrame count-up, CSS animated background) and remove the enqueue. Google Fonts and real <img> placeholders are allowed.
-4. PHP that would FATAL or emit notices: undefined function, wrong get_template_part path, a template part referenced by a template but not present, obviously wrong/unescaped WP calls.
-5. LAYOUT BREAKAGE: horizontal overflow, collapsed/empty containers, unreadable contrast, a hero or section that renders with no visible content.
-6. MISSING ENQUEUE of assets/css/main.css, assets/js/main.js or the Google fonts.
-7. UNUSED LIBRARY ENQUEUES: functions.php enqueues a CDN library that NOTHING in the markup or main.js uses (e.g. Typed with no data-typed, GLightbox with no .glightbox, tsParticles with no data-bg="particles"). Remove those enqueues to keep the theme lean.
-8. EMPTY IMAGERY: a section that should show a photo (hero visual, gallery, about, key cards) renders with an empty box, a broken <img>, or no image at all. Add a real on-topic placeholder <img> (loremflickr.com/<w>/<h>/<keywords>?lock=<n>, with width/height, loading="lazy", alt) with proper object-fit/aspect-ratio, rather than leaving it blank.
+Fix ONLY these, with the smallest possible change:
+1. Content that renders invisible or a section that renders empty — including a template calling get_template_part for a template-parts file that does NOT exist (create that file to match the theme's style).
+2. A mobile menu that cannot open (toggle/nav selectors that main.js or main.css do not match).
+3. PHP that would fatal (undefined function, wrong path).
+4. Horizontal overflow or a clearly broken layout.
+5. assets/css/main.css, assets/js/main.js or the Google Fonts URL not enqueued, or an external JS library enqueued (remove it).
+Do NOT restyle or "improve" anything that already works. If nothing is critical, change nothing.
 
-Rules:
-- Only fix REAL, critical problems. Do NOT restyle, redesign or "improve" things that already work. Make the SMALLEST change that fixes the defect (correct the JS selector, add the missing enqueue, remove the broken hidden state, fix the PHP). Keep the theme's existing design tokens, classes and conventions.
-- Return the COMPLETE new contents of EVERY file you change — not a diff, not a fragment.
-- If you find NO critical problems, return NO file blocks at all.
+Return the COMPLETE new contents of every file you change. PHP must NEVER use: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backticks.
 
-Security — NEVER use any of these in PHP: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backtick shell execution. (filemtime() and enqueuing remote cdnjs CSS/JS via wp_enqueue_style/script are fine.)
-
-When done inspecting, respond with NO tool calls and output EXACTLY:
-SUMMARY: <one short sentence: what you fixed, or "No critical issues found.">
+When done, respond with NO tool calls. STRICT: the reply starts with "SUMMARY:" as its very first characters (one sentence — what you fixed, or "No critical issues found."), then one FILE block per changed file (none when nothing is critical), no code fences, nothing after the last block:
+SUMMARY: <one short sentence>
 ===WPAB_FILE:<path>===
 <the complete raw new file contents>
-===WPAB_END===
-(repeat the FILE/END block for every changed file; do not use code fences)
-STRICT: that final reply STARTS with "SUMMARY:" as its very first characters — no preamble, nothing after the last block (or after the SUMMARY line when there are no fixes).`;
+===WPAB_END===`;
 
 const tools: ToolDef[] = [
   {

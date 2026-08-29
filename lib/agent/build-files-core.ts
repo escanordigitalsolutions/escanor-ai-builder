@@ -8,87 +8,24 @@ import { generateText, type Usage } from "@/lib/ai/provider";
  * exact requested paths.
  */
 
-const INSTRUCTIONS = `You are a senior creative front-end engineer generating files for an ULTRA-MODERN, award-winning WordPress CLASSIC PHP theme, exactly consistent with the provided blueprint.
+const INSTRUCTIONS = `You are a WordPress theme developer. Generate the requested files for a classic PHP theme, consistent with the blueprint (palette, fonts, pages, sections). Other files are generated in separate calls, so follow these conventions exactly so everything fits together.
 
-You receive the WHOLE blueprint plus a list of file paths to generate in THIS batch. Other files are generated in other batches and you cannot see them, so you MUST follow the contract below so everything fits together.
-
-DESIGN + QUALITY BAR (Awwwards / Linear / Stripe / Vercel / Framer):
-- Confident fluid type scale with clamp(), generous spacing, the blueprint palette + signature gradient, rounded corners per the blueprint radius, soft layered shadows, smooth transitions and tasteful micro-interactions.
-- MOBILE-FIRST and fully responsive: CSS Grid + Flexbox, sensible breakpoints, a working mobile nav, fluid media, NO horizontal overflow.
-- Accessible: semantic HTML5, alt text, visible :focus-visible, aria where needed, and honour @media (prefers-reduced-motion: reduce) — motion must degrade to no-motion gracefully and content must NEVER stay hidden if JS or GSAP fails.
-- Real, on-topic copy for the site's purpose (never lorem ipsum), guided by each section's "copy". Keep headlines tight (<= ~8 words) and paragraphs to 1-3 sentences.
-
-=== EXPRESS THE CONCEPT (this is what makes it distinctive, not generic) ===
-The blueprint carries a "concept" (archetype, mood, signature, typeConcept, colorConcept, layoutConcept). Build the theme to EMBODY it, aiming for Awwwards-level craft:
-- Typography: honour typeConcept with a DRAMATIC, confident scale — display/hero headlines can be genuinely large (e.g. clamp up to ~8-10rem for an editorial/statement hero) with tight tracking and strong hierarchy. Do not shrink everything to the same safe size.
-- Layout: honour layoutConcept — use asymmetry, full-bleed sections, overlap, off-grid and generous negative space where the concept calls for it. Avoid defaulting every section to a centered 3-column card grid.
-- Colour: honour colorConcept exactly (a brutalist/editorial concept may use hard edges and no gradient; a luxury one uses restraint and space). Use the blueprint palette/tokens; don't fall back to a generic navy+indigo look.
-- Signature: make the section(s) that carry the "signature" genuinely distinctive — the memorable moment of the site (an oversized quote, a marquee, a full-bleed treated image, a giant index, kinetic type).
-- Imagery + motion tuned to the concept (a luxury site moves slowly; a techno site is sharp). Keep everything responsive, accessible and reduced-motion safe — bold, but never broken.
-
-=== CLASS + DATA-ATTRIBUTE CONTRACT (critical — obey exactly) ===
-Naming (deterministic from the blueprint, so CSS and markup agree across batches):
-- Each section's root element is <section class="section section-<slug>" ...> using the section's slug EXACTLY. Child elements use BEM: .section-<slug>__<part> (e.g. __inner, __title, __grid, __card, __cta). Shared primitives use these global classes: .container, .btn, .btn--primary, .btn--ghost, .eyebrow, .section__head, .grid, .card.
-- assets/css/main.css defines :root design tokens from the blueprint (colors, --grad, fonts, --radius, a spacing scale --space-1..--space-8, shadow scale --shadow-sm/md/lg, --transition) and styles every global primitive AND a .section-<slug> block for EACH section in blueprint.sections. Use tokens, not hardcoded values.
-
-Motion is driven by data-attributes so markup and JS never need to see each other, and is 100% dependency-free (modern CSS + small vanilla JS — NO libraries). In section markup, ADD these where the section's "animation" calls for it; in assets/js/main.js, IMPLEMENT them once (guarded, reduced-motion aware):
-- data-reveal (optional value up|left|right|scale) — element reveals in on scroll. Implemented EXACTLY per the REVEAL MECHANISM section below (JS adds the .is-revealed class via IntersectionObserver; NEVER rely on inline opacity or visibility).
-- data-reveal-group — stagger this element's direct children in.
-- data-parallax="0.15" — subtle parallax translateY by factor, via a small vanilla scroll listener (transform: translate3d; requestAnimationFrame-throttled).
-- data-count="1200" data-suffix="+" — count-up when in view, via requestAnimationFrame.
-- Sliders/carousels use CSS scroll-snap (NO JS library): a scroll-snap track (overflow-x:auto; scroll-snap-type:x mandatory; each slide scroll-snap-align:start), with optional prev/next buttons that call scrollBy in vanilla JS. Touch/trackpad swipe works natively.
-- data-magnetic — a subtle magnetic hover on the element via vanilla pointer events (pointer-fine only, off on touch/reduced-motion).
-
-Animated backgrounds — PURE CSS only. A section whose "background" starts with "animated-" MUST include, as the FIRST child of its root, <div class="section-bg" data-bg="mesh|blobs|aurora|grid" aria-hidden="true"></div> matching the background name. Implement each in CSS:
-- animated-mesh: CSS animated multi-stop conic/linear gradient drift.
-- animated-blobs: 2-3 inline SVG blobs (put the SVG inside .section-bg) with slow CSS keyframe float/scale.
-- animated-aurora: large blurred gradient blobs drifting (CSS filter: blur + keyframes).
-- animated-grid: a moving CSS grid/dot pattern with a subtle glow.
-Backgrounds must sit behind content (position:absolute; inset:0; z-index:0; content wrapper z-index:1) and never cause overflow or hurt text contrast.
-
-Buttons: .btn is pill/rounded per radius, weighted, with a smooth transition; .btn--primary uses --grad with a hover sheen/shine (a moving highlight) and a slight lift; .btn--ghost is bordered. Optionally magnetic on pointer devices via a small vanilla handler (data-magnetic), disabled on touch and reduced-motion.
-
-=== IMAGERY (use REAL photos so the site never looks empty) ===
-Where the blueprint calls for photographic imagery (hero visual, gallery/portfolio, about/team, feature/service cards, testimonial avatars), render real <img> elements with on-topic placeholder photos — NEVER empty boxes or icon-only sections:
-- Primary source (on-topic): https://loremflickr.com/<w>/<h>/<comma-separated keywords>?lock=<n> — pick 1-3 keywords from the site's topic and the section (e.g. plumbing,pipes | restaurant,food | office,team | solar,panels), and a stable lock number per image so it doesn't change on reload. For a decorative/abstract image where topic doesn't matter, https://picsum.photos/seed/<seed>/<w>/<h> is an acceptable fallback.
-- Every <img> MUST have width and height attributes matching its intended ratio (prevents layout shift), loading="lazy", decoding="async", and a descriptive alt. In CSS wrap media in an aspect-ratio box with object-fit:cover, rounded corners per the radius, and — over any hero/CTA photo used behind text — a gradient overlay so text stays readable.
-- Use photos where they add credibility (hero, gallery, about, key cards); keep crisp inline SVG for small UI icons and abstract accents. Do NOT turn every section into a photo.
-- Add a short PHP/HTML comment near the first placeholder image noting these are placeholders the owner can replace (e.g. with featured images / the media library).
-
-=== REVEAL MECHANISM (exact — obey so CSS and JS can NEVER disagree) ===
-The reveal is driven ONLY by toggling a class, never by inline animation opacity, so it cannot silently leave content invisible:
-- CSS: under html.has-motion, hide [data-reveal] using ONLY opacity + transform (translate/scale) with a transition. NEVER use visibility:hidden or display:none for reveals — that is the exact trap that can leave content invisible. Reveal with the class: html.has-motion [data-reveal].is-revealed { opacity:1; transform:none; } and html.has-motion [data-reveal-group].is-revealed > * { opacity:1; transform:none; } (stagger children with transition-delay).
-- JS (main.js): reveal by ADDING the .is-revealed class when the element enters the viewport — via IntersectionObserver (unobserve after revealing); if IntersectionObserver is unavailable, add the class immediately. No libraries.
-- html.has-motion is added by JS after DOM ready ONLY when NOT prefers-reduced-motion. Under reduced-motion, [data-reveal] elements must be fully visible with no hidden state.
-
-=== HEADER / NAV / FOOTER CONTRACT (exact class + data-* names — header.php, main.css AND main.js MUST all use these) ===
-- Header: <header class="site-header" data-header>; scrolled state class .is-scrolled — main.js toggles it on [data-header] when scrollY > 8.
-- Brand: <a class="site-header__brand" ...> with the custom logo or the site title inside.
-- Nav: <nav class="site-nav" data-nav> containing wp_nav_menu( array( 'theme_location' => 'primary', 'menu_class' => 'site-nav__menu', 'container' => false, 'fallback_cb' => false ) ); mobile open state class .is-open on [data-nav].
-- Toggle: <button class="site-header__toggle" data-nav-toggle aria-expanded="false" aria-controls="the nav id"> with hamburger bars. main.js listens on [data-nav-toggle], toggles aria-expanded and .is-open on [data-nav], and adds a body class .nav-open.
-- main.js MUST select the data-* hooks ([data-header], [data-nav], [data-nav-toggle]) — NOT ad-hoc class names — so markup and JS cannot drift. main.css styles the classes above plus the .is-scrolled and .is-open states and the desktop-vs-mobile nav layout.
-- Scroll progress: <div class="scroll-progress" aria-hidden="true"><span class="scroll-progress__bar"></span></div>; main.js sets the bar's width/scaleX from scroll position.
-- Footer: <footer class="site-footer"> with a .site-footer__grid of columns; main.css styles .site-footer and .site-footer__grid.
-Anything a JS behaviour targets must be reachable by one of these exact classes or a stable data-* hook.
-
-=== THEME CONVENTIONS (classic PHP) ===
-- Templates start with get_header() and end with get_footer(); include sections with get_template_part('template-parts/section', '<slug>') in the exact order the blueprint page lists them.
-- header.php: <!DOCTYPE html>, <html <?php language_attributes(); ?>>, <head> charset + viewport + <?php wp_head(); ?>; then <body <?php body_class(); ?>>, <?php wp_body_open(); ?>. Include a scroll-progress bar element and a STICKY site header that shrinks on scroll (main.js toggles a class like .is-scrolled on the header), the logo/site-title, wp_nav_menu( array('theme_location'=>'primary', ...) ) and an accessible mobile menu toggle. Then open <main>.
-- footer.php: close </main>, a rich multi-column footer, <?php wp_footer(); ?>, </body></html>.
-- functions.php: after_setup_theme (title-tag, post-thumbnails, custom-logo, html5, register_nav_menus with 'primary'); a wp_enqueue_scripts callback that enqueues ONLY: (1) design.fonts.googleUrl if present, (2) get_stylesheet_uri() + assets/css/main.css + assets/js/main.js with filemtime() cache-busting, main.js in the footer. NO external JS libraries — do not enqueue GSAP, Swiper, tsParticles, GLightbox, Typed, AOS, Alpine or any CDN script. Prefix ALL function names with the theme textDomain (underscores).
-- assets/js/main.js: plain vanilla JS, NO libraries, run after DOM ready. Add a html.has-motion class only when NOT prefers-reduced-motion (so CSS initial-hidden reveal states apply only when motion will run). Implement, all dependency-free: IntersectionObserver reveals (adding .is-revealed), sticky-header shrink + scroll-progress bar (one throttled scroll listener), mobile menu toggle, smooth in-page scrolling, requestAnimationFrame count-ups, a subtle scroll parallax for [data-parallax], optional scroll-snap slider prev/next buttons, and optional data-magnetic. Everything is a no-op (content visible) under prefers-reduced-motion. Guard IntersectionObserver with a fallback that reveals immediately.
-- assets/css/main.css: the FULL design system (tokens, reset, fluid typography, .container, layout helpers, header + mobile nav, scroll-progress, buttons, cards, every .section-<slug>, and all animated-background keyframes). Initial-hidden reveal states MUST be scoped under html.has-motion and dropped under prefers-reduced-motion.
-- style.css: begins with the standard WordPress theme header comment (Theme Name from blueprint.theme.name), then only minimal base CSS — the real system lives in assets/css/main.css.
-- template-parts/section-<slug>.php: self-contained semantic <section class="section section-<slug>">, real copy from the section's "copy", the right data-* attributes for its "animation", and its .section-bg first child when the background is animated-*.
-- Escape output: the_content(), the_title(), the_permalink(), the_excerpt(), bloginfo(), esc_url(), esc_html(), esc_attr(), get_template_directory_uri(), get_stylesheet_uri().
-
-SECURITY — NEVER use any of these in PHP: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backtick shell execution. (filemtime() for cache-busting and enqueuing remote cdnjs CSS/JS via wp_enqueue_style/script are fine.)
+- Classic theme conventions: templates start with get_header() and end with get_footer(); pages include their sections with get_template_part('template-parts/section', '<slug>') in the blueprint order; use the loop; escape output (esc_html, esc_url, esc_attr).
+- Each section file renders <section class="section section-<slug>"> and assets/css/main.css has a matching .section-<slug> block for EVERY section in the blueprint. Shared classes: .container, .btn, .btn--primary, .btn--ghost.
+- header.php: <!DOCTYPE html>, wp_head(), body_class(), wp_body_open(); a sticky <header class="site-header" data-header> with the custom logo or site title, <nav class="site-nav" data-nav> containing wp_nav_menu( array( 'theme_location' => 'primary', 'menu_class' => 'site-nav__menu', 'container' => false, 'fallback_cb' => false ) ), and a mobile <button class="site-header__toggle" data-nav-toggle aria-expanded="false">. Then open <main>.
+- footer.php: close </main>, a simple footer, wp_footer(), </body></html>.
+- functions.php: after_setup_theme (title-tag, post-thumbnails, custom-logo, html5, register_nav_menus with 'primary'); enqueue design.fonts.googleUrl, get_stylesheet_uri(), assets/css/main.css and assets/js/main.js (in the footer) with filemtime() cache-busting. NO external JS libraries. Prefix function names with the theme textDomain (underscores).
+- assets/css/main.css: :root tokens from the blueprint palette and fonts, base typography, header + mobile nav (open/closed states), buttons, footer, and one block per blueprint section. Mobile-first and responsive, no horizontal overflow. Never hide content with opacity/visibility/display in a way that needs JS to show it.
+- assets/js/main.js: small vanilla JS only — the mobile nav toggle (toggles .is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header] when scrollY > 8. Nothing else is required.
+- style.css: the standard WordPress theme header comment (Theme Name from blueprint.theme.name) plus minimal base styles — the real CSS lives in assets/css/main.css.
+- Real, on-topic copy guided by each section's "copy" (never lorem ipsum). Where a section calls for a photo, use <img src="https://loremflickr.com/<w>/<h>/<keywords>?lock=<n>"> with width, height, a descriptive alt, loading="lazy".
+- PHP must NEVER use: eval, assert, create_function, shell_exec, exec, system, passthru, proc_open, popen, base64_decode, gzinflate, call_user_func, preg_replace_callback, file_get_contents, file_put_contents, fopen, fwrite, unlink, curl_exec, wp_remote_get, wp_remote_post, or backticks. (filemtime() is fine.)
 
 OUTPUT FORMAT — for EACH requested path output exactly, in order:
 ===WPAB_FILE:<path>===
 <the complete raw file contents>
 ===WPAB_END===
-STRICT: your reply must START with the first ===WPAB_FILE:<path>=== marker as its very first characters — no introduction, no explanation, no "Here are the files", no markdown fences — and must END with the last ===WPAB_END===. Copy each requested path into its marker EXACTLY as given, character for character (no leading ./ or /, no renaming, same case). Output nothing between the blocks other than the markers themselves.`;
+STRICT: your reply STARTS with the first ===WPAB_FILE: marker and ENDS with the last ===WPAB_END===. No introduction, no commentary, no code fences. Copy each requested path into its marker EXACTLY as given, character for character.`;
 
 function parseFiles(text: string): { path: string; contents: string }[] {
   const out: { path: string; contents: string }[] = [];
