@@ -1190,6 +1190,9 @@ final class WPAB_Editor {
 							<button type="button" id="wpab-ed-new" class="wpab-ed__new">New chat</button>
 							<button type="button" id="wpab-ed-history" class="wpab-ed__new" title="Chat history">History</button>
 							<button type="button" id="wpab-ed-expand" class="wpab-ed__expand" title="Expand / shrink chat history">⤢</button>
+							<button type="button" id="wpab-ed-inspect" class="wpab-ed__dev wpab-ed__inspect" title="Select an element on the page to edit" aria-pressed="false">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l7.5 18 2.2-7.3L21 12.5z"/><path d="M4 4l8.5 8.5"/></svg>
+							</button>
 						</span>
 						<div class="wpab-ed__devbar" id="wpab-ed-devbar" role="group" aria-label="Preview size">
 							<button type="button" class="wpab-ed__dev is-active" data-dev="desktop" title="Desktop" aria-label="Desktop">
@@ -1353,6 +1356,7 @@ final class WPAB_Editor {
 		.wpab-ed__dev { appearance: none; border: 1px solid transparent; background: transparent; color: var(--ed-muted); border-radius: 9px; width: 32px; height: 30px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s ease; }
 		.wpab-ed__dev:hover { color: #141312; }
 		.wpab-ed__dev.is-active { background: #141312; color: #fff; }
+		.wpab-ed__inspect.is-on { background: #141312; color: #fff; box-shadow: 0 0 0 3px rgba(20,19,18,.15); }
 		.wpab-ed__framewrap { flex: 1; display: flex; justify-content: center; overflow: auto; background: #f1f0ee; min-height: 0; position: relative; }
 		.wpab-ed__frameload[hidden] { display: none !important; }
 		.wpab-ed__frameload { position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(241,240,238,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
@@ -1769,6 +1773,115 @@ final class WPAB_Editor {
 			}
 
 			// Preview device sizes.
+			// ---- Inspect tool: pick an element in the preview, paste its
+			// structure into the chat so the edit targets exactly that. ----
+			var inspectBtn = $('wpab-ed-inspect');
+			var inspectOn = false;
+			var inspectDoc = null;
+			var inspectHovered = null;
+
+			function inspectDescriptor(el) {
+				function tagOf(node) {
+					var tg = node.tagName ? node.tagName.toLowerCase() : '';
+					var cls = (node.className && typeof node.className === 'string')
+						? node.className.trim().split(/\s+/).slice(0, 3).join('.')
+						: '';
+					return tg + (cls ? '.' + cls : '');
+				}
+				var parts = [];
+				var cur = el;
+				for (var d = 0; cur && d < 3 && cur.tagName && cur.tagName.toLowerCase() !== 'body'; d++) {
+					parts.unshift(tagOf(cur));
+					cur = cur.parentElement;
+				}
+				var sec = el.closest ? el.closest('section, header, footer') : null;
+				var secName = '';
+				if (sec) {
+					var m = String(sec.className || '').match(/section-([a-z0-9-]+)/);
+					if (m) { secName = 'section-' + m[1]; }
+					else if (sec.tagName) { secName = sec.tagName.toLowerCase(); }
+				}
+				var txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+				var out = 'Selected element: ' + parts.join(' > ');
+				if (secName) { out += ' (inside ' + secName + ')'; }
+				if (txt) { out += ', text: "' + txt + (txt.length >= 60 ? '\u2026' : '') + '"'; }
+				return out;
+			}
+
+			function inspectCleanup() {
+				if (inspectHovered) {
+					try { inspectHovered.style.outline = ''; inspectHovered.style.outlineOffset = ''; } catch (e) {}
+					inspectHovered = null;
+				}
+				if (inspectDoc) {
+					try {
+						inspectDoc.removeEventListener('mouseover', inspectHover, true);
+						inspectDoc.removeEventListener('click', inspectClick, true);
+						if (inspectDoc.body) { inspectDoc.body.style.cursor = ''; }
+					} catch (e) {}
+					inspectDoc = null;
+				}
+			}
+			function inspectHover(e) {
+				if (inspectHovered && inspectHovered !== e.target) {
+					try { inspectHovered.style.outline = ''; inspectHovered.style.outlineOffset = ''; } catch (er) {}
+				}
+				inspectHovered = e.target;
+				try {
+					inspectHovered.style.outline = '2px solid #141312';
+					inspectHovered.style.outlineOffset = '2px';
+				} catch (er) {}
+			}
+			function inspectClick(e) {
+				e.preventDefault();
+				e.stopPropagation();
+				var desc = inspectDescriptor(e.target);
+				setInspect(false);
+				if (input) {
+					var cur = (input.value || '').trim();
+					input.value = desc + ' \u2014 ' + cur;
+					input.focus();
+					try { input.setSelectionRange(input.value.length, input.value.length); } catch (er) {}
+				}
+			}
+			function inspectAttach() {
+				var fr = $('wpab-ed-frame');
+				if (!fr) { return false; }
+				try {
+					var doc = fr.contentDocument || (fr.contentWindow && fr.contentWindow.document);
+					if (!doc || !doc.body) { return false; }
+					inspectDoc = doc;
+					doc.addEventListener('mouseover', inspectHover, true);
+					doc.addEventListener('click', inspectClick, true);
+					doc.body.style.cursor = 'crosshair';
+					return true;
+				} catch (e) { return false; }
+			}
+			function setInspect(on) {
+				inspectOn = !!on;
+				inspectCleanup();
+				if (inspectOn && !inspectAttach()) {
+					inspectOn = false;
+					addMessage('assistant', 'The preview cannot be inspected right now \u2014 wait for it to load and try again.');
+				}
+				if (inspectBtn) {
+					inspectBtn.classList.toggle('is-on', inspectOn);
+					inspectBtn.setAttribute('aria-pressed', inspectOn ? 'true' : 'false');
+				}
+			}
+			if (inspectBtn) {
+				inspectBtn.addEventListener('click', function () { setInspect(!inspectOn); });
+			}
+			// Re-attach after preview reloads while inspecting; drop mode if it navigated away.
+			(function () {
+				var fr0 = $('wpab-ed-frame');
+				if (fr0) {
+					fr0.addEventListener('load', function () {
+						if (inspectOn) { inspectCleanup(); if (!inspectAttach()) { setInspect(false); } }
+					});
+				}
+			})();
+
 			var devBar = $('wpab-ed-devbar');
 			var frameWrap = $('wpab-ed-framewrap');
 			if (devBar && frameWrap) {
