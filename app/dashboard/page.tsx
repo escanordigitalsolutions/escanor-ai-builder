@@ -72,7 +72,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="app-shell p-8 text-neutral-900">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-6xl">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
@@ -89,7 +89,7 @@ export default async function DashboardPage() {
           {user.email}
         </p>
 
-        <div className="mt-8 space-y-3">
+        <div className="mt-8 grid gap-3 sm:grid-cols-2">
           {projects.length === 0 ? (
             <div className="glass-card p-12 text-center">
               <p className="text-sm text-neutral-600">
@@ -100,7 +100,18 @@ export default async function DashboardPage() {
           ) : (
             projects.map((project) => {
               const site = siteOf(project);
-              const connected = Boolean(site?.site_url && site?.last_connected_at);
+              // "Connected" only when the bridge checked in within 24h — an old
+              // timestamp is shown as unverified instead of pretending.
+              const fresh = Boolean(
+                site?.last_connected_at &&
+                  Date.now() - new Date(site.last_connected_at).getTime() <
+                    24 * 3600 * 1000
+              );
+              const label = fresh
+                ? "Connected"
+                : site?.site_url
+                  ? "Not verified"
+                  : "Not connected";
               return (
                 <Link
                   key={project.id}
@@ -119,10 +130,10 @@ export default async function DashboardPage() {
                     <span
                       className={
                         "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium " +
-                        (connected ? "pill-on" : "pill-off")
+                        (fresh ? "pill-on" : "pill-off")
                       }
                     >
-                      {connected ? "Connected" : "Not connected"}
+                      {label}
                     </span>
                   </div>
 

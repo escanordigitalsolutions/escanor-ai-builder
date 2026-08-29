@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type ConnectionData = {
@@ -34,6 +34,7 @@ export default function ProjectConnectionPanel({
       : null
   );
   const [testing, setTesting] = useState(false);
+  const [verified, setVerified] = useState(false);
   const [editingToken, setEditingToken] = useState(false);
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
@@ -58,6 +59,7 @@ export default function ProjectConnectionPanel({
       }
 
       setConnection(data.connection);
+      setVerified(true);
       router.refresh();
     } catch (testError) {
       setConnection((current) =>
@@ -68,6 +70,7 @@ export default function ProjectConnectionPanel({
             }
           : null
       );
+      setVerified(true);
       setError(
         testError instanceof Error
           ? testError.message
@@ -77,6 +80,15 @@ export default function ProjectConnectionPanel({
       setTesting(false);
     }
   }
+
+  // Verify for real on load — the stored row alone doesn't prove the site is
+  // reachable right now.
+  useEffect(() => {
+    if (siteUrl) {
+      void testConnection();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function replaceToken() {
     if (!token.trim() || testing) {
@@ -129,13 +141,15 @@ export default function ProjectConnectionPanel({
           <div className="mt-2 flex items-center gap-2">
             <span
               className={
-                connected
-                  ? "h-2 w-2 rounded-full bg-green-500"
-                  : "h-2 w-2 rounded-full bg-red-500"
+                !verified
+                  ? "h-2 w-2 animate-pulse rounded-full bg-neutral-300"
+                  : connected
+                    ? "h-2 w-2 rounded-full bg-green-500"
+                    : "h-2 w-2 rounded-full bg-red-500"
               }
             />
             <span className="text-sm text-neutral-900">
-              {connected ? "Connected" : "Needs attention"}
+              {!verified ? "Checking…" : connected ? "Connected" : "Not reachable"}
             </span>
           </div>
 

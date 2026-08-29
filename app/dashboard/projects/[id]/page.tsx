@@ -5,6 +5,7 @@ import ProjectConnectionPanel from "@/components/project-connection-panel";
 import ProjectSiteKeys from "@/components/project-site-keys";
 import ProjectModelPanel from "@/components/project-model-panel";
 import ProjectUsagePanel from "@/components/project-usage-panel";
+import ProjectDanger from "@/components/project-danger";
 
 type Props = {
   params: Promise<{
@@ -55,7 +56,7 @@ export default async function ProjectPage({ params }: Props) {
 
   return (
     <main className="app-shell p-8 text-neutral-900">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-6xl">
         <a
           href="/dashboard"
           className="text-neutral-500 transition hover:text-neutral-900"
@@ -90,16 +91,16 @@ export default async function ProjectPage({ params }: Props) {
           <ProjectSiteKeys projectId={project.id} />
         </div>
 
-        <div className="mt-4">
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
           <ProjectModelPanel
             projectId={project.id}
             initial={(project as { model_config?: Record<string, string> }).model_config ?? {}}
           />
-        </div>
 
-        <div className="mt-4">
           <ProjectUsagePanel projectId={project.id} />
         </div>
+
+        <ProjectDanger projectId={project.id} projectName={project.name} />
       </div>
     </main>
   );
