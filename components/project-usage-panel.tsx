@@ -34,6 +34,8 @@ type UsageData = {
 };
 
 const STAGE_LABELS: Record<string, string> = {
+  concept: "Design concept (cheap)",
+  critique: "Design review (cheap)",
   design: "Design (mockup)",
   plan: "Page plan",
   build: "File generation",

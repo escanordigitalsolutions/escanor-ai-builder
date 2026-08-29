@@ -15,7 +15,7 @@ import { BUILD_MODEL, GEN_MODEL, FAST_MODEL, SMART_MODEL } from "./models";
  *   review — the correctness pass (review-theme)
  */
 
-export type ModelTier = "plan" | "build" | "edit" | "chat" | "review";
+export type ModelTier = "plan" | "build" | "edit" | "chat" | "review" | "cheap";
 
 export const TIER_DEFAULTS: Record<ModelTier, string> = {
   plan: process.env.MODEL_PLAN ?? BUILD_MODEL,
@@ -23,6 +23,9 @@ export const TIER_DEFAULTS: Record<ModelTier, string> = {
   edit: GEN_MODEL,
   chat: FAST_MODEL,
   review: SMART_MODEL,
+  // Cheap helper steps (design concept, quick design review) — a fast, low-cost
+  // model. Defaults to OpenAI's gpt-5.6-luna; override with MODEL_CHEAP.
+  cheap: process.env.MODEL_CHEAP ?? "gpt-5.6-luna",
 };
 
 /** Resolve a tier's model from a project's model_config (env fallback). */

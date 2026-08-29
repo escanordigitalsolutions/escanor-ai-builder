@@ -1035,6 +1035,7 @@ final class WPAB_Editor {
 
 					<div id="wpab-ed-mockwrap" class="wpab-ed__mockwrap" hidden>
 						<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-scripts"></iframe>
+						<div id="wpab-ed-mockmeta" class="wpab-ed__mockmeta" hidden></div>
 						<div class="wpab-ed__mockactions">
 							<button type="button" id="wpab-ed-mockuse" class="wpab-ed__wbtn">Use this design</button>
 							<button type="button" id="wpab-ed-mockredo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Try another direction</button>
@@ -1227,6 +1228,8 @@ final class WPAB_Editor {
 		.wpab-ed__wbtn--ghost { background: transparent !important; color: #4b4945 !important; border: 1px solid rgba(20,19,18,.22) !important; }
 		.wpab-ed__wbtn--ghost:hover { background: rgba(20,19,18,.05) !important; color: #141312 !important; }
 		.wpab-ed__wizard.is-design .wpab-ed__wcard { max-width: min(1400px, 96vw); width: 100%; }
+		.wpab-ed__mockmeta { margin-top: 10px; font-size: 12.5px; line-height: 1.55; color: var(--ed-muted); background: rgba(20,19,18,.04); border: 1px solid rgba(20,19,18,.07); border-radius: 12px; padding: 10px 14px; }
+		.wpab-ed__mockmeta b { color: #141312; }
 		.wpab-ed__wizard.is-design .wpab-ed__mockframe { height: 68vh; }
 		.wpab-ed__mockwrap { margin-top: 14px; }
 		.wpab-ed__mockframe { width: 100%; height: 440px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: #fff; display: block; }
@@ -1968,7 +1971,10 @@ final class WPAB_Editor {
 							if (d.status === 'done') { return d.result || {}; }
 							if (d.status === 'error') { throw new Error(d.error || 'The design step failed.'); }
 							if (!jOut.ok) { throw new Error(errText(jOut, 'The design step failed.')); }
-							setBuildDetail('Designing the homepage… ' + Math.round((Date.now() - started) / 1000) + 's');
+							var prog = d.result && d.result.progress;
+							var note = (prog && prog.note) ? prog.note : 'Designing the homepage…';
+							setBuildDetail(note + ' ' + Math.round((Date.now() - started) / 1000) + 's');
+							if (prog && prog.stage) { stepState('design', 'run', prog.stage === 'concept' ? 'concept' : (prog.stage === 'critique' ? 'review' : 'drawing')); }
 							return poll();
 						});
 					}
@@ -1981,9 +1987,17 @@ final class WPAB_Editor {
 			}
 
 			function showMockup(myRun, sig, brief, mock) {
-				stepState('design', 'done', (mock.sections && mock.sections.length ? mock.sections.length + ' sections' : ''));
+				var stepMeta = (mock.conceptName ? '\u201c' + mock.conceptName + '\u201d \u00b7 ' : '') + (mock.sections && mock.sections.length ? mock.sections.length + ' sections' : '');
+				stepState('design', 'done', stepMeta);
 				var wrap = $('wpab-ed-mockwrap');
 				var frame = $('wpab-ed-mockframe');
+				var meta = $('wpab-ed-mockmeta');
+				if (meta) {
+					var parts = [];
+					if (mock.conceptName) { parts.push('<b>Concept: \u201c' + String(mock.conceptName).replace(/[<>&]/g, '') + '\u201d</b>' + (mock.conceptIdea ? ' \u2014 ' + String(mock.conceptIdea).replace(/[<>&]/g, '') : '')); }
+					if (mock.critique) { parts.push('AI review: ' + String(mock.critique).replace(/[<>&]/g, '')); }
+					if (parts.length) { meta.innerHTML = parts.join('<br>'); meta.hidden = false; } else { meta.hidden = true; }
+				}
 				if (!wrap || !frame) { return proceedFromMockup(myRun, sig, brief, mock); }
 				if (wProgress) { wProgress.hidden = true; }
 				var guard = '<script>document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a"):null;if(a){e.preventDefault();}},true);document.addEventListener("submit",function(e){e.preventDefault();},true);<' + '/script>';
@@ -2006,6 +2020,7 @@ final class WPAB_Editor {
 						markDesign('used');
 						if (wizard) { wizard.classList.remove('is-design'); }
 						wrap.hidden = true;
+						if (meta) { meta.hidden = true; }
 						if (wProgress) { wProgress.hidden = false; }
 						if (wResult) { wResult.textContent = ''; }
 						proceedFromMockup(myRun, sig, brief, mock);
@@ -2017,6 +2032,7 @@ final class WPAB_Editor {
 						markDesign('rejected');
 						if (wizard) { wizard.classList.remove('is-design'); }
 						wrap.hidden = true;
+						if (meta) { meta.hidden = true; }
 						if (wProgress) { wProgress.hidden = false; }
 						if (wResult) { wResult.textContent = ''; }
 						startDesignPhase(myRun, sig, brief, 'The previous design direction was rejected. Take a clearly different visual direction: a different palette family, a different typography feel, a different hero structure.');

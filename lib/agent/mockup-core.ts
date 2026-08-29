@@ -65,6 +65,78 @@ Accessible contrast, impeccable alignment and a confident, professional voice th
 
 export type DesignStyle = keyof typeof STYLE_PROMPTS;
 
+/**
+ * Stage 1 (cheap model): a compact creative concept the strong model then
+ * executes. Small output, big effect — the design stops being a single-shot
+ * guess and starts from an approved direction.
+ */
+const CONCEPT_INSTRUCTIONS = `You are a creative director preparing a design spec for a homepage. From the brief, invent ONE strong, unexpected creative concept for the brand and answer with ONLY this JSON (no markdown, no text outside it):
+{"concept":"short evocative name","idea":"2-3 sentences on how the concept shapes the page structure and mood","palette":["#hex","#hex","#hex","#hex"],"fonts":["Display Font","Text Font"],"tone":"copy voice in a few words","sections":[{"slug":"kebab-slug","idea":"one sentence on this section's composition","headline":"working headline"}]}
+Rules: 4-6 sections; both fonts must exist on Google Fonts; slugs are lowercase kebab-case; reject the most obvious concept before answering.`;
+
+export type DesignConcept = {
+  concept?: string;
+  idea?: string;
+  palette?: string[];
+  fonts?: string[];
+  tone?: string;
+  sections?: { slug?: string; idea?: string; headline?: string }[];
+};
+
+export type StageResult<T> = { data: T; usage: Usage; model: string };
+
+export async function generateConcept(
+  modelConfig: unknown,
+  brief: unknown,
+  style: DesignStyle
+): Promise<StageResult<DesignConcept | null>> {
+  const model = pickModel(modelConfig, "cheap");
+  const gen = await generateText({
+    model,
+    system: CONCEPT_INSTRUCTIONS,
+    maxTokens: 2000,
+    input:
+      `Brief:\n${JSON.stringify(brief)}` +
+      `\n\nRequested style direction: ${style} — ${STYLE_PROMPTS[style].body.split("\n")[0]}`,
+  });
+  let data: DesignConcept | null = null;
+  try {
+    let txt = gen.text.trim();
+    const fence = txt.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) txt = fence[1].trim();
+    const start = txt.indexOf("{");
+    const end = txt.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      const parsed = JSON.parse(txt.slice(start, end + 1)) as DesignConcept;
+      if (parsed && typeof parsed.concept === "string") data = parsed;
+    }
+  } catch {
+    data = null;
+  }
+  return { data, usage: gen.usage, model };
+}
+
+/**
+ * Stage 3 (cheap model): a short human-readable review shown to the user next
+ * to the mockup preview. Feedback only — it never blocks the pipeline.
+ */
+export async function critiqueMockup(
+  modelConfig: unknown,
+  html: string
+): Promise<StageResult<string>> {
+  const model = pickModel(modelConfig, "cheap");
+  const trimmed =
+    html.length > 20000 ? html.slice(0, 12000) + "\n...\n" + html.slice(-6000) : html;
+  const gen = await generateText({
+    model,
+    system:
+      "You are a candid design reviewer. In 2-3 short sentences, tell the user what stands out about this homepage design and one concrete thing that could be better. Speak about what a visitor would SEE (composition, type, color, imagery) — never about code. Address the user directly, no lists.",
+    maxTokens: 300,
+    input: trimmed,
+  });
+  return { data: gen.text.trim().slice(0, 600), usage: gen.usage, model };
+}
+
 export function resolveStyle(value: unknown): DesignStyle {
   return typeof value === "string" && value in STYLE_PROMPTS
     ? (value as DesignStyle)
@@ -153,7 +225,8 @@ export async function generateMockup(
   modelConfig: unknown,
   brief: unknown,
   variation?: string,
-  style?: unknown
+  style?: unknown,
+  concept?: DesignConcept | null
 ): Promise<MockupResult> {
   const model = pickModel(modelConfig, "plan");
   const styleKey = resolveStyle(style);
@@ -170,10 +243,15 @@ export async function generateMockup(
         .join("\n")
     : `\n\nPEXELS IMAGES: none supplied — design without <img> elements.`;
 
-  const direction = stylePrompt.seed
-    ? `\n\nART DIRECTION FOR THIS RUN (commit to it fully, adapted to the brand's subject):\n${
-        ART_DIRECTIONS[Math.floor(Math.random() * ART_DIRECTIONS.length)]
-      }`
+  const direction =
+    stylePrompt.seed && !concept
+      ? `\n\nART DIRECTION FOR THIS RUN (commit to it fully, adapted to the brand's subject):\n${
+          ART_DIRECTIONS[Math.floor(Math.random() * ART_DIRECTIONS.length)]
+        }`
+      : "";
+
+  const conceptBlock = concept
+    ? `\n\nDESIGN SPEC (prepared by the concept stage — execute this direction, refining details freely):\n${JSON.stringify(concept)}`
     : "";
 
   const gen = await generateText({
@@ -182,6 +260,7 @@ export async function generateMockup(
     maxTokens: 32000,
     input:
       `Brief:\n${JSON.stringify(brief, null, 2)}` +
+      conceptBlock +
       direction +
       imageBlock +
       (variation ? `\n\n${variation}` : ""),

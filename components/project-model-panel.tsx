@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Tier = "plan" | "build" | "edit" | "chat" | "review";
+type Tier = "plan" | "build" | "edit" | "chat" | "review" | "cheap";
 type Cfg = Partial<Record<Tier, string>>;
 
 const TIERS: { key: Tier; label: string; hint: string }[] = [
@@ -20,6 +20,11 @@ const TIERS: { key: Tier; label: string; hint: string }[] = [
   { key: "edit", label: "Edits & design", hint: "Chat edits + design elevation. A strong model pays off here too." },
   { key: "chat", label: "Chat", hint: "AI Editor conversation — fast model recommended." },
   { key: "review", label: "Quality check", hint: "Correctness review pass." },
+  {
+    key: "cheap",
+    label: "Cheap helper",
+    hint: "Design concept + quick design review stages — a fast low-cost model (default gpt-5.6-luna).",
+  },
 ];
 
 const SUGGESTIONS = [

@@ -8,6 +8,8 @@ import type { Usage } from "./provider";
  */
 
 export type UsageStage =
+  | "concept"
+  | "critique"
   | "design"
   | "plan"
   | "build"

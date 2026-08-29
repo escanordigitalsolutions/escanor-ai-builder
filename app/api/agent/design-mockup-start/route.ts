@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
-import { generateMockup, resolveStyle } from "@/lib/agent/mockup-core";
+import { generateMockup, generateConcept, critiqueMockup, resolveStyle } from "@/lib/agent/mockup-core";
 import { logUsage } from "@/lib/ai/usage";
 
 // The response returns immediately with a job id; the mockup itself renders in
@@ -79,10 +79,55 @@ export async function POST(request: NextRequest) {
 
   after(async () => {
     const db = createServiceClient();
+
+    // Live progress: while the job is running, result carries {progress} so
+    // the wizard can narrate each stage to the user.
+    const setProgress = async (stage: string, note: string) => {
+      await db
+        .from("ai_jobs")
+        .update({
+          result: { progress: { stage, note } },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", jobId)
+        .then(() => {}, () => {});
+    };
+
     try {
-      const mock = await generateMockup(modelConfig, brief, variation, style);
+      // ---- Stage 1/3 (cheap model): creative concept ----
+      await setProgress("concept", "Stage 1/3 — inventing the creative concept…");
+      let concept = null;
+      try {
+        const c = await generateConcept(modelConfig, brief, style);
+        await logUsage(projectId, "concept", c.model, c.usage);
+        concept = c.data;
+      } catch (conceptError) {
+        console.error("concept stage error (continuing without):", conceptError);
+      }
+
+      // ---- Stage 2/3 (strong model): the homepage itself ----
+      await setProgress(
+        "design",
+        concept?.concept
+          ? `Stage 2/3 — concept "${concept.concept}" chosen, drawing the homepage…`
+          : "Stage 2/3 — drawing the homepage…"
+      );
+      const mock = await generateMockup(modelConfig, brief, variation, style, concept);
       await logUsage(projectId, "design", mock.model, mock.usage);
       const ok = mock.sections.length >= 3 && mock.css.length > 200 && !mock.truncated;
+
+      // ---- Stage 3/3 (cheap model): short review for the user ----
+      let critique = "";
+      if (ok) {
+        await setProgress("critique", "Stage 3/3 — quick design review…");
+        try {
+          const r = await critiqueMockup(modelConfig, mock.html);
+          await logUsage(projectId, "critique", r.model, r.usage);
+          critique = r.data;
+        } catch (critiqueError) {
+          console.error("critique stage error (continuing without):", critiqueError);
+        }
+      }
 
       // Archive the design (every attempt, accepted or not) so nothing is lost
       // when ai_jobs is cleaned up. Best-effort — a failed insert never blocks.
@@ -93,7 +138,11 @@ export async function POST(request: NextRequest) {
             .from("ai_designs")
             .insert({
               project_id: projectId,
-              brief: { ...(typeof brief === "object" && brief ? brief : {}), style },
+              brief: {
+                ...(typeof brief === "object" && brief ? brief : {}),
+                style,
+                concept: concept?.concept ?? null,
+              },
               model: mock.model,
               html: mock.html,
               status: "pending",
@@ -116,6 +165,9 @@ export async function POST(request: NextRequest) {
             ? {
                 success: true,
                 designId,
+                conceptName: concept?.concept ?? null,
+                conceptIdea: concept?.idea ?? null,
+                critique: critique || null,
                 html: mock.html,
                 css: mock.css,
                 header: mock.header,
