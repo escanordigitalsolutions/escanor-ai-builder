@@ -109,6 +109,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/design/html',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_design_html' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/design/status',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -313,6 +322,20 @@ final class WPAB_Editor {
 		}
 
 		$result = WPAB_Cloud::request( 'agent/design-mockup-start', $payload, 30 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Design archive: fetch one design's HTML for the wp-admin preview. */
+	public static function rest_design_html( WP_REST_Request $request ) {
+		$params    = self::json_params( $request );
+		$design_id = isset( $params['designId'] ) ? trim( (string) $params['designId'] ) : '';
+
+		if ( '' === $design_id ) {
+			return new WP_Error( 'wpab_dhtml_bad', 'A designId is required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/design-html', array( 'designId' => $design_id ), 20 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}

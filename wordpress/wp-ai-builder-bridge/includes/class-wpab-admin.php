@@ -311,6 +311,78 @@ final class WPAB_Admin {
 					</table>
 				</div>
 			<?php endif; ?>
+
+			<?php
+			// ---- Design archive: every generated homepage design, newest first.
+			$designs = $connected ? WPAB_Cloud::request( 'agent/designs', array(), 20 ) : null;
+			$rows    = ( ! is_wp_error( $designs ) && isset( $designs['designs'] ) && is_array( $designs['designs'] ) ) ? $designs['designs'] : array();
+			$dnonce  = wp_create_nonce( 'wp_rest' );
+			$dhtml   = esc_url_raw( rest_url( 'wpab/v1/editor/design/html' ) );
+			$slabels = array( 'used' => 'Used', 'rejected' => 'Rejected', 'pending' => 'Not used' );
+			?>
+			<div class="wpabd-panel">
+				<h2>Design archive</h2>
+				<?php if ( $connected && is_wp_error( $designs ) ) : ?>
+					<p><?php echo esc_html( $designs->get_error_message() ); ?></p>
+				<?php elseif ( empty( $rows ) ) : ?>
+					<p style="color:#8a8783;font-size:12px;">No archived designs yet — every homepage design generated in the AI Editor lands here, including rejected directions.</p>
+				<?php else : ?>
+					<table class="wpabd-table">
+						<tr><th>Design</th><th>Status</th><th>Model</th><th>Created</th><th></th></tr>
+						<?php foreach ( $rows as $d ) :
+							$brief = isset( $d['brief'] ) && is_array( $d['brief'] ) ? $d['brief'] : array();
+							$title = ! empty( $brief['name'] ) ? $brief['name'] : ( ! empty( $brief['prompt'] ) ? mb_substr( (string) $brief['prompt'], 0, 60 ) : 'Untitled design' );
+							$stat  = isset( $d['status'] ) ? (string) $d['status'] : 'pending';
+							$when  = isset( $d['created_at'] ) ? mysql2date( 'M j, H:i', (string) $d['created_at'] ) : '';
+							?>
+							<tr>
+								<td style="text-align:left;"><?php echo esc_html( $title ); ?></td>
+								<td><?php echo esc_html( $slabels[ $stat ] ?? $stat ); ?></td>
+								<td><?php echo esc_html( $d['model'] ?? '' ); ?></td>
+								<td><?php echo esc_html( $when ); ?></td>
+								<td><button type="button" class="button button-small wpabd-preview" data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>">Preview</button></td>
+							</tr>
+						<?php endforeach; ?>
+					</table>
+					<div id="wpabd-prevwrap" style="display:none;margin-top:12px;">
+						<iframe id="wpabd-prevframe" sandbox="allow-scripts" style="width:100%;height:640px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
+					</div>
+					<script>
+					(function () {
+						var open = null;
+						document.addEventListener('click', function (e) {
+							var b = e.target && e.target.classList && e.target.classList.contains('wpabd-preview') ? e.target : null;
+							if (!b) { return; }
+							var id = b.getAttribute('data-design');
+							var wrap = document.getElementById('wpabd-prevwrap');
+							var frame = document.getElementById('wpabd-prevframe');
+							if (!id || !wrap || !frame) { return; }
+							if (open === id) { wrap.style.display = 'none'; open = null; b.textContent = 'Preview'; return; }
+							var btns = document.querySelectorAll('.wpabd-preview');
+							for (var i = 0; i < btns.length; i++) { btns[i].textContent = 'Preview'; }
+							b.textContent = 'Loading…';
+							fetch(<?php echo wp_json_encode( $dhtml ); ?>, {
+								method: 'POST',
+								headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': <?php echo wp_json_encode( $dnonce ); ?> },
+								credentials: 'same-origin',
+								body: JSON.stringify({ designId: id })
+							}).then(function (r) { return r.json(); }).then(function (j) {
+								if (j && j.html) {
+									frame.srcdoc = j.html;
+									wrap.style.display = 'block';
+									open = id;
+									b.textContent = 'Close';
+									wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+								} else {
+									b.textContent = 'Preview';
+									alert((j && (j.error || j.message)) || 'Could not load the design.');
+								}
+							}).catch(function () { b.textContent = 'Preview'; alert('Could not load the design.'); });
+						});
+					})();
+					</script>
+				<?php endif; ?>
+			</div>
 		</div>
 		<?php
 	}
