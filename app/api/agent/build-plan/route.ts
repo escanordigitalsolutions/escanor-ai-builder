@@ -1,8 +1,8 @@
-import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
-import { GEN_MODEL } from "@/lib/ai/models";
+import { BUILD_MODEL } from "@/lib/ai/models";
+import { generateText } from "@/lib/ai/provider";
 
 /**
  * WordPress -> SaaS : theme BLUEPRINT.
@@ -13,10 +13,6 @@ import { GEN_MODEL } from "@/lib/ai/models";
  * pages (each with its own template) and the complete file list the batch
  * generator (build-files) fills in. Nothing is written here.
  */
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const INSTRUCTIONS = `You are a senior web designer + creative front-end architect. From the brief, produce a BLUEPRINT for a brand-new, ULTRA-MODERN, highly professional CLASSIC PHP WordPress theme (NOT a block theme).
 
@@ -140,22 +136,24 @@ export async function POST(request: NextRequest) {
 
   const brief = body.brief ?? {};
 
-  let response;
+  let text = "";
   try {
-    response = await openai.responses.create({
-      model: GEN_MODEL,
-      instructions: INSTRUCTIONS,
+    const gen = await generateText({
+      model: BUILD_MODEL,
+      system: INSTRUCTIONS,
       input: `Brief:\n${JSON.stringify(brief, null, 2)}`,
+      maxTokens: 12000,
     });
+    text = gen.text;
   } catch (error) {
-    console.error("build-plan OpenAI error:", error);
+    console.error("build-plan generate error:", error);
     return NextResponse.json(
       { success: false, error: "The theme planner could not be reached. Try again." },
       { status: 502 }
     );
   }
 
-  const blueprint = extractJson(response.output_text || "");
+  const blueprint = extractJson(text);
 
   if (
     !blueprint ||

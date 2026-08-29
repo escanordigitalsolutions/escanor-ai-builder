@@ -27,3 +27,12 @@ export const SMART_MODEL = process.env.OPENAI_MODEL_SMART ?? DEFAULT_MODEL;
  * nothing changes until OPENAI_MODEL_GEN is set in the environment.
  */
 export const GEN_MODEL = process.env.OPENAI_MODEL_GEN ?? SMART_MODEL;
+
+/**
+ * BUILD_MODEL — the no-tools theme generation calls (build-plan, build-files),
+ * which run through the provider-agnostic generateText() and therefore accept a
+ * Claude model too. Set MODEL_BUILD to a Claude id (e.g. a Haiku model) to
+ * generate themes with Claude, while the tool-loop routes (chat, edit, design
+ * critique, review) keep using their OpenAI model. Falls back to GEN_MODEL.
+ */
+export const BUILD_MODEL = process.env.MODEL_BUILD ?? GEN_MODEL;

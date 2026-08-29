@@ -1,8 +1,8 @@
-import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
-import { GEN_MODEL } from "@/lib/ai/models";
+import { BUILD_MODEL } from "@/lib/ai/models";
+import { generateText } from "@/lib/ai/provider";
 
 /**
  * WordPress -> SaaS : generate a BATCH of theme files in one call.
@@ -17,10 +17,6 @@ import { GEN_MODEL } from "@/lib/ai/models";
  * a strict CLASS + DATA-ATTRIBUTE CONTRACT (below) is what keeps the CSS, the
  * markup and the JS consistent across separate calls.
  */
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 const INSTRUCTIONS = `You are a senior creative front-end engineer generating files for an ULTRA-MODERN, award-winning WordPress CLASSIC PHP theme, exactly consistent with the provided blueprint.
 
@@ -166,29 +162,29 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let response;
+  let text = "";
+  let truncated = false;
   try {
-    response = await openai.responses.create({
-      model: GEN_MODEL,
-      instructions: INSTRUCTIONS,
-      max_output_tokens: 32000,
+    const gen = await generateText({
+      model: BUILD_MODEL,
+      system: INSTRUCTIONS,
+      maxTokens: 32000,
       input:
         `Blueprint:\n${JSON.stringify(blueprint)}\n\n` +
         `Generate the complete contents of these files, in this order:\n` +
         paths.map((p) => `- ${p}`).join("\n"),
     });
+    text = gen.text;
+    truncated = gen.truncated;
   } catch (error) {
-    console.error("build-files OpenAI error:", error);
+    console.error("build-files generate error:", error);
     return NextResponse.json(
       { success: false, error: "The file generator could not be reached. Try again." },
       { status: 502 }
     );
   }
 
-  const files = parseFiles(response.output_text || "");
-  const truncated =
-    response.status === "incomplete" &&
-    (response.incomplete_details?.reason === "max_output_tokens" || !response.incomplete_details);
+  const files = parseFiles(text);
 
   // When the model runs long, the LAST file block can be cut off before its
   // ===WPAB_END=== marker. Keep every COMPLETE file we did parse and let the
