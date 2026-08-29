@@ -2695,6 +2695,56 @@ final class WPAB_Editor {
 				}).catch(function () { if (alive(myRun)) { stepState('refine', 'done'); } });
 			}
 
+			// Deterministic "shadow copy" of the designed homepage: the text of every
+			// approved mockup section, extracted client-side (no AI) into clean HTML
+			// and stored as the front page's post_content. front-page.php still
+			// renders the designed sections — this copy is what SEO plugins, site
+			// search, RSS and other editors (e.g. Elementor, if this plugin is ever
+			// disabled) see and can work with.
+			function extractFrontContent(blueprint, mockCtx) {
+				try {
+					if (!mockCtx || !mockCtx.fragments || !blueprint || !blueprint.frontPage || typeof DOMParser === 'undefined') { return null; }
+					var parts = [];
+					var secs = blueprint.sections || [];
+					var total = 0;
+					for (var i = 0; i < secs.length; i++) {
+						var slug = secs[i] && secs[i].slug;
+						var frag = slug ? mockCtx.fragments['template-parts/section-' + slug + '.php'] : null;
+						if (!frag) { continue; }
+						var doc = new DOMParser().parseFromString(frag, 'text/html');
+						var nodes = doc.body ? doc.body.querySelectorAll('h1,h2,h3,p,li') : [];
+						var out = [];
+						var listBuf = [];
+						var seen = {};
+						function flushList() {
+							if (listBuf.length) { out.push('<ul>\n' + listBuf.join('\n') + '\n</ul>'); listBuf = []; }
+						}
+						for (var n = 0; n < nodes.length && out.length < 30; n++) {
+							var el = nodes[n];
+							var tag = el.tagName.toLowerCase();
+							// Skip containers whose text comes from nested text elements.
+							if (el.querySelector && el.querySelector('h1,h2,h3,p')) { continue; }
+							var t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+							if (!t || t.length < 2 || t.length > 600 || seen[t]) { continue; }
+							seen[t] = 1;
+							if (tag === 'li') { listBuf.push('<li>' + escapeHtml(t) + '</li>'); continue; }
+							flushList();
+							if (tag === 'h1') { tag = 'h2'; }
+							out.push('<' + tag + '>' + escapeHtml(t) + '</' + tag + '>');
+						}
+						flushList();
+						if (out.length) {
+							var block = out.join('\n');
+							total += block.length;
+							parts.push(block);
+							if (total > 18000) { break; }
+						}
+					}
+					var html = parts.join('\n');
+					return html.length > 40 ? html : null;
+				} catch (e) { return null; }
+			}
+
 			// The build pipeline from a blueprint: batches -> write -> refine -> check.
 			// prevBuilt carries already-generated files when resuming an earlier run.
 			function runPipeline(myRun, sig, brand, blueprint, prevBuilt, mockCtx) {
@@ -2875,13 +2925,22 @@ final class WPAB_Editor {
 						phaseProgress('write');
 						setBuildDetail('Creating pages, front page and menu…');
 						return contentPromise.then(function (pageContent) {
+							var contentMap = pageContent || {};
+							// The designed homepage's text as the front page's content.
+							var frontSlug = typeof blueprint.frontPage === 'string' ? blueprint.frontPage : '';
+							if (frontSlug && !contentMap[frontSlug]) {
+								var frontHtml = extractFrontContent(blueprint, mockCtx);
+								if (frontHtml) { contentMap[frontSlug] = frontHtml; }
+							}
 							var createPayload = {
 								brand: brand,
 								description: (blueprint.theme && blueprint.theme.description) || '',
 								files: built,
 								blueprint: blueprint
 							};
-							if (pageContent) { createPayload.content = pageContent; }
+							var hasContent = false;
+							for (var ck in contentMap) { if (Object.prototype.hasOwnProperty.call(contentMap, ck)) { hasContent = true; break; } }
+							if (hasContent) { createPayload.content = contentMap; }
 							return wpost(cfg.restCreateTheme, createPayload, sig);
 						}).then(function (cOut) {
 							if (!alive(myRun)) { return; }
@@ -2922,7 +2981,7 @@ final class WPAB_Editor {
 							var themeName = cOut.data.name || brand;
 							// The design was approved at the mockup stage — go straight to
 							// the correctness check. Non-fatal.
-							return reviewPass(myRun, sig, 'check', 'any invisible or hidden content, header/nav or mobile-menu selector mismatches, PHP errors, horizontal overflow, or empty image placeholders').then(function () {
+							return reviewPass(myRun, sig, 'check', 'any invisible or hidden content, header/nav or mobile-menu selector mismatches, PHP errors, horizontal overflow, empty image placeholders, page/single templates not rendering the_content(), or an enqueued stylesheet whose file is missing').then(function () {
 								if (!alive(myRun)) { return; }
 								finishAllSteps();
 								if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + tokLabel() + '), designed and activated. Reloading…'; }
