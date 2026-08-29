@@ -59,6 +59,8 @@ function extractJson(text: string): Json | null {
   }
 }
 
+// Componentized layout: CSS is split per component so every file stays small
+// and later edits touch one small file instead of one giant stylesheet.
 const CORE_FILES = [
   "style.css",
   "functions.php",
@@ -70,7 +72,9 @@ const CORE_FILES = [
   "404.php",
   "searchform.php",
   "front-page.php",
-  "assets/css/main.css",
+  "assets/css/base.css",
+  "assets/css/header.css",
+  "assets/css/footer.css",
   "assets/js/main.js",
 ];
 
@@ -164,6 +168,7 @@ function normalizeBlueprint(bp: Json, mockupSections: string[] = []): void {
   }
   for (const s of bp.sections as Section[]) {
     files.push(`template-parts/section-${s.slug}.php`);
+    files.push(`assets/css/sections/${s.slug}.css`);
   }
   bp.files = files;
 }

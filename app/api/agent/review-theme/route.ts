@@ -30,7 +30,7 @@ const INSTRUCTIONS = `Review the active, just-generated classic PHP WordPress th
 2. Invisible or empty content — including get_template_part() calling a missing file (create it in the theme's style).
 3. Mobile menu that can't open (selector mismatch between header.php, main.css, main.js).
 4. Horizontal overflow or clearly broken layout.
-5. main.css/main.js/fonts not enqueued, or a JS library enqueued (remove it).
+5. A theme stylesheet (base.css, header.css, footer.css, sections/*.css or main.css), main.js or fonts not enqueued, or a JS library enqueued (remove it).
 Never restyle what works. No PHP that executes code or touches filesystem/network (eval, exec, file_get_contents, fopen, curl_exec, wp_remote_*, base64_decode, call_user_func, preg_replace_callback...).
 Final reply: no tool calls, first characters "SUMMARY:" (or "SUMMARY: No critical issues found."), then a FILE block per changed COMPLETE file, no fences:
 SUMMARY: <one sentence>

@@ -11,9 +11,9 @@ import { generateText, type Usage } from "@/lib/ai/provider";
 const INSTRUCTIONS = `Generate the requested files of a classic PHP WordPress theme, matching the blueprint. Other files are generated in separate calls — follow these rules so everything connects:
 
 1. Templates start with get_header() and end with get_footer(); pages include sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output (esc_html, esc_url, esc_attr).
-2. A section file renders <section class="section section-<slug>">. assets/css/main.css has :root tokens from the blueprint palette/fonts, base typography, .container, .btn/.btn--primary/.btn--ghost, header + mobile nav (open/closed states), footer, and one .section-<slug> block for EVERY blueprint section. Mobile-first, no horizontal overflow, never hide content that JS must reveal.
+2. A section file renders <section class="section section-<slug>">. CSS is split per component: assets/css/base.css holds :root tokens from the blueprint palette/fonts, base typography, .container and .btn/.btn--primary/.btn--ghost; assets/css/header.css the header + mobile nav (open/closed states); assets/css/footer.css the footer; assets/css/sections/<slug>.css ONLY that section's rules. Mobile-first, no horizontal overflow, never hide content that JS must reveal.
 3. header.php: doctype, wp_head(), body_class(), wp_body_open(); sticky <header class="site-header" data-header> with the site title/logo, <nav class="site-nav" data-nav> holding wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ), and a mobile <button class="site-header__toggle" data-nav-toggle aria-expanded="false">; then open <main>. footer.php: close </main>, a simple footer, wp_footer(), </body></html>.
-4. functions.php: after_setup_theme (title-tag, post-thumbnails, custom-logo, html5), register_nav_menus 'primary'; enqueue design.fonts.googleUrl, get_stylesheet_uri(), assets/css/main.css and assets/js/main.js (in the footer). No external JS libraries. Prefix functions with the textDomain. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files).
+4. functions.php: after_setup_theme (title-tag, post-thumbnails, custom-logo, html5), register_nav_menus 'primary'; enqueue design.fonts.googleUrl, get_stylesheet_uri(), then EVERY stylesheet listed under CSS FILES TO ENQUEUE in that exact order, and assets/js/main.js (in the footer). No external JS libraries. Prefix functions with the textDomain. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files).
 5. assets/js/main.js: vanilla JS only — the mobile nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header] when scrollY > 8.
 6. style.css: the standard WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base styles.
 7. Real on-topic copy from each section's "copy" — never lorem ipsum. Photos: <img src="https://loremflickr.com/<w>/<h>/<keywords>?lock=<n>" width="" height="" alt="" loading="lazy">.
@@ -48,14 +48,20 @@ function parseFiles(text: string): { path: string; contents: string }[] {
   return out;
 }
 
-const PORT_INSTRUCTIONS = `Port the approved homepage mockup into classic PHP WordPress theme files. Do not redesign — reproduce the mockup.
+const PORT_INSTRUCTIONS = `Port the approved homepage mockup into classic PHP WordPress theme files. Do not redesign — reproduce the mockup. The theme is COMPONENTIZED: every file is small and single-purpose.
 
-1. assets/css/main.css: the MOCKUP CSS mostly verbatim (keep selectors, tokens, values), plus the mobile nav open/close states (.site-nav.is-open, .site-header.is-scrolled, body.nav-open) and styles for files that have no fragment, in the same system.
-2. A file with a FRAGMENT below: convert it to PHP keeping markup, classes, copy and images exactly. Brand name -> bloginfo('name') where natural; internal links -> esc_url(home_url('/<slug>')); keep <img> URLs as-is.
-3. header.php: doctype, wp_head(), body_class(), wp_body_open(); the header fragment with data-header on the header element, the nav list replaced by wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ) inside <nav class="site-nav" data-nav>, the hamburger button with data-nav-toggle and aria-expanded="false"; then open <main>. footer.php: close </main>, the footer fragment, wp_footer(), </body></html>.
-4. Files WITHOUT a fragment (inner page templates, index/single/404/searchform): reuse the mockup's classes and tokens so they look like the same site.
-5. Templates start with get_header() and end with get_footer(); pages include sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output. functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the GOOGLE FONTS URLS listed below, get_stylesheet_uri(), assets/css/main.css and assets/js/main.js (footer); prefix functions with the textDomain; no external JS libraries. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files). assets/js/main.js: vanilla only — the nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header]. style.css: the WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base.
-6. PHP never calls eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_get/post, base64_decode, call_user_func, preg_replace_callback or similar.
+CSS is split per component:
+1. assets/css/base.css: the mockup's :root tokens, resets, base typography and shared utilities (.container, buttons, generic .section spacing) — everything global. NO section-specific rules.
+2. assets/css/header.css / assets/css/footer.css: only header/footer rules from the MOCKUP CSS, plus (in header.css) the mobile nav open/close states (.site-nav.is-open, .site-header.is-scrolled, body.nav-open).
+3. assets/css/sections/<slug>.css: ONLY the rules that section's fragment markup actually uses, extracted from the MOCKUP CSS — keep selectors, tokens and values exactly, do not rename classes. A rule shared by several sections belongs in base.css, never duplicated.
+
+PHP files:
+4. A file with a FRAGMENT below: convert it to PHP keeping markup, classes, copy and images exactly. Brand name -> bloginfo('name') where natural; internal links -> esc_url(home_url('/<slug>')); keep <img> URLs as-is.
+5. header.php: doctype, wp_head(), body_class(), wp_body_open(); the header fragment with data-header on the header element, the nav list replaced by wp_nav_menu( array('theme_location'=>'primary','menu_class'=>'site-nav__menu','container'=>false,'fallback_cb'=>false) ) inside <nav class="site-nav" data-nav>, the hamburger button with data-nav-toggle and aria-expanded="false"; then open <main>. footer.php: close </main>, the footer fragment, wp_footer(), </body></html>.
+6. Templates start with get_header() and end with get_footer(); pages include sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output. Files WITHOUT a fragment reuse the mockup's classes and tokens so they look like the same site.
+7. functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the GOOGLE FONTS URLS, get_stylesheet_uri(), then EVERY stylesheet listed under CSS FILES TO ENQUEUE in that exact order (handle = file name without extension), and assets/js/main.js in the footer. Prefix functions with the textDomain; no external JS libraries. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files).
+8. assets/js/main.js: vanilla JS only — the nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body) and .is-scrolled on [data-header]. style.css: the WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base.
+9. PHP never calls eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_get/post, base64_decode, call_user_func, preg_replace_callback or similar.
 
 Output each requested path, in order:
 ===WPAB_FILE:<path>===
@@ -84,19 +90,56 @@ export async function generateBuildFiles(
 ): Promise<BuildFilesResult> {
   const model = pickModel(modelConfig, "build");
 
+  // A CSS component file needs the fragment whose styles it extracts.
+  const cssFragmentKey = (path: string): string | null => {
+    if (path === "assets/css/header.css") return "header.php";
+    if (path === "assets/css/footer.css") return "footer.php";
+    const m = path.match(/^assets\/css\/sections\/([a-z0-9-]+)\.css$/);
+    if (m) return `template-parts/section-${m[1]}.php`;
+    return null;
+  };
+
+  const wantsCss = paths.some((p) => p.endsWith(".css") && p !== "style.css");
+
   let input = `Blueprint:\n${JSON.stringify(blueprint)}\n\n`;
+
+  // functions.php enqueues an explicit, server-derived stylesheet list so the
+  // model never has to guess which component files exist.
+  if (paths.includes("functions.php")) {
+    const bp = blueprint as { sections?: { slug?: string }[] } | null;
+    const slugs = Array.isArray(bp?.sections)
+      ? bp!.sections!
+          .map((sec) => (typeof sec?.slug === "string" ? sec.slug : ""))
+          .filter(Boolean)
+      : [];
+    const enqueue = [
+      "assets/css/base.css",
+      "assets/css/header.css",
+      ...slugs.map((sl) => `assets/css/sections/${sl}.css`),
+      "assets/css/footer.css",
+    ];
+    input += `CSS FILES TO ENQUEUE (in this order):\n${enqueue.join("\n")}\n\n`;
+  }
+
   if (mockup) {
     if (mockup.fonts && mockup.fonts.length) {
       input += `GOOGLE FONTS URLS:\n${mockup.fonts.join("\n")}\n\n`;
     }
-    if (mockup.css && paths.includes("assets/css/main.css")) {
+    if (mockup.css && (wantsCss || paths.includes("assets/css/main.css"))) {
       input += `MOCKUP CSS:\n${mockup.css}\n\n`;
     }
     if (mockup.fragments) {
+      const added = new Set<string>();
       for (const p of paths) {
         const frag = mockup.fragments[p];
-        if (typeof frag === "string" && frag) {
+        if (typeof frag === "string" && frag && !added.has(p)) {
+          added.add(p);
           input += `FRAGMENT for ${p}:\n${frag}\n\n`;
+        }
+        const key = cssFragmentKey(p);
+        if (key && mockup.fragments[key] && !added.has(key)) {
+          added.add(key);
+          input += `FRAGMENT for ${key} (extract this markup's styles for ${p}):\n${mockup.fragments[key]}\n\n`;
         }
       }
     }

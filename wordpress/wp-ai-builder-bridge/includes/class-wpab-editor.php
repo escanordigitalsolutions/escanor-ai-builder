@@ -2056,7 +2056,7 @@ final class WPAB_Editor {
 			}
 			function finishAllSteps() { for (var i = 0; i < PHASES.length; i++) { stepState(PHASES[i], 'done'); } setProgress(PHASES.length, PHASES.length, ''); }
 			function friendlyName(path) {
-				var map = { 'functions.php': 'theme setup', 'header.php': 'header', 'footer.php': 'footer', 'style.css': 'stylesheet', 'assets/css/main.css': 'design system', 'assets/js/main.js': 'interactions', 'front-page.php': 'home page' };
+				var map = { 'functions.php': 'theme setup', 'header.php': 'header', 'footer.php': 'footer', 'style.css': 'stylesheet', 'assets/css/main.css': 'design system', 'assets/css/base.css': 'design tokens', 'assets/css/header.css': 'header styles', 'assets/css/footer.css': 'footer styles', 'assets/js/main.js': 'interactions', 'front-page.php': 'home page' };
 				if (map[path]) { return map[path]; }
 				var sec = path.match(/template-parts\/section-(.+)\.php$/);
 				if (sec) { return sec[1].replace(/-/g, ' ') + ' section'; }
@@ -2235,14 +2235,41 @@ final class WPAB_Editor {
 				}
 				var remaining = files.filter(function (p) { return !doneMap[p]; });
 
-				// Big, critical files each get their own batch so they never share a
-				// token budget and get truncated; everything else is chunked by 3.
-				var SOLO = { 'assets/css/main.css': 1, 'assets/js/main.js': 1, 'functions.php': 1 };
-				var solo = [], rest = [];
-				for (var fi = 0; fi < remaining.length; fi++) { (SOLO[remaining[fi]] ? solo : rest).push(remaining[fi]); }
+				// Componentized build: many SMALL batches. Critical files go solo;
+				// header/footer pair with their CSS; every section is its own batch
+				// (php + its css); leftover templates are chunked by 2.
+				var SOLO = { 'assets/css/main.css': 1, 'assets/css/base.css': 1, 'assets/js/main.js': 1, 'functions.php': 1 };
+				var remSet = {};
+				for (var ri = 0; ri < remaining.length; ri++) { remSet[remaining[ri]] = 1; }
+				function take(pathName) { if (remSet[pathName]) { delete remSet[pathName]; return true; } return false; }
 				var batches = [];
-				for (var si = 0; si < solo.length; si++) { batches.push([solo[si]]); }
-				for (var bi = 0; bi < rest.length; bi += 3) { batches.push(rest.slice(bi, bi + 3)); }
+				// 1) solos
+				for (var fi = 0; fi < remaining.length; fi++) {
+					if (SOLO[remaining[fi]] && take(remaining[fi])) { batches.push([remaining[fi]]); }
+				}
+				// 2) header / footer with their stylesheets
+				var hdr = [];
+				if (take('header.php')) { hdr.push('header.php'); }
+				if (take('assets/css/header.css')) { hdr.push('assets/css/header.css'); }
+				if (hdr.length) { batches.push(hdr); }
+				var ftr = [];
+				if (take('footer.php')) { ftr.push('footer.php'); }
+				if (take('assets/css/footer.css')) { ftr.push('assets/css/footer.css'); }
+				if (ftr.length) { batches.push(ftr); }
+				// 3) one batch per section: its template part + its css
+				for (var s2 = 0; s2 < remaining.length; s2++) {
+					var mSec = remaining[s2].match(/^template-parts\/section-([a-z0-9-]+)\.php$/);
+					if (!mSec || !remSet[remaining[s2]]) { continue; }
+					var secBatch = [remaining[s2]];
+					delete remSet[remaining[s2]];
+					var cssP = 'assets/css/sections/' + mSec[1] + '.css';
+					if (take(cssP)) { secBatch.push(cssP); }
+					batches.push(secBatch);
+				}
+				// 4) whatever is left (templates, stray css), chunked by 2
+				var rest = [];
+				for (var r2 = 0; r2 < remaining.length; r2++) { if (remSet[remaining[r2]]) { rest.push(remaining[r2]); } }
+				for (var bi = 0; bi < rest.length; bi += 2) { batches.push(rest.slice(bi, bi + 2)); }
 				var totalB = batches.length;
 
 				// In design-first mode each batch carries only the mockup pieces it
@@ -2252,10 +2279,18 @@ final class WPAB_Editor {
 					if (mockCtx) {
 						var mk = { css: '', fonts: mockCtx.fonts || [], fragments: {} };
 						var any = !!(mockCtx.fonts && mockCtx.fonts.length);
+						function cssFragKey(pp) {
+							if (pp === 'assets/css/header.css') { return 'header.php'; }
+							if (pp === 'assets/css/footer.css') { return 'footer.php'; }
+							var cm = pp.match(/^assets\/css\/sections\/([a-z0-9-]+)\.css$/);
+							return cm ? ('template-parts/section-' + cm[1] + '.php') : null;
+						}
 						for (var mi = 0; mi < paths.length; mi++) {
 							var mp2 = paths[mi];
-							if (mp2 === 'assets/css/main.css' && mockCtx.css) { mk.css = mockCtx.css; any = true; }
+							if (mockCtx.css && (mp2 === 'assets/css/main.css' || (/\.css$/.test(mp2) && mp2 !== 'style.css'))) { mk.css = mockCtx.css; any = true; }
 							if (mockCtx.fragments && mockCtx.fragments[mp2]) { mk.fragments[mp2] = mockCtx.fragments[mp2]; any = true; }
+							var fk = cssFragKey(mp2);
+							if (fk && mockCtx.fragments && mockCtx.fragments[fk]) { mk.fragments[fk] = mockCtx.fragments[fk]; any = true; }
 						}
 						if (any) { payload.mockup = mk; }
 					}
