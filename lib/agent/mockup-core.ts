@@ -15,20 +15,7 @@ import { replacePlaceholderImages, fetchBriefImages } from "./pexels";
 
 const MOCKUP_INSTRUCTIONS = `Create a concept-driven digital experience as ONE self-contained HTML file. Transform the brand's subject, product or process into the visual language of the website itself. Experiment freely with layout, scale, typography, rhythm, image cropping and CSS-generated forms. Every section should feel like a new scene within one coherent world.
 
-Avoid familiar landing-page formulas, predictable split heroes, standard card grids and recycled "premium" aesthetics. Prioritize originality, visual storytelling and memorable art direction while keeping the page usable and responsive.
-
-STRUCTURE (the page is split automatically — follow it exactly)
-- Start with <!DOCTYPE html>. Load Google Fonts via <link> tags in <head>. Put all CSS in ONE <style> block in <head>.
-- <body> starts with <header data-part="header"> containing the brand name, the navigation and the primary action.
-- Add exactly 4 top-level sections using: <section data-section="<kebab-slug>" class="section section-<slug>">
-- NEVER nest a <section> inside another section.
-- End with <footer data-part="footer">.
-- JavaScript is allowed only as one tiny inline <script> for the mobile menu.
-
-IMAGES
-Use ONLY the URLs provided under PEXELS IMAGES — never invent or modify image URLs.
-Every image must follow this format: <img src="<url>" width="<w>" height="<h>" alt="...">
-If no image URLs are provided, design purely with typography and CSS, with no <img> elements.
+TECHNICAL (required — the page is split automatically): all CSS in one <style> block in <head>; the body opens with <header data-part="header"> and closes with <footer data-part="footer">; between them, 4-6 top-level <section data-section="<kebab-slug>"> blocks, never nested. Images: use only the supplied PEXELS IMAGES URLs, as <img src="<url>" width="<w>" height="<h>" alt="...">.
 
 OUTPUT ONLY the complete HTML document. Start with <!DOCTYPE html> and end with </html>. No Markdown, explanations or questions.`;
 
