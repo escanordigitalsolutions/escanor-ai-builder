@@ -103,7 +103,10 @@ export type BriefImage = {
  * so the model composes with real image URLs instead of placeholders. Returns
  * [] without a key or on failure — the prompt then designs without photos.
  */
-export async function fetchBriefImages(brief: unknown): Promise<BriefImage[]> {
+export async function fetchBriefImages(
+  brief: unknown,
+  extraQueries?: string[]
+): Promise<BriefImage[]> {
   const key = process.env.PEXELS_API_KEY;
   if (!key) {
     return [];
@@ -132,14 +135,21 @@ export async function fetchBriefImages(brief: unknown): Promise<BriefImage[]> {
     .split(/\s+/)
     .filter((w) => w.length > 2 && !STOP.has(w.toLowerCase()));
 
-  // 2-3 queries instead of one: more variety, better odds of on-topic photos.
-  const queries = [...new Set(
-    [
-      words.slice(0, 4).join(" "),
-      words.slice(4, 8).join(" "),
-      typeof b.name === "string" ? b.name.trim() : "",
-    ].filter((q) => q.length > 2)
-  )].slice(0, 3);
+  // Concept-stage queries win when provided; otherwise derive 2-3 queries
+  // from the brief for variety and better odds of on-topic photos.
+  const conceptQueries = (extraQueries ?? [])
+    .filter((q): q is string => typeof q === "string" && q.trim().length > 2)
+    .map((q) => q.trim().slice(0, 60))
+    .slice(0, 3);
+  const queries = conceptQueries.length
+    ? conceptQueries
+    : [...new Set(
+        [
+          words.slice(0, 4).join(" "),
+          words.slice(4, 8).join(" "),
+          typeof b.name === "string" ? b.name.trim() : "",
+        ].filter((q) => q.length > 2)
+      )].slice(0, 3);
   if (!queries.length) {
     queries.push("business");
   }
