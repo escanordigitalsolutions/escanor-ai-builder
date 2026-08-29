@@ -344,6 +344,7 @@ final class WPAB_Admin {
 						.wpabd-dtag { display:inline-block; font-size:10px; font-weight:600; border-radius:6px; padding:1px 6px; margin-right:5px; background:#f0efec; color:#5c5955; }
 						.wpabd-dtag.used { background:#141312; color:#fff; }
 					</style>
+					<div style="text-align:right;margin-bottom:10px;"><button type="button" class="button" id="wpabd-dlall">Download all HTML</button></div>
 					<div class="wpabd-designs" id="wpabd-designs">
 						<?php foreach ( $rows as $d ) :
 							$brief = isset( $d['brief'] ) && is_array( $d['brief'] ) ? $d['brief'] : array();
@@ -351,7 +352,7 @@ final class WPAB_Admin {
 							$stat  = isset( $d['status'] ) ? (string) $d['status'] : 'pending';
 							$when  = isset( $d['created_at'] ) ? mysql2date( 'M j, H:i', (string) $d['created_at'] ) : '';
 							?>
-							<div class="wpabd-dcard" data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>" title="Open full preview">
+							<div class="wpabd-dcard" data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>" data-title="<?php echo esc_attr( $title ); ?>" title="Open full preview">
 								<div class="wpabd-dshell">
 									<div class="wpabd-dbar"><i></i><i></i><i></i></div>
 									<div class="wpabd-dthumb">
@@ -362,6 +363,7 @@ final class WPAB_Admin {
 								<div class="wpabd-dmeta">
 									<div class="t"><?php echo esc_html( $title ); ?></div>
 									<div class="s"><span class="wpabd-dtag <?php echo esc_attr( $stat ); ?>"><?php echo esc_html( $slabels[ $stat ] ?? $stat ); ?></span><?php echo esc_html( trim( ( $d['model'] ?? '' ) . ( $when ? ' · ' . $when : '' ) ) ); ?></div>
+									<button type="button" class="button button-small wpabd-dl" data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>" style="margin-top:8px;">Download HTML</button>
 								</div>
 							</div>
 						<?php endforeach; ?>
@@ -400,7 +402,22 @@ final class WPAB_Admin {
 							thumb.style.height = Math.round(1024 * scale) + 'px';
 						}
 
-						var cards = Array.prototype.slice.call(document.querySelectorAll('.wpabd-dcard'));
+						function slugify(t) {
+						return String(t || 'design').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'design';
+					}
+					function saveHtml(id, title) {
+						return fetchHtml(id).then(function (html) {
+							var blob = new Blob([html], { type: 'text/html' });
+							var a = document.createElement('a');
+							a.href = URL.createObjectURL(blob);
+							a.download = slugify(title) + '-' + String(id).slice(0, 6) + '.html';
+							document.body.appendChild(a);
+							a.click();
+							setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+						});
+					}
+
+					var cards = Array.prototype.slice.call(document.querySelectorAll('.wpabd-dcard'));
 						var queue = cards.slice();
 						function next() {
 							var card = queue.shift();
@@ -426,6 +443,32 @@ final class WPAB_Admin {
 						});
 
 						document.addEventListener('click', function (e) {
+							var dl = e.target && e.target.closest ? e.target.closest('.wpabd-dl') : null;
+							if (dl) {
+								e.stopPropagation();
+								var did = dl.getAttribute('data-design');
+								var dcard = dl.closest('.wpabd-dcard');
+								dl.disabled = true;
+								dl.textContent = 'Downloading…';
+								saveHtml(did, dcard ? dcard.getAttribute('data-title') : 'design').then(function () {
+									dl.disabled = false; dl.textContent = 'Download HTML';
+								}).catch(function () {
+									dl.disabled = false; dl.textContent = 'Failed — retry';
+								});
+								return;
+							}
+							if (e.target && e.target.id === 'wpabd-dlall') {
+								var all = e.target;
+								all.disabled = true;
+								var i = 0;
+								(function step() {
+									if (i >= cards.length) { all.disabled = false; all.textContent = 'Download all HTML'; return; }
+									var c = cards[i]; i++;
+									all.textContent = 'Downloading ' + i + '/' + cards.length + '…';
+									saveHtml(c.getAttribute('data-design'), c.getAttribute('data-title')).catch(function () {}).then(function () { setTimeout(step, 600); });
+								})();
+								return;
+							}
 							var card = e.target && e.target.closest ? e.target.closest('.wpabd-dcard') : null;
 							if (!card) { return; }
 							var id = card.getAttribute('data-design');
