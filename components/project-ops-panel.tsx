@@ -19,6 +19,7 @@ const STAGE_LABELS: Record<string, string> = {
   critique: "Design review",
   design: "Design",
   plan: "Page plan",
+  content: "Page content",
   build: "Build",
   edit: "Edit",
   chat: "Chat",

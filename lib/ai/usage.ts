@@ -13,6 +13,7 @@ export type UsageStage =
   | "critique"
   | "design"
   | "plan"
+  | "content"
   | "build"
   | "edit"
   | "chat"

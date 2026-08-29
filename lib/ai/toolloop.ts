@@ -30,7 +30,18 @@ export type ToolDef = {
   parameters: Record<string, unknown>;
 };
 
-export type ChatTurn = { role: "user" | "assistant"; content: string };
+export type ChatTurn = {
+  role: "user" | "assistant";
+  content: string;
+  /** Optional attached image as a data: URL (png/jpeg/webp/gif) — user turns only. */
+  image?: string;
+};
+
+/** Split a data: URL into media type + base64 payload (null when malformed). */
+function parseDataUrl(url: string): { mediaType: string; data: string } | null {
+  const m = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(url);
+  return m ? { mediaType: m[1], data: m[2] } : null;
+}
 
 export type ToolLoopResult = {
   text: string;
@@ -88,10 +99,22 @@ async function openaiLoop(opts: ToolLoopOpts): Promise<ToolLoopResult> {
     usage.totalTokens += u.total_tokens ?? (u.input_tokens ?? 0) + (u.output_tokens ?? 0);
   };
 
+  const input = opts.messages.map((m) =>
+    m.image && m.role === "user" && parseDataUrl(m.image)
+      ? {
+          role: m.role,
+          content: [
+            { type: "input_image" as const, image_url: m.image, detail: "auto" as const },
+            { type: "input_text" as const, text: m.content },
+          ],
+        }
+      : { role: m.role, content: m.content }
+  ) as OpenAI.Responses.ResponseInput;
+
   let response = await openai.responses.create({
     model: opts.model,
     instructions: opts.system,
-    input: opts.messages.map((m) => ({ role: m.role, content: m.content })),
+    input,
     tools,
     tool_choice: "auto",
     parallel_tool_calls: true,
@@ -171,10 +194,21 @@ async function anthropicLoop(opts: ToolLoopOpts): Promise<ToolLoopResult> {
     input_schema: t.parameters,
   }));
 
-  const messages: AnthropicMessage[] = opts.messages.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
+  const messages: AnthropicMessage[] = opts.messages.map((m) => {
+    const img = m.image && m.role === "user" ? parseDataUrl(m.image) : null;
+    return img
+      ? {
+          role: m.role,
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: img.mediaType, data: img.data },
+            },
+            { type: "text", text: m.content },
+          ],
+        }
+      : { role: m.role, content: m.content };
+  });
 
   let lastText = "";
 

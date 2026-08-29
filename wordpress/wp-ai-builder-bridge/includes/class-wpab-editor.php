@@ -66,10 +66,28 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/text-apply',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_text_apply' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/edit-plan',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
 				'callback'            => array( __CLASS__, 'rest_edit_plan' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/page-content',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_page_content' ),
 				'permission_callback' => $permission,
 			)
 		);
@@ -647,10 +665,11 @@ final class WPAB_Editor {
 		// create the pages (each picks up its page-{slug}.php template via the
 		// WordPress template hierarchy), set the front page and build the menu.
 		$blueprint = isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ? $params['blueprint'] : array();
+		$content   = isset( $params['content'] ) && is_array( $params['content'] ) ? $params['content'] : array();
 
 		if ( ! empty( $blueprint ) ) {
 			try {
-				$result['finalize'] = self::finalize_generated_site( $blueprint );
+				$result['finalize'] = self::finalize_generated_site( $blueprint, $content );
 			} catch ( \Throwable $e ) {
 				$result['finalize'] = array( 'ok' => false, 'error' => $e->getMessage() );
 			}
@@ -665,7 +684,7 @@ final class WPAB_Editor {
 	 * reused, the menu is rebuilt each time. Templates are picked up
 	 * automatically by the page-{slug}.php hierarchy — no per-page meta needed.
 	 */
-	private static function finalize_generated_site( array $blueprint ): array {
+	private static function finalize_generated_site( array $blueprint, array $content = array() ): array {
 		$pages      = isset( $blueprint['pages'] ) && is_array( $blueprint['pages'] ) ? $blueprint['pages'] : array();
 		$front_slug = isset( $blueprint['frontPage'] ) ? sanitize_title( (string) $blueprint['frontPage'] ) : '';
 		$menu_items = isset( $blueprint['menu'] ) && is_array( $blueprint['menu'] ) ? $blueprint['menu'] : array();
@@ -685,10 +704,28 @@ final class WPAB_Editor {
 				continue;
 			}
 
+			// Real page copy from the SaaS content stage — stored as post_content
+			// so SEO plugins, search, RSS and the WP editor all see it, and the
+			// templates render it through the_content().
+			$body = '';
+			if ( isset( $content[ $slug ] ) && is_string( $content[ $slug ] ) ) {
+				$body = wp_kses_post( (string) $content[ $slug ] );
+			}
+
 			$existing = get_page_by_path( $slug );
 
 			if ( $existing instanceof WP_Post ) {
 				$created[ $slug ] = (int) $existing->ID;
+				// A reused page only gains content when it has none — never
+				// overwrite something the user has written.
+				if ( '' !== $body && '' === trim( (string) $existing->post_content ) ) {
+					wp_update_post(
+						array(
+							'ID'           => (int) $existing->ID,
+							'post_content' => $body,
+						)
+					);
+				}
 			} else {
 				$id = wp_insert_post(
 					array(
@@ -696,7 +733,7 @@ final class WPAB_Editor {
 						'post_status'  => 'publish',
 						'post_title'   => $title,
 						'post_name'    => $slug,
-						'post_content' => '',
+						'post_content' => $body,
 					),
 					true
 				);
@@ -930,6 +967,122 @@ final class WPAB_Editor {
 		);
 	}
 
+	/**
+	 * Inline text edit: deterministic find & replace in one theme file — no AI.
+	 *
+	 * The editor sends the file it resolved from the click (a section part,
+	 * header.php or footer.php), the text as it was and the text as the user
+	 * typed it. The old text must appear EXACTLY ONCE across the candidate
+	 * files; then it is swapped via WPAB_Theme_Writer::update (validated, with
+	 * Undo). 0 matches usually means the text is dynamic site content;
+	 * more than 1 means the change is ambiguous — both are reported back so
+	 * the editor can fall back to the right path.
+	 */
+	public static function rest_text_apply( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$file   = isset( $params['file'] ) ? trim( (string) $params['file'] ) : '';
+		$old    = isset( $params['oldText'] ) ? trim( (string) $params['oldText'] ) : '';
+		$new    = isset( $params['newText'] ) ? trim( (string) $params['newText'] ) : '';
+
+		if ( '' === $old || '' === $new ) {
+			return new WP_Error( 'wpab_text_empty', 'Both the old and the new text are required.', array( 'status' => 400 ) );
+		}
+		if ( strlen( $old ) > 2000 || strlen( $new ) > 2000 ) {
+			return new WP_Error( 'wpab_text_long', 'The text is too long for an inline edit.', array( 'status' => 400 ) );
+		}
+
+		$active    = get_stylesheet();
+		$generated = (string) get_option( WPAB_Theme_Writer::GENERATED_OPTION, '' );
+		if ( '' === $generated || $generated !== $active ) {
+			return new WP_Error( 'wpab_text_not_generated', 'Text editing is only available for a theme generated here.', array( 'status' => 409 ) );
+		}
+
+		$dir = trailingslashit( wp_normalize_path( get_stylesheet_directory() ) );
+
+		// Candidate files: the one the editor resolved from the click first,
+		// then the other top-level templates and section parts as a fallback.
+		$candidates = array();
+		if ( '' !== $file ) {
+			$rel = WPAB_Theme_Writer::clean_relative_path( $file );
+			if ( ! is_wp_error( $rel ) && 'php' === WPAB_Theme_Writer::extension( $rel ) ) {
+				$candidates[] = $rel;
+			}
+		}
+		$found = array_merge(
+			glob( $dir . '*.php' ) ?: array(),
+			glob( $dir . 'template-parts/*.php' ) ?: array()
+		);
+		foreach ( $found as $abs ) {
+			$rel = ltrim( substr( wp_normalize_path( $abs ), strlen( $dir ) ), '/' );
+			if ( '' !== $rel && ! in_array( $rel, $candidates, true ) ) {
+				$candidates[] = $rel;
+			}
+		}
+
+		// The clicked text is plain DOM text; in the file it may be stored raw
+		// or HTML-escaped — try both spellings.
+		$needles = array_values( array_unique( array( $old, esc_html( $old ) ) ) );
+
+		$hit_file   = '';
+		$hit_needle = '';
+		$total      = 0;
+		foreach ( $candidates as $rel ) {
+			$abs = $dir . $rel;
+			if ( ! is_file( $abs ) ) {
+				continue;
+			}
+			$real = realpath( $abs );
+			if ( false === $real || 0 !== strpos( wp_normalize_path( $real ), $dir ) ) {
+				continue;
+			}
+			$contents = (string) file_get_contents( $abs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			foreach ( $needles as $needle ) {
+				$n = substr_count( $contents, $needle );
+				if ( $n > 0 ) {
+					$total += $n;
+					if ( '' === $hit_file ) {
+						$hit_file   = $rel;
+						$hit_needle = $needle;
+					}
+					break; // Never double-count the raw and escaped spellings in one file.
+				}
+			}
+			if ( $total > 1 ) {
+				break;
+			}
+		}
+
+		if ( 0 === $total ) {
+			return new WP_REST_Response( array( 'success' => false, 'reason' => 'not_found' ), 200 );
+		}
+		if ( $total > 1 ) {
+			return new WP_REST_Response( array( 'success' => false, 'reason' => 'ambiguous', 'file' => $hit_file ), 200 );
+		}
+
+		$abs      = $dir . $hit_file;
+		$contents = (string) file_get_contents( $abs ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		$pos      = strpos( $contents, $hit_needle );
+		if ( false === $pos ) {
+			return new WP_REST_Response( array( 'success' => false, 'reason' => 'not_found' ), 200 );
+		}
+
+		$updated = substr_replace( $contents, esc_html( $new ), $pos, strlen( $hit_needle ) );
+		$applied = WPAB_Theme_Writer::update( array( array( 'path' => $hit_file, 'contents' => $updated ) ) );
+		if ( is_wp_error( $applied ) ) {
+			return $applied;
+		}
+
+		return new WP_REST_Response(
+			array(
+				'success'        => true,
+				'file'           => $hit_file,
+				'summary'        => 'Text updated',
+				'undo_available' => true,
+			),
+			200
+		);
+	}
+
 	/** Edit planning: the cheap model turns an instruction into a numbered plan. */
 	public static function rest_edit_plan( WP_REST_Request $request ) {
 		$params      = self::json_params( $request );
@@ -942,6 +1095,20 @@ final class WPAB_Editor {
 			$plan_payload['selected'] = substr( $params['selected'], 0, 600 );
 		}
 		$result = WPAB_Cloud::request( 'agent/edit-plan', $plan_payload, 90 );
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Page content: the cheap model writes real copy for the inner pages. */
+	public static function rest_page_content( WP_REST_Request $request ) {
+		$params  = self::json_params( $request );
+		$payload = array();
+		if ( isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ) {
+			$payload['blueprint'] = $params['blueprint'];
+		}
+		if ( isset( $params['brief'] ) && is_array( $params['brief'] ) ) {
+			$payload['brief'] = $params['brief'];
+		}
+		$result = WPAB_Cloud::request( 'agent/page-content', $payload, 90 );
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
@@ -968,6 +1135,14 @@ final class WPAB_Editor {
 		}
 
 		$body = array( 'message' => $message );
+
+		// Optional attached image: a data URL the editor already downscaled.
+		if ( isset( $params['image'] ) && is_string( $params['image'] ) ) {
+			$img = $params['image'];
+			if ( strlen( $img ) <= 3000000 && 0 === strpos( $img, 'data:image/' ) ) {
+				$body['image'] = $img;
+			}
+		}
 
 		$conversation_id = isset( $params['conversationId'] ) ? trim( (string) $params['conversationId'] ) : '';
 		if ( '' !== $conversation_id ) {
@@ -1099,6 +1274,8 @@ final class WPAB_Editor {
 			'restEditPlan'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-plan' ) ),
 			'restEditStart'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-start' ) ),
 			'restEditApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-apply' ) ),
+			'restTextApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/text-apply' ) ),
+			'restPageContent' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/page-content' ) ),
 			'restContext'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/context' ) ),
 			'restCreateTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/create-theme' ) ),
 			'restBuildPlan'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
@@ -1197,6 +1374,9 @@ final class WPAB_Editor {
 					<div id="wpab-ed-selrow" class="wpab-ed__selrow" hidden>
 						<span class="wpab-ed__seltag"><span class="tgt" id="wpab-ed-seltgt"></span><span class="sec" id="wpab-ed-selsec"></span><button type="button" class="x" id="wpab-ed-selclear" title="Remove selection">&times;</button></span>
 					</div>
+					<div id="wpab-ed-imgrow" class="wpab-ed__selrow" hidden>
+						<span class="wpab-ed__seltag"><img id="wpab-ed-imgthumb" class="wpab-ed__imgthumb" alt="" /><span class="sec">image</span><button type="button" class="x" id="wpab-ed-imgclear" title="Remove image">&times;</button></span>
+					</div>
 					<textarea id="wpab-ed-input" class="wpab-ed__input" rows="1" placeholder="Ask about this site…"></textarea>
 					<div class="wpab-ed__formrow">
 						<span class="wpab-ed__formtools">
@@ -1206,6 +1386,13 @@ final class WPAB_Editor {
 							<button type="button" id="wpab-ed-inspect" class="wpab-ed__dev wpab-ed__inspect" title="Select an element on the page to edit" aria-pressed="false">
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l7.5 18 2.2-7.3L21 12.5z"/><path d="M4 4l8.5 8.5"/></svg>
 							</button>
+							<button type="button" id="wpab-ed-textmode" class="wpab-ed__dev wpab-ed__inspect" title="Click text on the page to edit it in place" aria-pressed="false">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
+							</button>
+							<button type="button" id="wpab-ed-attach" class="wpab-ed__dev" title="Attach an image or screenshot">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 15.5l-4.5-4.5L7 20.5"/></svg>
+							</button>
+							<input type="file" id="wpab-ed-attachfile" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
 						</span>
 						<div class="wpab-ed__devbar" id="wpab-ed-devbar" role="group" aria-label="Preview size">
 							<button type="button" class="wpab-ed__dev is-active" data-dev="desktop" title="Desktop" aria-label="Desktop">
@@ -1361,6 +1548,8 @@ final class WPAB_Editor {
 			.wpab-ed__seltag .sec { color: var(--ed-faint); font-family: inherit; }
 			.wpab-ed__seltag .x { border: 0; background: none; cursor: pointer; color: var(--ed-muted); font-size: 13px; line-height: 1; padding: 0 2px; }
 			.wpab-ed__seltag .x:hover { color: #141312; }
+			.wpab-ed__imgthumb { width: 26px; height: 26px; object-fit: cover; border-radius: 6px; display: block; }
+			.wpab-ed__msgimg { max-width: 190px; max-height: 150px; border-radius: 12px; display: block; margin-bottom: 6px; align-self: flex-end; border: 1px solid rgba(20,19,18,.12); box-shadow: var(--ed-shadow); }
 			.wpab-msg .wpab-ed__seltag { margin-bottom: 6px; background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.3); color: #fff; align-self: flex-end; }
 			.wpab-msg .wpab-ed__seltag .sec { color: rgba(255,255,255,.65); }
 			.wpab-ed__plansteps { margin: 8px 0 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ed-muted); }
@@ -1449,21 +1638,29 @@ final class WPAB_Editor {
 					});
 				});
 			}
-			function addMessage(role, body, sel) {
+			function addMessage(role, body, sel, img) {
 				var empty = thread.querySelector('.wpab-ed__empty');
 				if (empty) { empty.remove(); }
 				var wrap = document.createElement('div');
 				wrap.className = 'wpab-msg wpab-msg--' + role;
+				var html = role === 'assistant' ? renderMarkdown(body) : escapeHtml(body);
+				// innerHTML first, decorations prepended after \u2014 appending the chip
+				// before this assignment used to wipe it.
+				wrap.innerHTML = '<div class="wpab-msg__role">' + (role === 'user' ? 'You' : 'AI') + '</div><div class="wpab-msg__body">' + html + '</div>';
+				if (img) {
+					var pic = document.createElement('img');
+					pic.className = 'wpab-ed__msgimg';
+					pic.src = img; pic.alt = '';
+					wrap.insertBefore(pic, wrap.firstChild);
+				}
 				if (sel) {
 					var chip = document.createElement('span');
 					chip.className = 'wpab-ed__seltag';
 					chip.innerHTML = '<span class="tgt"></span><span class="sec"></span>';
 					chip.firstChild.textContent = '\u2316 ' + sel.short;
 					chip.lastChild.textContent = sel.sec ? '\u00b7 ' + sel.sec : '';
-					wrap.appendChild(chip);
+					wrap.insertBefore(chip, wrap.firstChild);
 				}
-				var html = role === 'assistant' ? renderMarkdown(body) : escapeHtml(body);
-				wrap.innerHTML = '<div class="wpab-msg__role">' + (role === 'user' ? 'You' : 'AI') + '</div><div class="wpab-msg__body">' + html + '</div>';
 				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
 				return wrap;
 			}
@@ -1578,12 +1775,14 @@ final class WPAB_Editor {
 				}
 				mbody.appendChild(ol);
 			}
-			function runEdit(instruction) {
+			function runEdit(instruction, opts) {
 				var typing = addTyping();
 				var t = typing.querySelector('.wpab-typing');
 				if (t) { t.textContent = 'Planning the change…'; }
 				frameBusy(true, 'Planning the change…');
-				var planPromise = cfg.restEditPlan
+				// Micro-edits (one exact replacement) skip the planning stage — the
+				// instruction already IS the whole plan.
+				var planPromise = (cfg.restEditPlan && !(opts && opts.skipPlan))
 					? api('POST', cfg.restEditPlan, { instruction: instruction, selected: lastSelFull || '' }).then(function (pOut) {
 						return (pOut.ok && pOut.data && pOut.data.success && pOut.data.plan) ? pOut.data.plan : null;
 					}).catch(function () { return null; })
@@ -1659,11 +1858,12 @@ final class WPAB_Editor {
 				});
 			}
 
-			function sendChat(message, displayText, sel) {
-				addMessage('user', displayText || message, sel || null);
+			function sendChat(message, displayText, sel, image) {
+				addMessage('user', displayText || message, sel || null, image || null);
 				setBusy(true);
 				var typing = addTyping();
 				var body = { message: message };
+				if (image) { body.image = image; }
 				if (conversationId) { body.conversationId = conversationId; }
 				api('POST', cfg.restChat, body).then(function (out) {
 					typing.remove();
@@ -1697,14 +1897,92 @@ final class WPAB_Editor {
 					selTarget = null;
 					renderSelChip();
 					lastSelFull = sel ? sel.full : null;
+					var img = pendingImage;
+					setPendingImage(null);
 					var full = sel ? sel.full + ' \u2014 ' + v : v;
-					sendChat(full, v, sel);
+					sendChat(full, v, sel, img);
 				});
 			}
 			if (input) {
 				input.addEventListener('input', function () { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; });
 				input.addEventListener('keydown', function (e) {
 					if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.dispatchEvent(new Event('submit', { cancelable: true })); }
+				});
+			}
+
+			// ---- Image attach: a photo or screenshot as visual context for the
+			// chat. Downscaled client-side to a small JPEG data URL; sent with the
+			// next message and shown as a thumbnail in the user's bubble. ----
+			var attachBtn = $('wpab-ed-attach');
+			var attachFile = $('wpab-ed-attachfile');
+			var imgRow = $('wpab-ed-imgrow');
+			var imgThumb = $('wpab-ed-imgthumb');
+			var pendingImage = null;
+			function setPendingImage(dataUrl) {
+				pendingImage = dataUrl || null;
+				if (!imgRow) { return; }
+				if (!pendingImage) { imgRow.hidden = true; return; }
+				if (imgThumb) { imgThumb.src = pendingImage; }
+				imgRow.hidden = false;
+			}
+			function downscaleImage(file, cb) {
+				try {
+					var rd = new FileReader();
+					rd.onload = function () {
+						var im = new Image();
+						im.onload = function () {
+							var MAXDIM = 1400;
+							var w = im.width, h = im.height;
+							if (!w || !h) { cb(null); return; }
+							var sc = Math.min(1, MAXDIM / Math.max(w, h));
+							var cw = Math.max(1, Math.round(w * sc)), ch = Math.max(1, Math.round(h * sc));
+							var cv = document.createElement('canvas');
+							cv.width = cw; cv.height = ch;
+							var ctx = cv.getContext('2d');
+							if (!ctx) { cb(null); return; }
+							ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
+							ctx.drawImage(im, 0, 0, cw, ch);
+							var url = '';
+							try { url = cv.toDataURL('image/jpeg', 0.85); } catch (e) { url = ''; }
+							cb(url && url.length <= 2800000 ? url : null);
+						};
+						im.onerror = function () { cb(null); };
+						im.src = String(rd.result || '');
+					};
+					rd.onerror = function () { cb(null); };
+					rd.readAsDataURL(file);
+				} catch (e) { cb(null); }
+			}
+			function acceptImageFile(file) {
+				if (!file || !/^image\//.test(file.type || '')) { return; }
+				downscaleImage(file, function (url) {
+					if (url) { setPendingImage(url); if (input) { input.focus(); } }
+					else { addMessage('assistant', 'That image could not be read — try a PNG or JPEG.'); }
+				});
+			}
+			if (attachBtn && attachFile) {
+				attachBtn.addEventListener('click', function () { attachFile.click(); });
+				attachFile.addEventListener('change', function () {
+					if (attachFile.files && attachFile.files[0]) { acceptImageFile(attachFile.files[0]); }
+					attachFile.value = '';
+				});
+			}
+			(function () {
+				var xb = $('wpab-ed-imgclear');
+				if (xb) { xb.addEventListener('click', function () { setPendingImage(null); }); }
+			})();
+			// Paste a screenshot straight into the input.
+			if (input) {
+				input.addEventListener('paste', function (e) {
+					var items = e.clipboardData && e.clipboardData.items;
+					if (!items) { return; }
+					for (var pi = 0; pi < items.length; pi++) {
+						if (items[pi].kind === 'file' && /^image\//.test(items[pi].type || '')) {
+							e.preventDefault();
+							acceptImageFile(items[pi].getAsFile());
+							return;
+						}
+					}
 				});
 			}
 
@@ -1909,6 +2187,7 @@ final class WPAB_Editor {
 			}
 			function setInspect(on) {
 				inspectOn = !!on;
+				if (inspectOn && textOn) { setTextMode(false); }
 				inspectCleanup();
 				if (inspectOn && !inspectAttach()) {
 					inspectOn = false;
@@ -1928,9 +2207,180 @@ final class WPAB_Editor {
 				if (fr0) {
 					fr0.addEventListener('load', function () {
 						if (inspectOn) { inspectCleanup(); if (!inspectAttach()) { setInspect(false); } }
+						if (textOn) { textCleanup(); if (!textAttach()) { setTextMode(false); } }
 					});
 				}
 			})();
+
+			// ---- Text tool: click any static text in the preview and edit it in
+			// place. Enter/blur commits (a deterministic replace on the server, no
+			// AI); Esc cancels. Dynamic content and ambiguous matches fall back. ----
+			var textBtn = $('wpab-ed-textmode');
+			var textOn = false;
+			var textDoc = null;
+			var textHovered = null;
+			var textActive = null; // { el, orig, file }
+
+			function textTargetOk(el) {
+				if (!el || !el.tagName) { return false; }
+				var tag = el.tagName.toLowerCase();
+				if (tag === 'body' || tag === 'html' || tag === 'script' || tag === 'style' || tag === 'img' ||
+					tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'svg') { return false; }
+				if (el.children && el.children.length > 0) { return false; }
+				var t = (el.textContent || '').trim();
+				return t.length > 0 && t.length <= 1500;
+			}
+			function textFileFor(el) {
+				var sec = el.closest ? el.closest('section, header, footer') : null;
+				if (!sec) { return ''; }
+				var tag = sec.tagName ? sec.tagName.toLowerCase() : '';
+				if (tag === 'header') { return 'header.php'; }
+				if (tag === 'footer') { return 'footer.php'; }
+				var ds = sec.getAttribute ? (sec.getAttribute('data-section') || '') : '';
+				if (ds && /^[a-z0-9-]+$/.test(ds)) { return 'template-parts/section-' + ds + '.php'; }
+				var m = String(sec.className || '').match(/section-([a-z0-9-]+)/);
+				if (m) { return 'template-parts/section-' + m[1] + '.php'; }
+				return '';
+			}
+			function textHover(e) {
+				if (textActive && (e.target === textActive.el || textActive.el.contains(e.target))) { return; }
+				if (textHovered && textHovered !== e.target) {
+					try { textHovered.style.outline = ''; textHovered.style.outlineOffset = ''; } catch (er) {}
+					textHovered = null;
+				}
+				if (!textTargetOk(e.target)) { return; }
+				textHovered = e.target;
+				try {
+					textHovered.style.outline = '2px dashed #141312';
+					textHovered.style.outlineOffset = '2px';
+				} catch (er) {}
+			}
+			function textKeydown(e) {
+				if (e.key === 'Enter') { e.preventDefault(); try { e.target.blur(); } catch (er) {} }
+				if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); textCleanupActive(true); }
+			}
+			function textBlur() { textCommit(); }
+			function textCleanupActive(restore) {
+				if (!textActive) { return; }
+				var el = textActive.el;
+				var orig = textActive.orig;
+				textActive = null;
+				try {
+					if (restore) { el.textContent = orig; }
+					el.contentEditable = 'false';
+					el.removeAttribute('contenteditable');
+					el.style.outline = ''; el.style.outlineOffset = '';
+					el.removeEventListener('keydown', textKeydown, true);
+					el.removeEventListener('blur', textBlur, true);
+				} catch (e) {}
+			}
+			function textCommit() {
+				if (!textActive) { return; }
+				var el = textActive.el;
+				var orig = textActive.orig;
+				var file = textActive.file;
+				var next = (el.textContent || '').trim();
+				textCleanupActive(false);
+				if (!next || next === orig.trim()) {
+					try { el.textContent = orig; } catch (e) {}
+					return;
+				}
+				applyTextChange(file, orig.trim(), next, el, orig);
+			}
+			function applyTextChange(file, oldText, newText, el, origRaw) {
+				if (!cfg.restTextApply) { return textFallbackEdit(file, oldText, newText); }
+				frameBusy(true, 'Saving the text…');
+				api('POST', cfg.restTextApply, { file: file || '', oldText: oldText, newText: newText }).then(function (out) {
+					frameBusy(false);
+					if (out.ok && out.data && out.data.success) {
+						addUndoMessage('Text updated' + (out.data.file ? ' — ' + friendlyName(out.data.file) : ''), out.data.file ? [out.data.file] : [], []);
+						reloadPreview();
+						return;
+					}
+					var reason = out.data && out.data.reason;
+					if (reason === 'not_found') {
+						try { if (el) { el.textContent = origRaw; } } catch (e) {}
+						addMessage('assistant', 'That text looks like site content, not theme text — edit it in WordPress (Pages, Posts or Menus).');
+						return;
+					}
+					// Ambiguous match or an apply error: let the AI make the precise change.
+					textFallbackEdit((out.data && out.data.file) || file, oldText, newText);
+				}).catch(function () {
+					frameBusy(false);
+					textFallbackEdit(file, oldText, newText);
+				});
+			}
+			function textFallbackEdit(file, oldText, newText) {
+				var where = file ? 'In ' + file + ', replace' : 'In the active theme, replace';
+				var instruction = where + ' the exact text "' + oldText + '" with "' + newText + '". Change nothing else.';
+				addMessage('user', 'Change text: “' + oldText + '” → “' + newText + '”');
+				runEdit(instruction, { skipPlan: true });
+			}
+			function textClick(e) {
+				if (textActive && (e.target === textActive.el || textActive.el.contains(e.target))) { return; }
+				e.preventDefault();
+				e.stopPropagation();
+				if (textActive) { try { textActive.el.blur(); } catch (er) {} textCleanupActive(false); }
+				if (!textTargetOk(e.target)) { return; }
+				var el = e.target;
+				if (textHovered === el) {
+					try { el.style.outline = ''; el.style.outlineOffset = ''; } catch (er) {}
+					textHovered = null;
+				}
+				textActive = { el: el, orig: el.textContent || '', file: textFileFor(el) };
+				try {
+					el.contentEditable = 'true';
+					el.style.outline = '2px solid #141312';
+					el.style.outlineOffset = '2px';
+					el.addEventListener('keydown', textKeydown, true);
+					el.addEventListener('blur', textBlur, true);
+					el.focus();
+				} catch (er) {}
+			}
+			function textAttach() {
+				var fr = $('wpab-ed-frame');
+				if (!fr) { return false; }
+				try {
+					var doc = fr.contentDocument || (fr.contentWindow && fr.contentWindow.document);
+					if (!doc || !doc.body) { return false; }
+					textDoc = doc;
+					doc.addEventListener('mouseover', textHover, true);
+					doc.addEventListener('click', textClick, true);
+					doc.body.style.cursor = 'text';
+					return true;
+				} catch (e) { return false; }
+			}
+			function textCleanup() {
+				textCleanupActive(true);
+				if (textHovered) {
+					try { textHovered.style.outline = ''; textHovered.style.outlineOffset = ''; } catch (e) {}
+					textHovered = null;
+				}
+				if (textDoc) {
+					try {
+						textDoc.removeEventListener('mouseover', textHover, true);
+						textDoc.removeEventListener('click', textClick, true);
+						if (textDoc.body) { textDoc.body.style.cursor = ''; }
+					} catch (e) {}
+					textDoc = null;
+				}
+			}
+			function setTextMode(on) {
+				textOn = !!on;
+				if (textOn && inspectOn) { setInspect(false); }
+				textCleanup();
+				if (textOn && !textAttach()) {
+					textOn = false;
+					addMessage('assistant', 'The preview cannot be edited right now — wait for it to load and try again.');
+				}
+				if (textBtn) {
+					textBtn.classList.toggle('is-on', textOn);
+					textBtn.setAttribute('aria-pressed', textOn ? 'true' : 'false');
+				}
+			}
+			if (textBtn) {
+				textBtn.addEventListener('click', function () { setTextMode(!textOn); });
+			}
 
 			var devBar = $('wpab-ed-devbar');
 			var frameWrap = $('wpab-ed-framewrap');
@@ -2226,6 +2676,21 @@ final class WPAB_Editor {
 				if (!files.length) { throw new Error('The plan returned no files.'); }
 				if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
 
+				// Real page copy for the inner pages, written IN PARALLEL with the
+				// build (cheap model) — stored as post_content when the pages are
+				// created, so SEO tools and the WP editor see real content.
+				var contentPromise = Promise.resolve(null);
+				if (cfg.restPageContent) {
+					var cBrief = collectBrief();
+					contentPromise = wpost(cfg.restPageContent, {
+						blueprint: blueprint,
+						brief: { name: cBrief.name || brand, prompt: cBrief.prompt || ((blueprint.theme && blueprint.theme.description) || '') }
+					}, sig).then(function (pcOut) {
+						if (pcOut && pcOut.data) { addTok(pcOut.data); }
+						return (pcOut && pcOut.ok && pcOut.data && pcOut.data.success && pcOut.data.content) ? pcOut.data.content : null;
+					}).catch(function () { return null; });
+				}
+
 				var built = [];
 				var repairsLeft = 2; // single-file regenerations allowed when the writer rejects a file
 				var doneMap = {};
@@ -2374,12 +2839,16 @@ final class WPAB_Editor {
 						stepState('build', 'done', built.length + ' files');
 						phaseProgress('write');
 						setBuildDetail('Creating pages, front page and menu…');
-						return wpost(cfg.restCreateTheme, {
-							brand: brand,
-							description: (blueprint.theme && blueprint.theme.description) || '',
-							files: built,
-							blueprint: blueprint
-						}, sig).then(function (cOut) {
+						return contentPromise.then(function (pageContent) {
+							var createPayload = {
+								brand: brand,
+								description: (blueprint.theme && blueprint.theme.description) || '',
+								files: built,
+								blueprint: blueprint
+							};
+							if (pageContent) { createPayload.content = pageContent; }
+							return wpost(cfg.restCreateTheme, createPayload, sig);
+						}).then(function (cOut) {
 							if (!alive(myRun)) { return; }
 							if (!cOut.ok || !cOut.data || cOut.data.success === false) {
 								// The writer validates every file; when it names ONE bad file
