@@ -89,3 +89,73 @@ export async function replacePlaceholderImages(html: string): Promise<string> {
   );
   return out;
 }
+
+export type BriefImage = {
+  url: string;
+  w: number;
+  h: number;
+  alt: string;
+  orientation: "landscape" | "portrait";
+};
+
+/**
+ * Fetch a curated set of Pexels photos for the brief BEFORE the design call,
+ * so the model composes with real image URLs instead of placeholders. Returns
+ * [] without a key or on failure — the prompt then designs without photos.
+ */
+export async function fetchBriefImages(brief: unknown): Promise<BriefImage[]> {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key) {
+    return [];
+  }
+
+  const b = (brief ?? {}) as { name?: unknown; prompt?: unknown };
+  const text = [b.name, b.prompt]
+    .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+    .join(" ");
+  const query =
+    text
+      .replace(/https?:\S+/g, " ")
+      .replace(/[^\p{L}\p{N} ]+/gu, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2)
+      .slice(0, 8)
+      .join(" ") || "business";
+
+  const out: BriefImage[] = [];
+
+  async function search(orientation: "landscape" | "portrait", count: number) {
+    try {
+      const res = await fetch(
+        `${SEARCH}?query=${encodeURIComponent(query)}&per_page=${count}&orientation=${orientation}`,
+        { headers: { Authorization: key as string } }
+      );
+      if (!res.ok) {
+        console.error(`pexels brief search ${res.status} for "${query}"`);
+        return;
+      }
+      const data = (await res.json()) as {
+        photos?: { src?: Record<string, string>; alt?: string; width?: number; height?: number }[];
+      };
+      for (const ph of data.photos ?? []) {
+        const base = (ph.src?.original ?? "").split("?")[0];
+        if (!base) continue;
+        const w = orientation === "landscape" ? 1600 : 900;
+        const h = orientation === "landscape" ? 1000 : 1200;
+        out.push({
+          url: `${base}?auto=compress&cs=tinysrgb&w=${w}&h=${h}&fit=crop`,
+          w,
+          h,
+          alt: (ph.alt ?? "").slice(0, 120),
+          orientation,
+        });
+      }
+    } catch (error) {
+      console.error("pexels brief search error:", error);
+    }
+  }
+
+  await Promise.all([search("landscape", 9), search("portrait", 5)]);
+  console.log(`pexels: fetched ${out.length} brief images for "${query}"`);
+  return out;
+}

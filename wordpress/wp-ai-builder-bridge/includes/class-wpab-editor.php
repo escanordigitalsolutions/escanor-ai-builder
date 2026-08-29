@@ -969,7 +969,7 @@ final class WPAB_Editor {
 					</div>
 
 					<div id="wpab-ed-mockwrap" class="wpab-ed__mockwrap" hidden>
-						<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-same-origin"></iframe>
+						<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-scripts"></iframe>
 						<div class="wpab-ed__mockactions">
 							<button type="button" id="wpab-ed-mockuse" class="wpab-ed__wbtn">Use this design</button>
 							<button type="button" id="wpab-ed-mockredo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Try another direction</button>
@@ -1153,6 +1153,8 @@ final class WPAB_Editor {
 		.wpab-ed__wbtn:hover { background: #000 !important; }
 		.wpab-ed__wbtn--ghost { background: transparent !important; color: #4b4945 !important; border: 1px solid rgba(20,19,18,.22) !important; }
 		.wpab-ed__wbtn--ghost:hover { background: rgba(20,19,18,.05) !important; color: #141312 !important; }
+		.wpab-ed__wizard.is-design .wpab-ed__wcard { max-width: min(1400px, 96vw); width: 100%; }
+		.wpab-ed__wizard.is-design .wpab-ed__mockframe { height: 68vh; }
 		.wpab-ed__mockwrap { margin-top: 14px; }
 		.wpab-ed__mockframe { width: 100%; height: 440px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: #fff; display: block; }
 		.wpab-ed__mockactions { display: flex; gap: 8px; margin-top: 10px; }
@@ -1520,6 +1522,7 @@ final class WPAB_Editor {
 				if (genAbort) { try { genAbort.abort(); } catch (e) {} }
 				busy = false;
 				var mw = $('wpab-ed-mockwrap'); if (mw) { mw.hidden = true; }
+				if (wizard) { wizard.classList.remove('is-design'); }
 				var st = loadGenState();
 				if (wResult) {
 					wResult.className = 'wpab-ed__wresult is-err';
@@ -1571,6 +1574,7 @@ final class WPAB_Editor {
 					if (!alive(myRun)) { return; } // cancelled — the cancel handler already reset the UI
 					busy = false;
 					var mw2 = $('wpab-ed-mockwrap'); if (mw2) { mw2.hidden = true; }
+					if (wizard) { wizard.classList.remove('is-design'); }
 					var st = loadGenState();
 					if (wResult) {
 						wResult.className = 'wpab-ed__wresult is-err';
@@ -1894,7 +1898,10 @@ final class WPAB_Editor {
 				var frame = $('wpab-ed-mockframe');
 				if (!wrap || !frame) { return proceedFromMockup(myRun, sig, brief, mock); }
 				if (wProgress) { wProgress.hidden = true; }
-				frame.srcdoc = mock.html || '';
+				var guard = '<script>document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a"):null;if(a){e.preventDefault();}},true);document.addEventListener("submit",function(e){e.preventDefault();},true);<' + '/script>';
+				var doc = String(mock.html || '');
+				frame.srcdoc = (doc.indexOf('</body>') !== -1) ? doc.replace('</body>', guard + '</body>') : doc + guard;
+				if (wizard) { wizard.classList.add('is-design'); }
 				wrap.hidden = false;
 				setBuildDetail('');
 				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = 'Review the design' + tokLabel() + ' — use it, or try another direction.'; }
@@ -1903,6 +1910,7 @@ final class WPAB_Editor {
 				if (useBtn) {
 					useBtn.onclick = function () {
 						if (!alive(myRun)) { return; }
+						if (wizard) { wizard.classList.remove('is-design'); }
 						wrap.hidden = true;
 						if (wProgress) { wProgress.hidden = false; }
 						if (wResult) { wResult.textContent = ''; }
@@ -1912,6 +1920,7 @@ final class WPAB_Editor {
 				if (redoBtn) {
 					redoBtn.onclick = function () {
 						if (!alive(myRun)) { return; }
+						if (wizard) { wizard.classList.remove('is-design'); }
 						wrap.hidden = true;
 						if (wProgress) { wProgress.hidden = false; }
 						if (wResult) { wResult.textContent = ''; }

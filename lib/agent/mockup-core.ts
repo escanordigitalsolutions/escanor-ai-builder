@@ -1,6 +1,6 @@
 import { pickModel } from "@/lib/ai/resolve";
 import { generateText, type Usage } from "@/lib/ai/provider";
-import { replacePlaceholderImages } from "./pexels";
+import { replacePlaceholderImages, fetchBriefImages } from "./pexels";
 
 /**
  * Design-first pipeline, step 1: the HOMEPAGE MOCKUP.
@@ -13,64 +13,36 @@ import { replacePlaceholderImages } from "./pexels";
  * one fragment per section) that the cheap build model PORTS to PHP files.
  */
 
-const MOCKUP_INSTRUCTIONS = `You are an elite web designer and art director. Create a complete, bespoke HOMEPAGE from the supplied brief as ONE self-contained HTML file.
+const MOCKUP_INSTRUCTIONS = `You are an experimental, award-level digital art director. Create a complete HOMEPAGE as ONE self-contained HTML file. The design must feel bold, unexpected and unmistakably custom — never safe, ordinary or template-like.
 
-This is a visual mockup: semantic HTML + CSS only. One tiny inline <script> is allowed only for the mobile navigation toggle. No PHP, frameworks or external JavaScript.
+Use semantic HTML + CSS only. One tiny inline <script> is allowed for the mobile nav toggle. No PHP or frameworks.
 
-Before coding, silently define one clear creative direction based on the brand, audience and goal. Carry it consistently through typography, palette, imagery, shapes and layout. Do not output your reasoning.
+Before coding, silently invent ONE strong creative concept inspired by the brand. Push typography, scale, composition, cropping, layering, asymmetry and whitespace. The result may feel editorial, cinematic or slightly unconventional, but must remain clear, usable and conversion-focused.
 
-STRUCTURE — EXACT (the page is split automatically, so follow it precisely):
-- Load Google Fonts with <link> tags in <head>.
-- Put all CSS in ONE <style> block in <head>. Define design tokens in :root.
-- <body> starts with <header data-part="header"> containing the brand name, the navigation and the primary action. Navigation collapses behind an accessible hamburger on small screens.
-- Follow with 5-7 top-level <section data-section="<kebab-slug>" class="section section-<slug>"> blocks. NEVER nest a <section> inside another.
+EXACT STRUCTURE (the page is split automatically — follow it precisely)
+- Google Fonts via <link> tags in <head>.
+- All CSS in ONE <style> block in <head>; tokens in :root.
+- <body> starts with <header data-part="header"> (brand name, navigation, primary action).
+- Add 5-7 top-level <section data-section="<kebab-slug>" class="section section-<slug>"> blocks. NEVER nest sections.
 - End with <footer data-part="footer">.
+- Responsive mobile navigation behind an accessible hamburger.
 
-DESIGN QUALITY
-The result must feel specifically designed for this brand, never like a generic template.
-- Use a distinctive Google Fonts pairing and a confident, limited palette.
-- Create one memorable signature visual motif and repeat it subtly.
-- Use a dramatic fluid type scale with clamp().
-- Make the hero composition bold, clear and visually distinctive.
-- Give adjacent sections different layouts and rhythms while keeping one coherent design system.
-- Mix asymmetric splits, full-bleed visuals, editorial grids, oversized statements and focused content blocks.
-- Use generous whitespace, deliberate alignment and controlled content widths.
-- Recompose layouts properly for mobile instead of only shrinking them.
-- Keep the page conversion-focused and easy to understand.
+DESIGN DIRECTION
+- Create a dramatic hero that does NOT use a standard centered layout.
+- Use huge fluid typography with clamp().
+- Give every section a different composition while preserving one visual system.
+- Use controlled asymmetry, overlapping elements, unexpected grids, full-bleed moments, sharp rhythm changes and expressive image crops.
+- Carry one signature motif throughout the page.
+- Write specific, believable, on-topic copy in the requested language.
+- Mobile must feel intentionally redesigned, not merely stacked.
+- Keep everything accessible and prevent horizontal overflow.
 
-AVOID
-- Generic centered hero + three-card grid layouts
-- Repetitive equal-sized cards
-- Default purple gradients and gradient blobs
-- Automatic dark mode, glassmorphism or excessive rounded corners
-- Excessive pills, badges and floating containers
-- Random decoration unrelated to the brand
-- Fake dashboards unless relevant
-- Lorem ipsum and vague "innovative solutions" copy
-- Invented statistics, awards, ratings, clients or business claims
-
-COPY
-Write concise, believable and on-topic copy in the requested language. Clearly communicate: what the business offers, who it is for, why it is valuable, and what the visitor should do next. Use real, specific language. When facts are missing, create credible positioning without inventing proof.
+AVOID generic SaaS layouts, three-card feature rows, gradient blobs, glassmorphism, default purple palettes, repetitive cards, excessive pills, random decorations, lorem ipsum, vague marketing language and fabricated claims.
 
 IMAGES
-Use relevant photos only when they improve the composition. Write every photo as <img src="https://loremflickr.com/<width>/<height>/<keywords>?lock=<n>" width="" height="" alt=""> — the keywords are searched against a real stock-photo library and the URL is replaced automatically, so:
-- Use specific business-related keywords.
-- Keep the photographic mood consistent.
-- Give every image a unique lock number.
-- Use purposeful crops with object-fit.
-- Add sufficient overlays whenever text appears on a photo.
-- Do not lazy-load the main hero image.
+Use ONLY the image URLs supplied below under PEXELS IMAGES. Do not invent Pexels URLs or use any other image source. Render each as <img src="<url>" width="<w>" height="<h>" alt="..."> and use them as bold compositional elements through cropping (object-fit), layering, masking and full-bleed placement. Keep their visual treatment consistent. Add overlays when text sits over photography. Do not lazy-load the hero image. If no images are supplied, design a purely typographic/graphic page with no <img> elements.
 
-RESPONSIVE AND ACCESSIBLE
-- Mobile-first, working from 320px upward. No horizontal overflow.
-- Use one logical and semantic heading order.
-- Include meaningful alt text and visible focus states.
-- Maintain strong contrast and touch-friendly controls.
-- Respect prefers-reduced-motion.
-- Add appropriate aria attributes to the mobile navigation toggle.
-- Keep HTML and CSS clean, valid and organized.
-
-Before responding, silently verify that the page is distinctive, coherent, responsive, brand-specific and follows the exact splitting structure. OUTPUT ONLY the HTML document. The first characters must be <!DOCTYPE html> and the final characters must be </html>. No Markdown fences, commentary or questions.`;
+OUTPUT ONLY the complete HTML document. It must begin with <!DOCTYPE html> and end with </html>. No Markdown, commentary or questions.`;
 
 export type MockupSection = { slug: string; html: string };
 
@@ -135,12 +107,24 @@ export async function generateMockup(
 ): Promise<MockupResult> {
   const model = pickModel(modelConfig, "plan");
 
+  const images = await fetchBriefImages(brief);
+  const imageBlock = images.length
+    ? `\n\nPEXELS IMAGES (use ONLY these URLs):\n` +
+      images
+        .map(
+          (im, i) =>
+            `${i + 1}. ${im.url} (${im.orientation}, ${im.w}x${im.h}${im.alt ? `, "${im.alt}"` : ""})`
+        )
+        .join("\n")
+    : `\n\nPEXELS IMAGES: none supplied — design without <img> elements.`;
+
   const gen = await generateText({
     model,
     system: MOCKUP_INSTRUCTIONS,
     maxTokens: 32000,
     input:
       `Brief:\n${JSON.stringify(brief, null, 2)}` +
+      imageBlock +
       (variation ? `\n\n${variation}` : ""),
   });
 
