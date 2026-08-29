@@ -72,6 +72,7 @@ COLOUR + TYPE:
 
 Output rules:
 - Respond with ONLY valid JSON. No markdown, no code fences, no commentary.
+- STRICT: the very first character of your reply is { and the very last is }. Do not write anything before or after the JSON.
 
 JSON schema (use EXACTLY these keys):
 {

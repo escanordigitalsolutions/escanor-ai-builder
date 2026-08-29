@@ -88,7 +88,7 @@ OUTPUT FORMAT — for EACH requested path output exactly, in order:
 ===WPAB_FILE:<path>===
 <the complete raw file contents>
 ===WPAB_END===
-Output nothing before, between (other than the markers) or after. Do not wrap contents in code fences.`;
+STRICT: your reply must START with the first ===WPAB_FILE:<path>=== marker as its very first characters — no introduction, no explanation, no "Here are the files", no markdown fences — and must END with the last ===WPAB_END===. Copy each requested path into its marker EXACTLY as given, character for character (no leading ./ or /, no renaming, same case). Output nothing between the blocks other than the markers themselves.`;
 
 function parseFiles(text: string): { path: string; contents: string }[] {
   const out: { path: string; contents: string }[] = [];

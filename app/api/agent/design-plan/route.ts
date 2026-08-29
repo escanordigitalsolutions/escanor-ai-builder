@@ -38,7 +38,7 @@ The theme is intentionally DEPENDENCY-FREE (vanilla JS + modern CSS only, no lib
 
 Return the 3-6 HIGHEST-IMPACT changes that would most elevate the design. For each, name the exact file and give a CONCRETE, art-directed instruction (what to change and how, in the language of the concept) — bold but still responsive, accessible and consistent with the theme's design tokens. Order most impactful first. Prefer changes to section template-parts and main.css. Do not propose more than 6.
 
-Respond with ONLY valid JSON, no markdown, no commentary:
+Respond with ONLY valid JSON, no markdown, no commentary — the very first character of that final reply is { and the very last is }:
 { "verdict": "one short sentence on how generic vs distinctive it is now", "targets": [ { "path": "template-parts/section-hero.php", "instruction": "concrete art-directed change" } ] }`;
 
 const tools: ToolDef[] = [

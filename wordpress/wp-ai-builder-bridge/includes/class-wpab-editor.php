@@ -1518,8 +1518,13 @@ final class WPAB_Editor {
 					return wpost(cfg.restBuildFilesStart, { blueprint: blueprint, paths: paths }, sig).then(function (sOut) {
 						var jobId = sOut && sOut.data && sOut.data.jobId;
 						if (!jobId) {
-							// Older SaaS without the async endpoints — one-shot fallback.
-							return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: paths }, sig);
+							if (sOut && sOut.status === 404) {
+								// Older SaaS without the async endpoints — one-shot fallback.
+								return wpost(cfg.restBuildFiles, { blueprint: blueprint, paths: paths }, sig);
+							}
+							// Surface the start error instead of silently falling back to
+							// the long synchronous call (which shared hosts kill with 504).
+							return { ok: false, status: (sOut && sOut.status) || 0, data: (sOut && sOut.data) || { error: 'Could not start the generation job.' } };
 						}
 						var started = Date.now();
 						function poll() {

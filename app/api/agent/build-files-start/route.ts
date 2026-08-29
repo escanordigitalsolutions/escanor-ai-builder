@@ -82,8 +82,15 @@ export async function POST(request: NextRequest) {
 
   if (jobError || !job) {
     console.error("build-files-start job insert error:", jobError);
+    const missingTable =
+      typeof jobError?.message === "string" && /ai_jobs/i.test(jobError.message);
     return NextResponse.json(
-      { success: false, error: "Could not start the generation job." },
+      {
+        success: false,
+        error: missingTable
+          ? "The ai_jobs table is missing in Supabase. Run the setup SQL (create table public.ai_jobs …), then retry."
+          : "Could not start the generation job.",
+      },
       { status: 500 }
     );
   }

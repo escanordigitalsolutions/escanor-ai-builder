@@ -48,7 +48,8 @@ SUMMARY: <one short sentence: what you fixed, or "No critical issues found.">
 ===WPAB_FILE:<path>===
 <the complete raw new file contents>
 ===WPAB_END===
-(repeat the FILE/END block for every changed file; do not use code fences)`;
+(repeat the FILE/END block for every changed file; do not use code fences)
+STRICT: that final reply STARTS with "SUMMARY:" as its very first characters — no preamble, nothing after the last block (or after the SUMMARY line when there are no fixes).`;
 
 const tools: ToolDef[] = [
   {
