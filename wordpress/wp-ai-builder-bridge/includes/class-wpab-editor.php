@@ -48,6 +48,24 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/edit-start',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_edit_start' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/edit-apply',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_edit_apply' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/edit-plan',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -858,6 +876,54 @@ final class WPAB_Editor {
 		return is_array( $params ) ? $params : array();
 	}
 
+	/** Async edit: start the edit job on the SaaS (result is fetched via the job poll). */
+	public static function rest_edit_start( WP_REST_Request $request ) {
+		$params      = self::json_params( $request );
+		$instruction = isset( $params['instruction'] ) ? trim( (string) $params['instruction'] ) : '';
+		if ( '' === $instruction ) {
+			return new WP_Error( 'wpab_edit_empty', 'An instruction is required.', array( 'status' => 400 ) );
+		}
+		if ( strlen( $instruction ) > 2000 ) {
+			$instruction = substr( $instruction, 0, 2000 );
+		}
+		$payload = array( 'instruction' => $instruction );
+		if ( isset( $params['plan'] ) && is_array( $params['plan'] ) ) {
+			$payload['plan'] = array_slice( $params['plan'], 0, 8 );
+		}
+		$result = WPAB_Cloud::request( 'agent/edit-start', $payload, 30 );
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** Async edit: apply the finished job's files locally (validated, with Undo). */
+	public static function rest_edit_apply( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$files  = ( isset( $params['files'] ) && is_array( $params['files'] ) ) ? $params['files'] : array();
+		if ( empty( $files ) ) {
+			return new WP_Error( 'wpab_apply_empty', 'No files to apply.', array( 'status' => 400 ) );
+		}
+		$applied = WPAB_Theme_Writer::update( $files );
+		if ( is_wp_error( $applied ) ) {
+			return $applied;
+		}
+		$changed = array();
+		foreach ( $files as $f ) {
+			if ( is_array( $f ) && isset( $f['path'] ) && '' !== trim( (string) $f['path'] ) ) {
+				$changed[] = (string) $f['path'];
+			}
+		}
+		return new WP_REST_Response(
+			array(
+				'success'        => true,
+				'summary'        => isset( $params['summary'] ) ? (string) $params['summary'] : 'Updated the theme.',
+				'updated'        => isset( $applied['updated'] ) ? (int) $applied['updated'] : count( $files ),
+				'files'          => $changed,
+				'inspected'      => ( isset( $params['inspected'] ) && is_array( $params['inspected'] ) ) ? array_map( 'strval', $params['inspected'] ) : array(),
+				'undo_available' => true,
+			),
+			200
+		);
+	}
+
 	/** Edit planning: the cheap model turns an instruction into a numbered plan. */
 	public static function rest_edit_plan( WP_REST_Request $request ) {
 		$params      = self::json_params( $request );
@@ -1021,6 +1087,8 @@ final class WPAB_Editor {
 			'restChat'        => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat' ) ),
 			'restChatHistory' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat/history' ) ),
 			'restEditPlan'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-plan' ) ),
+			'restEditStart'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-start' ) ),
+			'restEditApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-apply' ) ),
 			'restContext'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/context' ) ),
 			'restCreateTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/create-theme' ) ),
 			'restBuildPlan'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
@@ -1499,22 +1567,59 @@ final class WPAB_Editor {
 					}, 9000);
 					var payload = { instruction: instruction };
 					if (plan && plan.steps) { payload.plan = plan.steps; }
-					return api('POST', cfg.restEditTheme, payload).then(function (out) {
-					clearInterval(ticker);
-					typing.remove();
-					if (!out.ok || !out.data || out.data.success === false) {
-						frameBusy(false);
-						addMessage('assistant', (out.data && (out.data.message || out.data.error)) || 'Could not apply the change.');
-						return;
+					function finishOk(data) {
+						clearInterval(ticker);
+						typing.remove();
+						addUndoMessage(data.summary, data.files, data.inspected);
+						reloadPreview();
 					}
-					addUndoMessage(out.data.summary, out.data.files, out.data.inspected);
-					reloadPreview();
-					}).catch(function () {
+					function finishErr(msg) {
 						clearInterval(ticker);
 						frameBusy(false);
 						typing.remove();
-						addMessage('assistant', 'Network error applying the change.');
-					});
+						addMessage('assistant', msg || 'Could not apply the change.');
+					}
+					function runSync() {
+						return api('POST', cfg.restEditTheme, payload).then(function (out) {
+							if (!out.ok || !out.data || out.data.success === false) { finishErr(out.data && (out.data.message || out.data.error)); return; }
+							finishOk(out.data);
+						}).catch(function () { finishErr('Network error applying the change.'); });
+					}
+					// Async path: start a job, poll it, apply the files locally — no
+					// request stays open long enough for a hosting proxy to kill it.
+					if (!cfg.restEditStart || !cfg.restBuildJob || !cfg.restEditApply) { return runSync(); }
+					var editStarted = Date.now();
+					return api('POST', cfg.restEditStart, payload).then(function (sOut) {
+						if (sOut.status === 404) { return runSync(); }
+						var jobId = sOut.ok && sOut.data && sOut.data.jobId;
+						if (!jobId) { finishErr((sOut.data && (sOut.data.message || sOut.data.error)) || 'Could not start the edit.'); return; }
+						function pollEdit() {
+							if (Date.now() - editStarted > 480000) { finishErr('The edit timed out. Try again.'); return; }
+							return new Promise(function (res) { setTimeout(res, 3000); }).then(function () {
+								return api('POST', cfg.restBuildJob, { jobId: jobId });
+							}).then(function (jOut) {
+								var d = (jOut && jOut.data) || {};
+								if (d.status === 'done' && d.result) {
+									var r = d.result;
+									if (t) { t.textContent = 'Applying the change\u2026'; }
+									frameBusy(true, 'Applying the change\u2026');
+									return api('POST', cfg.restEditApply, { files: r.files || [], summary: r.summary || '', inspected: r.inspected || [] }).then(function (aOut) {
+										if (!aOut.ok || !aOut.data || aOut.data.success === false) { finishErr((aOut.data && (aOut.data.message || aOut.data.error)) || 'Could not apply the change.'); return; }
+										finishOk(aOut.data);
+									});
+								}
+								if (d.status === 'error') { finishErr(d.error || 'The edit failed.'); return; }
+								if (!jOut.ok) { finishErr('The edit failed.'); return; }
+								var prog = d.result && d.result.progress;
+								if (prog && prog.note) {
+									if (t) { t.textContent = prog.note; }
+									frameBusy(true, prog.note);
+								}
+								return pollEdit();
+							});
+						}
+						return pollEdit();
+					}).catch(function () { finishErr('Network error applying the change.'); });
 				});
 			}
 
