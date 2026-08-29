@@ -198,7 +198,36 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const files = parseFiles(text);
+  const parsed = parseFiles(text);
+
+  // Map the generated files back onto the EXACT requested paths. Some models
+  // (Claude especially) decorate the path in the marker — a leading ./ or /,
+  // stray whitespace, different case — which would otherwise make the WordPress
+  // side think the file is "missing" and retry forever. Match by normalized
+  // path first, then positionally (the model is told to output in order).
+  const normPath = (p: string) =>
+    p.replace(/\\/g, "/").replace(/^\.?\/+/, "").trim().toLowerCase();
+  const wantByNorm = new Map<string, string>();
+  for (const p of paths) {
+    wantByNorm.set(normPath(p), p);
+  }
+  const usedReq = new Set<string>();
+  const matched: { path: string; contents: string }[] = [];
+  const leftovers: { path: string; contents: string }[] = [];
+  for (const f of parsed) {
+    const req = wantByNorm.get(normPath(f.path));
+    if (req && !usedReq.has(req)) {
+      matched.push({ path: req, contents: f.contents });
+      usedReq.add(req);
+    } else {
+      leftovers.push(f);
+    }
+  }
+  const unmatchedReq = paths.filter((p) => !usedReq.has(p));
+  for (let i = 0; i < unmatchedReq.length && i < leftovers.length; i++) {
+    matched.push({ path: unmatchedReq[i], contents: leftovers[i].contents });
+  }
+  const files = matched.length ? matched : parsed;
 
   // When the model runs long, the LAST file block can be cut off before its
   // ===WPAB_END=== marker. Keep every COMPLETE file we did parse and let the
