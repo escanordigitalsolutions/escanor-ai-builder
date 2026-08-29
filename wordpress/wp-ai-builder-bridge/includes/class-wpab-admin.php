@@ -317,7 +317,7 @@ final class WPAB_Admin {
 			$designs = $connected ? WPAB_Cloud::request( 'agent/designs', array(), 20 ) : null;
 			$rows    = ( ! is_wp_error( $designs ) && isset( $designs['designs'] ) && is_array( $designs['designs'] ) ) ? $designs['designs'] : array();
 			$dnonce  = wp_create_nonce( 'wp_rest' );
-			$dhtml   = esc_url_raw( rest_url( 'wpab/v1/editor/design/html' ) );
+			$dhtml   = esc_url_raw( rest_url( WPAB_REST_NAMESPACE . '/editor/design/html' ) );
 			$slabels = array( 'used' => 'Used', 'rejected' => 'Rejected', 'pending' => 'Not used' );
 			?>
 			<div class="wpabd-panel">
@@ -327,57 +327,123 @@ final class WPAB_Admin {
 				<?php elseif ( empty( $rows ) ) : ?>
 					<p style="color:#8a8783;font-size:12px;">No archived designs yet — every homepage design generated in the AI Editor lands here, including rejected directions.</p>
 				<?php else : ?>
-					<table class="wpabd-table">
-						<tr><th>Design</th><th>Status</th><th>Model</th><th>Created</th><th></th></tr>
+					<style>
+						.wpabd-designs { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; margin-top:4px; }
+						.wpabd-dcard { background:#fff; border:1px solid rgba(20,19,18,.1); border-radius:14px; overflow:hidden; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
+						.wpabd-dcard:hover { border-color:#141312; box-shadow:0 4px 18px rgba(20,19,18,.1); }
+						.wpabd-dcard.is-open { border-color:#141312; box-shadow:0 0 0 2px #141312; }
+						.wpabd-dshell { background:#e9e7e4; padding:8px 8px 0; }
+						.wpabd-dbar { display:flex; gap:4px; padding:0 2px 6px; }
+						.wpabd-dbar i { width:7px; height:7px; border-radius:50%; background:#cfccc7; }
+						.wpabd-dthumb { position:relative; height:160px; overflow:hidden; background:#fff; border-radius:6px 6px 0 0; }
+						.wpabd-dthumb iframe { width:1280px; height:1024px; border:0; transform-origin:0 0; pointer-events:none; background:#fff; display:block; }
+						.wpabd-dthumb .wpabd-dload { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#8a8783; background:#faf9f7; }
+						.wpabd-dmeta { padding:10px 12px; }
+						.wpabd-dmeta .t { font-size:12px; font-weight:600; color:#141312; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+						.wpabd-dmeta .s { font-size:11px; color:#8a8783; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+						.wpabd-dtag { display:inline-block; font-size:10px; font-weight:600; border-radius:6px; padding:1px 6px; margin-right:5px; background:#f0efec; color:#5c5955; }
+						.wpabd-dtag.used { background:#141312; color:#fff; }
+					</style>
+					<div class="wpabd-designs" id="wpabd-designs">
 						<?php foreach ( $rows as $d ) :
 							$brief = isset( $d['brief'] ) && is_array( $d['brief'] ) ? $d['brief'] : array();
 							$title = ! empty( $brief['name'] ) ? $brief['name'] : ( ! empty( $brief['prompt'] ) ? mb_substr( (string) $brief['prompt'], 0, 60 ) : 'Untitled design' );
 							$stat  = isset( $d['status'] ) ? (string) $d['status'] : 'pending';
 							$when  = isset( $d['created_at'] ) ? mysql2date( 'M j, H:i', (string) $d['created_at'] ) : '';
 							?>
-							<tr>
-								<td style="text-align:left;"><?php echo esc_html( $title ); ?></td>
-								<td><?php echo esc_html( $slabels[ $stat ] ?? $stat ); ?></td>
-								<td><?php echo esc_html( $d['model'] ?? '' ); ?></td>
-								<td><?php echo esc_html( $when ); ?></td>
-								<td><button type="button" class="button button-small wpabd-preview" data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>">Preview</button></td>
-							</tr>
+							<div class="wpabd-dcard" data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>" title="Open full preview">
+								<div class="wpabd-dshell">
+									<div class="wpabd-dbar"><i></i><i></i><i></i></div>
+									<div class="wpabd-dthumb">
+										<div class="wpabd-dload">Loading…</div>
+										<iframe sandbox="allow-scripts" scrolling="no" tabindex="-1" aria-hidden="true"></iframe>
+									</div>
+								</div>
+								<div class="wpabd-dmeta">
+									<div class="t"><?php echo esc_html( $title ); ?></div>
+									<div class="s"><span class="wpabd-dtag <?php echo esc_attr( $stat ); ?>"><?php echo esc_html( $slabels[ $stat ] ?? $stat ); ?></span><?php echo esc_html( trim( ( $d['model'] ?? '' ) . ( $when ? ' · ' . $when : '' ) ) ); ?></div>
+								</div>
+							</div>
 						<?php endforeach; ?>
-					</table>
-					<div id="wpabd-prevwrap" style="display:none;margin-top:12px;">
-						<iframe id="wpabd-prevframe" sandbox="allow-scripts" style="width:100%;height:640px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
+					</div>
+					<div id="wpabd-prevwrap" style="display:none;margin-top:14px;">
+						<iframe id="wpabd-prevframe" sandbox="allow-scripts" style="width:100%;height:680px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
 					</div>
 					<script>
 					(function () {
+						var URL_HTML = <?php echo wp_json_encode( $dhtml ); ?>;
+						var NONCE = <?php echo wp_json_encode( $dnonce ); ?>;
+						var cache = {};
 						var open = null;
-						document.addEventListener('click', function (e) {
-							var b = e.target && e.target.classList && e.target.classList.contains('wpabd-preview') ? e.target : null;
-							if (!b) { return; }
-							var id = b.getAttribute('data-design');
-							var wrap = document.getElementById('wpabd-prevwrap');
-							var frame = document.getElementById('wpabd-prevframe');
-							if (!id || !wrap || !frame) { return; }
-							if (open === id) { wrap.style.display = 'none'; open = null; b.textContent = 'Preview'; return; }
-							var btns = document.querySelectorAll('.wpabd-preview');
-							for (var i = 0; i < btns.length; i++) { btns[i].textContent = 'Preview'; }
-							b.textContent = 'Loading…';
-							fetch(<?php echo wp_json_encode( $dhtml ); ?>, {
+
+						function fetchHtml(id) {
+							if (cache[id]) { return Promise.resolve(cache[id]); }
+							return fetch(URL_HTML, {
 								method: 'POST',
-								headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': <?php echo wp_json_encode( $dnonce ); ?> },
+								headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': NONCE },
 								credentials: 'same-origin',
 								body: JSON.stringify({ designId: id })
 							}).then(function (r) { return r.json(); }).then(function (j) {
-								if (j && j.html) {
-									frame.srcdoc = j.html;
-									wrap.style.display = 'block';
-									open = id;
-									b.textContent = 'Close';
-									wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-								} else {
-									b.textContent = 'Preview';
-									alert((j && (j.error || j.message)) || 'Could not load the design.');
-								}
-							}).catch(function () { b.textContent = 'Preview'; alert('Could not load the design.'); });
+								if (!j || !j.html) { throw new Error((j && (j.error || j.message)) || 'Could not load the design.'); }
+								cache[id] = j.html;
+								return j.html;
+							});
+						}
+
+						function fitThumb(card) {
+							var thumb = card.querySelector('.wpabd-dthumb');
+							var frame = thumb && thumb.querySelector('iframe');
+							if (!thumb || !frame) { return; }
+							var w = thumb.clientWidth || 230;
+							var scale = w / 1280;
+							frame.style.transform = 'scale(' + scale + ')';
+							thumb.style.height = Math.round(1024 * scale) + 'px';
+						}
+
+						var cards = Array.prototype.slice.call(document.querySelectorAll('.wpabd-dcard'));
+						var queue = cards.slice();
+						function next() {
+							var card = queue.shift();
+							if (!card) { return; }
+							var id = card.getAttribute('data-design');
+							var thumb = card.querySelector('.wpabd-dthumb');
+							var frame = thumb.querySelector('iframe');
+							var load = thumb.querySelector('.wpabd-dload');
+							fitThumb(card);
+							fetchHtml(id).then(function (html) {
+								frame.srcdoc = html;
+								if (load) { load.style.display = 'none'; }
+							}).catch(function () {
+								if (load) { load.textContent = 'Preview unavailable'; }
+							}).then(next);
+						}
+						next(); next(); next();
+
+						var resizeTimer = null;
+						window.addEventListener('resize', function () {
+							clearTimeout(resizeTimer);
+							resizeTimer = setTimeout(function () { for (var i = 0; i < cards.length; i++) { fitThumb(cards[i]); } }, 150);
+						});
+
+						document.addEventListener('click', function (e) {
+							var card = e.target && e.target.closest ? e.target.closest('.wpabd-dcard') : null;
+							if (!card) { return; }
+							var id = card.getAttribute('data-design');
+							var wrap = document.getElementById('wpabd-prevwrap');
+							var frame = document.getElementById('wpabd-prevframe');
+							if (!id || !wrap || !frame) { return; }
+							for (var i = 0; i < cards.length; i++) { cards[i].classList.remove('is-open'); }
+							if (open === id) { wrap.style.display = 'none'; open = null; return; }
+							card.classList.add('is-open');
+							fetchHtml(id).then(function (html) {
+								frame.srcdoc = html;
+								wrap.style.display = 'block';
+								open = id;
+								wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+							}).catch(function (err) {
+								card.classList.remove('is-open');
+								alert(err && err.message ? err.message : 'Could not load the design.');
+							});
 						});
 					})();
 					</script>
