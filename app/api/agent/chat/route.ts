@@ -470,12 +470,16 @@ Workflow rules:
       },
     });
 
+    // Widen through a cast: editRequest is assigned inside the tool-loop
+    // handler closure, so TS control-flow narrows it to null here otherwise.
+    const editInstruction =
+      (editRequest as { instruction: string } | null)?.instruction ?? null;
     void logUsage(context.projectId, "chat", model, result.usage, {
       message: message.slice(0, 400),
       reply: (result.text || "").slice(0, 400),
       toolCalls: result.toolCalls,
       activity: activity.slice(0, 20),
-      editInstruction: editRequest ? editRequest.instruction.slice(0, 400) : null,
+      editInstruction: editInstruction ? editInstruction.slice(0, 400) : null,
     });
 
     if (result.exhausted) {
