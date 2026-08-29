@@ -21,6 +21,7 @@ final class WPAB_Editor {
 	private const NAMESPACE = WPAB_REST_NAMESPACE;
 
 	public static function init(): void {
+		add_action( 'add_meta_boxes', array( __CLASS__, 'register_meta_boxes' ) );
 		// The admin menu (top level + landing submenu) is registered by
 		// WPAB_Admin — the AI Editor is the primary tool, so it does not
 		// register a separate submenu of its own.
@@ -458,6 +459,8 @@ final class WPAB_Editor {
 			return $applied;
 		}
 
+		try { self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
+
 		$changed = array();
 		foreach ( $files as $f ) {
 			if ( is_array( $f ) && isset( $f['path'] ) && '' !== trim( (string) $f['path'] ) ) {
@@ -482,6 +485,10 @@ final class WPAB_Editor {
 	/** Phase F: undo the most recent theme edit (one level). */
 	public static function rest_undo_edit( WP_REST_Request $request ) {
 		$result = WPAB_Theme_Writer::undo();
+
+		if ( ! is_wp_error( $result ) ) {
+			try { self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
+		}
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -530,6 +537,8 @@ final class WPAB_Editor {
 				200
 			);
 		}
+
+		try { self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
 
 		return new WP_REST_Response(
 			array(
@@ -808,10 +817,20 @@ final class WPAB_Editor {
 			}
 		}
 
+		// Freshly generated theme: (re)build the front page's Gutenberg shadow
+		// copy from the actual written section files — block markup, links and
+		// images included — and (re)arm the sync hash.
+		$front_synced = false;
+		try {
+			$fs           = self::sync_front_content( true );
+			$front_synced = ! empty( $fs['synced'] );
+		} catch ( \Throwable $e ) {} // phpcs:ignore
+
 		return array(
 			'ok'            => true,
 			'pages_created' => count( $created ),
 			'front_page'    => $front_id > 0,
+			'front_synced'  => $front_synced,
 			'menu_built'    => $menu_built,
 		);
 	}
@@ -951,6 +970,7 @@ final class WPAB_Editor {
 		if ( is_wp_error( $applied ) ) {
 			return $applied;
 		}
+		try { self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
 		$changed = array();
 		foreach ( $files as $f ) {
 			if ( is_array( $f ) && isset( $f['path'] ) && '' !== trim( (string) $f['path'] ) ) {
@@ -1075,15 +1095,222 @@ final class WPAB_Editor {
 			return $applied;
 		}
 
+		$synced = array( 'synced' => false );
+		try { $synced = self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
+
 		return new WP_REST_Response(
 			array(
 				'success'        => true,
 				'file'           => $hit_file,
 				'summary'        => 'Text updated',
+				'content_synced' => ! empty( $synced['synced'] ),
 				'undo_available' => true,
 			),
 			200
 		);
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Gutenberg shadow copy — the front page's post_content mirrors what the
+	 * designed homepage actually renders, so SEO tools, search, RSS and other
+	 * editors (Gutenberg, Elementor if this plugin is ever disabled) always
+	 * see the real content. Deterministic, no AI.
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Rebuild the front page's post_content from the generated theme's section
+	 * files as native Gutenberg block markup (headings, paragraphs, lists,
+	 * links, images). Manual edits are respected: once the stored sync-hash no
+	 * longer matches the page, syncing pauses until the next full generation
+	 * (which passes $force).
+	 */
+	public static function sync_front_content( bool $force = false ): array {
+		$generated = (string) get_option( WPAB_Theme_Writer::GENERATED_OPTION, '' );
+		if ( '' === $generated || $generated !== get_stylesheet() ) {
+			return array( 'synced' => false, 'reason' => 'not-generated' );
+		}
+		$front_id = (int) get_option( 'page_on_front', 0 );
+		if ( $front_id <= 0 ) {
+			return array( 'synced' => false, 'reason' => 'no-front' );
+		}
+		$dir = trailingslashit( wp_normalize_path( get_stylesheet_directory() ) );
+		$fp  = $dir . 'front-page.php';
+		if ( ! is_file( $fp ) ) {
+			return array( 'synced' => false, 'reason' => 'no-template' );
+		}
+		$src = (string) file_get_contents( $fp ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+		if ( ! preg_match_all( '/get_template_part\(\s*[\'"]template-parts\/section[\'"]\s*,\s*[\'"]([a-z0-9-]+)[\'"]/', $src, $mm ) || empty( $mm[1] ) ) {
+			return array( 'synced' => false, 'reason' => 'no-sections' );
+		}
+
+		$post = get_post( $front_id );
+		if ( ! $post ) {
+			return array( 'synced' => false, 'reason' => 'no-page' );
+		}
+		$last = (string) get_post_meta( $front_id, '_wpab_synced_hash', true );
+		$curr = md5( (string) $post->post_content );
+		if ( ! $force && '' !== trim( (string) $post->post_content ) && ( '' === $last || $last !== $curr ) ) {
+			// Edited by hand (or predates syncing) — leave it alone.
+			return array( 'synced' => false, 'reason' => 'manual-edits' );
+		}
+
+		$blocks = array();
+		$total  = 0;
+		foreach ( array_unique( $mm[1] ) as $slug ) {
+			$file = $dir . 'template-parts/section-' . $slug . '.php';
+			if ( ! is_file( $file ) ) {
+				continue;
+			}
+			$html = (string) file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			$html = (string) preg_replace( '/<\?php.*?(\?>|$)/s', ' ', $html );
+			$b    = self::html_to_blocks( $html );
+			if ( '' !== $b ) {
+				$blocks[] = $b;
+				$total   += strlen( $b );
+				if ( $total > 40000 ) {
+					break;
+				}
+			}
+		}
+		$content = trim( implode( "\n\n", $blocks ) );
+		if ( strlen( $content ) < 40 ) {
+			return array( 'synced' => false, 'reason' => 'too-little' );
+		}
+
+		wp_update_post(
+			array(
+				'ID'           => $front_id,
+				'post_content' => wp_slash( $content ),
+			)
+		);
+		$saved = get_post( $front_id );
+		update_post_meta( $front_id, '_wpab_synced_hash', md5( (string) ( $saved ? $saved->post_content : $content ) ) );
+		return array( 'synced' => true );
+	}
+
+	/** Turn a section's static markup into Gutenberg block markup. */
+	private static function html_to_blocks( string $html ): string {
+		if ( '' === trim( $html ) || ! class_exists( 'DOMDocument' ) ) {
+			return '';
+		}
+		$doc = new DOMDocument();
+		libxml_use_internal_errors( true );
+		$loaded = $doc->loadHTML( '<?xml encoding="utf-8"?><body>' . $html . '</body>', LIBXML_NOERROR | LIBXML_NOWARNING );
+		libxml_clear_errors();
+		if ( ! $loaded ) {
+			return '';
+		}
+		$xp    = new DOMXPath( $doc );
+		$nodes = $xp->query( '//h1|//h2|//h3|//p|//ul|//ol|//img' );
+		if ( ! $nodes || ! $nodes->length ) {
+			return '';
+		}
+		$inline = array(
+			'a'      => array( 'href' => true, 'target' => true, 'rel' => true ),
+			'strong' => array(),
+			'em'     => array(),
+			'b'      => array(),
+			'i'      => array(),
+			'br'     => array(),
+		);
+		$done      = array();
+		$seen_text = array();
+		$out       = array();
+		foreach ( $nodes as $node ) {
+			// Skip anything already captured through a parent (e.g. li inside ul).
+			$anc    = $node->parentNode; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+			$inside = false;
+			while ( $anc ) {
+				if ( isset( $done[ spl_object_id( $anc ) ] ) ) {
+					$inside = true;
+					break;
+				}
+				$anc = $anc->parentNode; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+			}
+			if ( $inside ) {
+				continue;
+			}
+			$tag = strtolower( (string) $node->nodeName ); // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+			if ( 'img' === $tag ) {
+				$src = $node instanceof DOMElement ? (string) $node->getAttribute( 'src' ) : '';
+				$alt = $node instanceof DOMElement ? (string) $node->getAttribute( 'alt' ) : '';
+				if ( ! preg_match( '#^https?://#', $src ) ) {
+					continue;
+				}
+				$out[] = "<!-- wp:image -->\n<figure class=\"wp-block-image\"><img src=\"" . esc_url( $src ) . '" alt="' . esc_attr( $alt ) . "\"/></figure>\n<!-- /wp:image -->";
+				$done[ spl_object_id( $node ) ] = true;
+				continue;
+			}
+			if ( 'ul' === $tag || 'ol' === $tag ) {
+				$items = array();
+				$lis   = $xp->query( './/li', $node );
+				if ( $lis ) {
+					foreach ( $lis as $li ) {
+						$t = self::inline_html( $doc, $li, $inline );
+						if ( '' !== trim( wp_strip_all_tags( $t ) ) ) {
+							$items[] = '<li>' . $t . '</li>';
+						}
+						if ( count( $items ) >= 12 ) {
+							break;
+						}
+					}
+				}
+				if ( $items ) {
+					$lt    = 'ol' === $tag ? 'ol' : 'ul';
+					$battr = 'ol' === $tag ? ' {"ordered":true}' : '';
+					$out[] = "<!-- wp:list{$battr} -->\n<{$lt} class=\"wp-block-list\">" . implode( '', $items ) . "</{$lt}>\n<!-- /wp:list -->";
+					$done[ spl_object_id( $node ) ] = true;
+				}
+				continue;
+			}
+			$t     = self::inline_html( $doc, $node, $inline );
+			$plain = trim( wp_strip_all_tags( $t ) );
+			if ( '' === $plain || strlen( $plain ) < 2 || strlen( $plain ) > 1200 || isset( $seen_text[ $plain ] ) ) {
+				continue;
+			}
+			$seen_text[ $plain ] = true;
+			if ( 'p' === $tag ) {
+				$out[] = "<!-- wp:paragraph -->\n<p>" . $t . "</p>\n<!-- /wp:paragraph -->";
+			} else {
+				$lvl   = 'h3' === $tag ? 3 : 2;
+				$battr = 3 === $lvl ? ' {"level":3}' : '';
+				$out[] = "<!-- wp:heading{$battr} -->\n<h{$lvl} class=\"wp-block-heading\">" . $t . "</h{$lvl}>\n<!-- /wp:heading -->";
+			}
+			$done[ spl_object_id( $node ) ] = true;
+		}
+		return implode( "\n\n", $out );
+	}
+
+	/** Inner HTML of a node reduced to safe inline markup (links kept). */
+	private static function inline_html( DOMDocument $doc, $node, array $allowed ): string {
+		$html = '';
+		foreach ( $node->childNodes as $child ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+			$html .= $doc->saveHTML( $child );
+		}
+		$html = (string) preg_replace( '/\s+/', ' ', (string) $html );
+		return trim( wp_kses( $html, $allowed ) );
+	}
+
+	/** "Made with Meikero" panel in the page editor. */
+	public static function register_meta_boxes(): void {
+		$generated = (string) get_option( WPAB_Theme_Writer::GENERATED_OPTION, '' );
+		if ( '' === $generated || $generated !== get_stylesheet() ) {
+			return;
+		}
+		add_meta_box( 'wpab-made-with', 'Meikero', array( __CLASS__, 'render_meta_box' ), 'page', 'side', 'high' );
+	}
+
+	public static function render_meta_box( $post ): void {
+		$is_front = (int) get_option( 'page_on_front', 0 ) === (int) $post->ID;
+		$url      = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
+		echo '<div style="display:flex;flex-direction:column;gap:8px;">';
+		echo '<p style="margin:0;color:#50575e;">' . esc_html(
+			$is_front
+				? 'This page mirrors the designed homepage and is kept in sync by Meikero — every AI edit updates it here too. If you edit it by hand, syncing pauses until the next theme generation.'
+				: 'Made with Meikero. This content renders through the generated theme — edit it freely here, or use the AI Editor for design changes.'
+		) . '</p>';
+		echo '<a class="button button-primary" style="text-align:center;background:#141312;border-color:#141312;" href="' . esc_url( $url ) . '">Open AI Editor</a>';
+		echo '</div>';
 	}
 
 	/** Edit planning: the cheap model turns an instruction into a numbered plan. */
@@ -1539,13 +1766,13 @@ final class WPAB_Editor {
 			.wpab-msg { display: flex; flex-direction: column; gap: 2px; animation: wpabmsgin .85s cubic-bezier(.16,.7,.2,1); transition: opacity 1.4s ease, transform 1.4s ease; }
 			@keyframes wpabmsgin { from { opacity: 0; transform: translateY(22px) scale(.985); filter: blur(2px); } to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
 			.wpab-msg__role { display: none; }
-			.wpab-msg__body { font-size: 13.5px; line-height: 1.55; color: #33312d; word-wrap: break-word; max-width: 82%; padding: 9px 14px; border-radius: 16px; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.75); box-shadow: 0 10px 30px -14px rgba(20,19,18,.28); -webkit-backdrop-filter: blur(14px) saturate(1.25); backdrop-filter: blur(14px) saturate(1.25); align-self: flex-start; border-bottom-left-radius: 5px; }
-			.wpab-ed__chat.is-large .wpab-msg__body { background: rgba(20,19,18,.05); border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+			.wpab-msg__body { font-size: 13.5px; line-height: 1.55; color: #33312d; word-wrap: break-word; max-width: 82%; padding: 9px 14px; border-radius: 16px; background: #ffffff; border: 1px solid rgba(20,18,16,.09); box-shadow: 0 10px 30px -14px rgba(20,19,18,.3); align-self: flex-start; border-bottom-left-radius: 5px; }
+			.wpab-ed__chat.is-large .wpab-msg__body { background: #ffffff; border-color: rgba(20,18,16,.08); box-shadow: none; }
 			.wpab-msg--user { align-items: flex-end; }
-			.wpab-msg--user .wpab-msg__body { background: rgba(20,19,18,.82); border-color: rgba(20,19,18,.6); color: #fff; align-self: flex-end; border-bottom-left-radius: 16px; border-bottom-right-radius: 5px; }
+			.wpab-msg--user .wpab-msg__body { background: #141312; border-color: #141312; color: #fff; align-self: flex-end; border-bottom-left-radius: 16px; border-bottom-right-radius: 5px; }
 			.wpab-ed__chat.is-large .wpab-msg--user .wpab-msg__body { background: #141312; }
 			.wpab-msg--user .wpab-msg__body a { color: #cfc9ff; }
-			.wpab-msg--assistant .wpab-typing { align-self: flex-start; background: rgba(255,255,255,.62); border: 1px solid rgba(255,255,255,.75); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border-radius: 16px; border-bottom-left-radius: 5px; padding: 9px 14px; font-size: 13px; box-shadow: 0 10px 30px -14px rgba(20,19,18,.28); }
+			.wpab-msg--assistant .wpab-typing { align-self: flex-start; background: #ffffff; border: 1px solid rgba(20,18,16,.09); border-radius: 16px; border-bottom-left-radius: 5px; padding: 9px 14px; font-size: 13px; box-shadow: 0 10px 30px -14px rgba(20,19,18,.3); }
 			.wpab-msg__body code { background: var(--ed-surface-2); border: 1px solid var(--ed-border); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
 			.wpab-msg__body pre { background: var(--ed-surface-2); border: 1px solid var(--ed-border); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
 			.wpab-msg__body a { color: var(--ed-accent); }
@@ -2133,6 +2360,47 @@ final class WPAB_Editor {
 			var inspectDoc = null;
 			var inspectHovered = null;
 
+			// Shared overlay styling for the inspect/text tools, injected into the
+			// preview document: a hint bar, strong highlights, mode cursors.
+			function injectModeCss(doc) {
+				try {
+					if (doc.getElementById('wpab-mode-css')) { return; }
+					var st = doc.createElement('style');
+					st.id = 'wpab-mode-css';
+					st.textContent =
+						'body.wpab-mode-text{cursor:text!important}' +
+						'body.wpab-mode-inspect{cursor:crosshair!important}' +
+						'body.wpab-mode-text::before,body.wpab-mode-inspect::before{content:attr(data-wpab-hint);position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483600;background:rgba(20,19,18,.92);color:#fff;font:600 12px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;letter-spacing:.02em;padding:9px 16px;border-radius:999px;box-shadow:0 10px 30px rgba(0,0,0,.35);pointer-events:none;white-space:nowrap}' +
+						'.wpab-hl-text{outline:2px dashed #141312!important;outline-offset:3px!important;background:rgba(255,214,102,.45)!important;color:#141312!important;box-shadow:0 0 0 6px rgba(255,214,102,.2)!important;border-radius:3px;cursor:text!important}' +
+						'.wpab-hl-editing{outline:2px solid #141312!important;outline-offset:3px!important;background:#fff!important;color:#141312!important;caret-color:#e05215!important;border-radius:4px;box-shadow:0 0 0 8px rgba(255,255,255,.55),0 16px 44px rgba(0,0,0,.35)!important}' +
+						'.wpab-hl-inspect{outline:2px solid #141312!important;outline-offset:3px!important;background:rgba(20,19,18,.10)!important;box-shadow:0 0 0 6px rgba(20,19,18,.12)!important;border-radius:3px;cursor:crosshair!important}';
+					(doc.head || doc.documentElement).appendChild(st);
+				} catch (e) {}
+			}
+			function setDocMode(doc, mode, hint) {
+				try {
+					if (!doc || !doc.body) { return; }
+					doc.body.classList.remove('wpab-mode-text', 'wpab-mode-inspect');
+					if (mode) {
+						injectModeCss(doc);
+						doc.body.classList.add('wpab-mode-' + mode);
+						doc.body.setAttribute('data-wpab-hint', hint || '');
+					} else {
+						doc.body.removeAttribute('data-wpab-hint');
+					}
+				} catch (e) {}
+			}
+			// Which page of the site the element lives on — travels with every
+			// selection so the AI knows the context it is editing in.
+			function pageContext(el) {
+				var path = '', title = '';
+				try {
+					var d = el && el.ownerDocument;
+					if (d) { path = (d.location && d.location.pathname) || ''; title = d.title || ''; }
+				} catch (e) {}
+				return { path: path, title: title };
+			}
+
 			function inspectDescriptor(el) {
 				function tagOf(node) {
 					var tg = node.tagName ? node.tagName.toLowerCase() : '';
@@ -2155,10 +2423,12 @@ final class WPAB_Editor {
 					else if (sec.tagName) { secName = sec.tagName.toLowerCase(); }
 				}
 				var txt = (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+				var pg = pageContext(el);
 				var full = 'Selected element: ' + parts.join(' > ');
 				if (secName) { full += ' (inside ' + secName + ')'; }
 				if (txt) { full += ', text: "' + txt + (txt.length >= 60 ? '\u2026' : '') + '"'; }
-				return { full: full, short: parts[parts.length - 1] || 'element', sec: secName };
+				if (pg.path) { full += ' \u2014 on page \u201c' + (pg.title || pg.path) + '\u201d (' + pg.path + ')'; }
+				return { full: full, short: parts[parts.length - 1] || 'element', sec: secName, page: pg.path };
 			}
 
 			var selTarget = null;
@@ -2180,31 +2450,29 @@ final class WPAB_Editor {
 
 			function inspectCleanup() {
 				if (inspectHovered) {
-					try { inspectHovered.style.outline = ''; inspectHovered.style.outlineOffset = ''; } catch (e) {}
+					try { inspectHovered.classList.remove('wpab-hl-inspect'); } catch (e) {}
 					inspectHovered = null;
 				}
 				if (inspectDoc) {
 					try {
 						inspectDoc.removeEventListener('mouseover', inspectHover, true);
 						inspectDoc.removeEventListener('click', inspectClick, true);
-						if (inspectDoc.body) { inspectDoc.body.style.cursor = ''; }
+						setDocMode(inspectDoc, null);
 					} catch (e) {}
 					inspectDoc = null;
 				}
 			}
 			function inspectHover(e) {
 				if (inspectHovered && inspectHovered !== e.target) {
-					try { inspectHovered.style.outline = ''; inspectHovered.style.outlineOffset = ''; } catch (er) {}
+					try { inspectHovered.classList.remove('wpab-hl-inspect'); } catch (er) {}
 				}
 				inspectHovered = e.target;
-				try {
-					inspectHovered.style.outline = '2px solid #141312';
-					inspectHovered.style.outlineOffset = '2px';
-				} catch (er) {}
+				try { inspectHovered.classList.add('wpab-hl-inspect'); } catch (er) {}
 			}
 			function inspectClick(e) {
 				e.preventDefault();
 				e.stopPropagation();
+				try { e.target.classList.remove('wpab-hl-inspect'); } catch (er) {}
 				selTarget = inspectDescriptor(e.target);
 				setInspect(false);
 				renderSelChip();
@@ -2219,7 +2487,7 @@ final class WPAB_Editor {
 					inspectDoc = doc;
 					doc.addEventListener('mouseover', inspectHover, true);
 					doc.addEventListener('click', inspectClick, true);
-					doc.body.style.cursor = 'crosshair';
+					setDocMode(doc, 'inspect', 'Inspect — click an element to attach it to the chat');
 					return true;
 				} catch (e) { return false; }
 			}
@@ -2283,15 +2551,12 @@ final class WPAB_Editor {
 			function textHover(e) {
 				if (textActive && (e.target === textActive.el || textActive.el.contains(e.target))) { return; }
 				if (textHovered && textHovered !== e.target) {
-					try { textHovered.style.outline = ''; textHovered.style.outlineOffset = ''; } catch (er) {}
+					try { textHovered.classList.remove('wpab-hl-text'); } catch (er) {}
 					textHovered = null;
 				}
 				if (!textTargetOk(e.target)) { return; }
 				textHovered = e.target;
-				try {
-					textHovered.style.outline = '2px dashed #141312';
-					textHovered.style.outlineOffset = '2px';
-				} catch (er) {}
+				try { textHovered.classList.add('wpab-hl-text'); } catch (er) {}
 			}
 			function textKeydown(e) {
 				if (e.key === 'Enter') { e.preventDefault(); try { e.target.blur(); } catch (er) {} }
@@ -2307,7 +2572,7 @@ final class WPAB_Editor {
 					if (restore) { el.textContent = orig; }
 					el.contentEditable = 'false';
 					el.removeAttribute('contenteditable');
-					el.style.outline = ''; el.style.outlineOffset = '';
+					el.classList.remove('wpab-hl-editing', 'wpab-hl-text');
 					el.removeEventListener('keydown', textKeydown, true);
 					el.removeEventListener('blur', textBlur, true);
 				} catch (e) {}
@@ -2317,16 +2582,17 @@ final class WPAB_Editor {
 				var el = textActive.el;
 				var orig = textActive.orig;
 				var file = textActive.file;
+				var page = textActive.page || '';
 				var next = (el.textContent || '').trim();
 				textCleanupActive(false);
 				if (!next || next === orig.trim()) {
 					try { el.textContent = orig; } catch (e) {}
 					return;
 				}
-				applyTextChange(file, orig.trim(), next, el, orig);
+				applyTextChange(file, orig.trim(), next, el, orig, page);
 			}
-			function applyTextChange(file, oldText, newText, el, origRaw) {
-				if (!cfg.restTextApply) { return textFallbackEdit(file, oldText, newText); }
+			function applyTextChange(file, oldText, newText, el, origRaw, page) {
+				if (!cfg.restTextApply) { return textFallbackEdit(file, oldText, newText, page); }
 				frameBusy(true, 'Saving the text…');
 				api('POST', cfg.restTextApply, { file: file || '', oldText: oldText, newText: newText }).then(function (out) {
 					frameBusy(false);
@@ -2342,15 +2608,16 @@ final class WPAB_Editor {
 						return;
 					}
 					// Ambiguous match or an apply error: let the AI make the precise change.
-					textFallbackEdit((out.data && out.data.file) || file, oldText, newText);
+					textFallbackEdit((out.data && out.data.file) || file, oldText, newText, page);
 				}).catch(function () {
 					frameBusy(false);
-					textFallbackEdit(file, oldText, newText);
+					textFallbackEdit(file, oldText, newText, page);
 				});
 			}
-			function textFallbackEdit(file, oldText, newText) {
+			function textFallbackEdit(file, oldText, newText, page) {
 				var where = file ? 'In ' + file + ', replace' : 'In the active theme, replace';
-				var instruction = where + ' the exact text "' + oldText + '" with "' + newText + '". Change nothing else.';
+				var instruction = where + ' the exact text "' + oldText + '" with "' + newText + '". Change nothing else.'
+					+ (page ? ' (The text appears on the page at ' + page + '.)' : '');
 				addMessage('user', 'Change text: “' + oldText + '” → “' + newText + '”');
 				runEdit(instruction, { skipPlan: true });
 			}
@@ -2362,14 +2629,13 @@ final class WPAB_Editor {
 				if (!textTargetOk(e.target)) { return; }
 				var el = e.target;
 				if (textHovered === el) {
-					try { el.style.outline = ''; el.style.outlineOffset = ''; } catch (er) {}
+					try { el.classList.remove('wpab-hl-text'); } catch (er) {}
 					textHovered = null;
 				}
-				textActive = { el: el, orig: el.textContent || '', file: textFileFor(el) };
+				textActive = { el: el, orig: el.textContent || '', file: textFileFor(el), page: pageContext(el).path };
 				try {
 					el.contentEditable = 'true';
-					el.style.outline = '2px solid #141312';
-					el.style.outlineOffset = '2px';
+					el.classList.add('wpab-hl-editing');
 					el.addEventListener('keydown', textKeydown, true);
 					el.addEventListener('blur', textBlur, true);
 					el.focus();
@@ -2384,21 +2650,21 @@ final class WPAB_Editor {
 					textDoc = doc;
 					doc.addEventListener('mouseover', textHover, true);
 					doc.addEventListener('click', textClick, true);
-					doc.body.style.cursor = 'text';
+					setDocMode(doc, 'text', 'Text edit — click any text · Enter saves · Esc cancels');
 					return true;
 				} catch (e) { return false; }
 			}
 			function textCleanup() {
 				textCleanupActive(true);
 				if (textHovered) {
-					try { textHovered.style.outline = ''; textHovered.style.outlineOffset = ''; } catch (e) {}
+					try { textHovered.classList.remove('wpab-hl-text'); } catch (e) {}
 					textHovered = null;
 				}
 				if (textDoc) {
 					try {
 						textDoc.removeEventListener('mouseover', textHover, true);
 						textDoc.removeEventListener('click', textClick, true);
-						if (textDoc.body) { textDoc.body.style.cursor = ''; }
+						setDocMode(textDoc, null);
 					} catch (e) {}
 					textDoc = null;
 				}
