@@ -33,7 +33,7 @@ final class WPAB_Cloud {
 	private const KEY_SET_OPTION   = 'wpab_cloud_key_set_at';
 	private const PROJECT_OPTION   = 'wpab_cloud_project';
 
-	private const NAMESPACE = WPAB_REST_NAMESPACE;
+	private const NAMESPACE = 'wp-ai-builder/v1';
 
 	public static function init(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_page' ), 20 );
@@ -116,7 +116,7 @@ final class WPAB_Cloud {
 		if ( '' === $key ) {
 			return new WP_Error(
 				'wpab_cloud_not_connected',
-				'This site is not connected to the AI Builder cloud yet.',
+				'This site is not connected to the Meikero cloud yet.',
 				array( 'status' => 409 )
 			);
 		}
@@ -126,7 +126,7 @@ final class WPAB_Cloud {
 		if ( 0 !== strpos( $url, 'https://' ) ) {
 			return new WP_Error(
 				'wpab_cloud_insecure',
-				'The AI Builder endpoint must use HTTPS.',
+				'The Meikero endpoint must use HTTPS.',
 				array( 'status' => 400 )
 			);
 		}
@@ -173,20 +173,17 @@ final class WPAB_Cloud {
 		$data = json_decode( $raw, true );
 
 		if ( ! is_array( $data ) ) {
-			$msg = ( 404 === $code )
-				? 'That AI Builder endpoint was not found (HTTP 404). Deploy the latest app version to Vercel, then try again.'
-				: 'The AI Builder did not return JSON (HTTP ' . $code . ').';
 			return new WP_Error(
 				'wpab_cloud_bad_response',
-				$msg,
-				array( 'status' => $code > 0 ? $code : 502 )
+				'Meikero did not return JSON.',
+				array( 'status' => 502 )
 			);
 		}
 
 		if ( $code < 200 || $code >= 300 ) {
 			return new WP_Error(
 				'wpab_cloud_error',
-				isset( $data['error'] ) ? (string) $data['error'] : 'AI Builder request failed.',
+				isset( $data['error'] ) ? (string) $data['error'] : 'Meikero request failed.',
 				array( 'status' => $code )
 			);
 		}
@@ -205,7 +202,7 @@ final class WPAB_Cloud {
 		if ( '' === $key ) {
 			return new WP_Error(
 				'wpab_cloud_not_connected',
-				'This site is not connected to the AI Builder cloud yet.',
+				'This site is not connected to the Meikero cloud yet.',
 				array( 'status' => 409 )
 			);
 		}
@@ -219,7 +216,7 @@ final class WPAB_Cloud {
 		if ( 0 !== strpos( $url, 'https://' ) ) {
 			return new WP_Error(
 				'wpab_cloud_insecure',
-				'The AI Builder endpoint must use HTTPS.',
+				'The Meikero endpoint must use HTTPS.',
 				array( 'status' => 400 )
 			);
 		}
@@ -254,20 +251,17 @@ final class WPAB_Cloud {
 		$data = json_decode( $raw, true );
 
 		if ( ! is_array( $data ) ) {
-			$msg = ( 404 === $code )
-				? 'That AI Builder endpoint was not found (HTTP 404). Deploy the latest app version to Vercel, then try again.'
-				: 'The AI Builder did not return JSON (HTTP ' . $code . ').';
 			return new WP_Error(
 				'wpab_cloud_bad_response',
-				$msg,
-				array( 'status' => $code > 0 ? $code : 502 )
+				'Meikero did not return JSON.',
+				array( 'status' => 502 )
 			);
 		}
 
 		if ( $code < 200 || $code >= 300 ) {
 			return new WP_Error(
 				'wpab_cloud_error',
-				isset( $data['error'] ) ? (string) $data['error'] : 'AI Builder request failed.',
+				isset( $data['error'] ) ? (string) $data['error'] : 'Meikero request failed.',
 				array( 'status' => $code )
 			);
 		}

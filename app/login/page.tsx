@@ -40,11 +40,11 @@ export default function LoginPage() {
       <div className="w-full max-w-md border border-neutral-200 bg-white rounded-2xl p-8">
         <div className="mb-8">
           <p className="text-[11px] uppercase tracking-wide text-neutral-400 mb-2">
-            ESCANOR
+            AI WEBSITE BUILDER
           </p>
 
           <h1 className="text-2xl font-semibold tracking-tight">
-            AI Builder
+            Meikero
           </h1>
 
           <p className="text-neutral-500 mt-2">

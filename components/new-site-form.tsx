@@ -104,7 +104,7 @@ export default function NewSiteForm() {
             className="field px-3 py-2 text-sm"
           />
           <p className="mt-1 text-xs text-neutral-500">
-            Generate it in WordPress under ESCANOR → Bridge settings. It is
+            Generate it in WordPress under Meikero → Bridge settings. It is
             encrypted before being stored.
           </p>
         </div>

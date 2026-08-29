@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ESCANOR AI Builder",
+  title: "Meikero",
   description: "AI development workspace for WordPress projects.",
 };
 

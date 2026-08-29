@@ -47,8 +47,8 @@ final class WPAB_Admin {
 		// submenu. The submenu parents used by Cloud / Snapshots / Log /
 		// Editor (all 'wp-ai-builder') stay intact.
 		add_menu_page(
-			'ESCANOR AI Builder',
-			'ESCANOR',
+			'Meikero',
+			'Meikero',
 			'manage_options',
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_dashboard' ),
@@ -58,7 +58,7 @@ final class WPAB_Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			'ESCANOR — Dashboard',
+			'Meikero — Dashboard',
 			'Dashboard',
 			'manage_options',
 			self::MENU_SLUG,
@@ -67,7 +67,7 @@ final class WPAB_Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			'ESCANOR — AI Editor',
+			'Meikero — AI Editor',
 			'AI Editor',
 			'manage_options',
 			self::EDITOR_SLUG,
@@ -76,7 +76,7 @@ final class WPAB_Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			'AI Builder — Bridge',
+			'Meikero — Bridge',
 			'Bridge settings',
 			'manage_options',
 			self::BRIDGE_SLUG,
@@ -85,7 +85,7 @@ final class WPAB_Admin {
 
 		add_submenu_page(
 			self::MENU_SLUG,
-			'AI Builder — Activity log',
+			'Meikero — Activity log',
 			'Activity log',
 			'manage_options',
 			self::LOG_SLUG,
@@ -257,12 +257,12 @@ final class WPAB_Admin {
 			</style>
 
 			<h1 style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-				<span>ESCANOR — Dashboard</span>
+				<span>Meikero — Dashboard</span>
 				<a class="wpabd-btn" href="<?php echo $editor; ?>">Open AI Editor →</a>
 			</h1>
 
 			<?php if ( ! $connected ) : ?>
-				<div class="wpabd-panel"><p>This site is not connected to the AI Builder cloud yet. Open <a href="<?php echo esc_url( admin_url( 'admin.php?page=wp-ai-builder-bridge' ) ); ?>">Bridge settings</a> to connect.</p></div>
+				<div class="wpabd-panel"><p>This site is not connected to the Meikero cloud yet. Open <a href="<?php echo esc_url( admin_url( 'admin.php?page=wp-ai-builder-bridge' ) ); ?>">Bridge settings</a> to connect.</p></div>
 			<?php elseif ( is_wp_error( $report ) ) : ?>
 				<div class="wpabd-panel"><p>Could not load usage: <?php echo esc_html( $report->get_error_message() ); ?></p></div>
 			<?php else :
@@ -325,9 +325,9 @@ final class WPAB_Admin {
 		$theme     = WPAB_Scopes::theme();
 		?>
 		<div class="wrap">
-			<h1>AI Builder — Bridge</h1>
+			<h1>Meikero — Bridge</h1>
 			<p class="description">
-				Bridge <?php echo esc_html( WPAB_VERSION ); ?> connects this site to the AI Builder.
+				Bridge <?php echo esc_html( WPAB_VERSION ); ?> connects this site to Meikero.
 				The builder reads the active theme and the site's content so the AI Editor can
 				inspect and answer questions about this site.
 			</p>
@@ -440,7 +440,7 @@ final class WPAB_Admin {
 		$entries = WPAB_Log::all();
 		?>
 		<div class="wrap">
-			<h1>AI Builder — Activity log</h1>
+			<h1>Meikero — Activity log</h1>
 			<p class="description">The last <?php echo esc_html( (string) count( $entries ) ); ?> bridge events on this site. File contents and secrets are never logged.</p>
 
 			<?php if ( 'log_cleared' === self::notice() ) : ?>

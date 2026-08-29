@@ -1335,7 +1335,7 @@ final class WPAB_Editor {
 			// Not connected to the cloud yet: show a notice, disable chat.
 			if (!cfg.connected) {
 				var n = $('wpab-ed-notice');
-				if (n) { n.hidden = false; n.innerHTML = 'This site is not connected to the AI Builder cloud yet. <a href="' + cfg.cloudPage + '">Connect it</a> to use the chat.'; }
+				if (n) { n.hidden = false; n.innerHTML = 'This site is not connected to the Meikero cloud yet. <a href="' + cfg.cloudPage + '">Connect it</a> to use the chat.'; }
 				setBusy(true);
 				if (input) { input.disabled = true; }
 			}

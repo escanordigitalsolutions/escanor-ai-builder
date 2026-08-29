@@ -77,7 +77,7 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
-              ESCANOR · AI Builder
+              MEIKERO
             </p>
             <h1 className="mt-1.5 text-[1.7rem] font-semibold tracking-tight text-neutral-900">
               Your sites

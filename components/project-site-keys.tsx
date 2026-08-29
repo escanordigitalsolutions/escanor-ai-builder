@@ -182,7 +182,7 @@ export default function ProjectSiteKeys({
 
           <p className="mt-3 text-[11px] text-neutral-500">
             Paste it into <span className="text-neutral-700">
-              WordPress → AI Builder → Cloud connection
+              WordPress → Meikero → Bridge settings
             </span>.
           </p>
         </div>
