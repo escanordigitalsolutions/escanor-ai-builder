@@ -117,6 +117,26 @@ export async function POST(request: NextRequest) {
 
   const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
 
+  // Optional execution plan from the edit-plan stage: a queue of steps the
+  // model follows in order.
+  const planSteps: { title: string; detail: string; files: string[] }[] = [];
+  if (Array.isArray(body.plan)) {
+    for (const raw of (body.plan as unknown[]).slice(0, 8)) {
+      const st = raw as { title?: unknown; detail?: unknown; files?: unknown };
+      const title = typeof st?.title === "string" ? st.title.trim().slice(0, 80) : "";
+      if (!title) continue;
+      planSteps.push({
+        title,
+        detail: typeof st?.detail === "string" ? st.detail.trim().slice(0, 240) : "",
+        files: Array.isArray(st?.files)
+          ? (st.files as unknown[])
+              .filter((f): f is string => typeof f === "string" && f.trim().length > 0)
+              .slice(0, 6)
+          : [],
+      });
+    }
+  }
+
   if (!instruction) {
     return NextResponse.json(
       { success: false, error: "An instruction is required." },
@@ -171,7 +191,25 @@ export async function POST(request: NextRequest) {
     const result = await runToolLoop({
       model: editModel,
       system: INSTRUCTIONS,
-      messages: [{ role: "user", content: `Instruction: ${instruction}` + structureBlock }],
+      messages: [
+        {
+          role: "user",
+          content:
+            `Instruction: ${instruction}` +
+            (planSteps.length
+              ? `\n\nPLAN (your work queue — execute the steps in this order, one by one):\n` +
+                planSteps
+                  .map(
+                    (st, i) =>
+                      `${i + 1}. ${st.title}${st.detail ? " — " + st.detail : ""}${
+                        st.files.length ? ` (files: ${st.files.join(", ")})` : ""
+                      }`
+                  )
+                  .join("\n")
+              : "") +
+            structureBlock,
+        },
+      ],
       tools,
       maxTokens: 16000,
       maxRounds: 10,
@@ -212,6 +250,7 @@ export async function POST(request: NextRequest) {
     const parsed = parseOutput(result.text);
     void logUsage(context.projectId, "edit", editModel, result.usage, {
       instruction: instruction.slice(0, 400),
+      planSteps: planSteps.map((st) => st.title),
       inspected: inspected.slice(0, 12),
       changed: parsed.files.map((f) => f.path).slice(0, 12),
       summary: parsed.summary.slice(0, 300),

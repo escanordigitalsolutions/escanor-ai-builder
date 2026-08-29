@@ -14,6 +14,7 @@ type Op = {
 };
 
 const STAGE_LABELS: Record<string, string> = {
+  editplan: "Edit plan",
   concept: "Concept",
   critique: "Design review",
   design: "Design",

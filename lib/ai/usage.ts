@@ -8,6 +8,7 @@ import type { Usage } from "./provider";
  */
 
 export type UsageStage =
+  | "editplan"
   | "concept"
   | "critique"
   | "design"

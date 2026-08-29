@@ -48,6 +48,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/edit-plan',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_edit_plan' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/chat/history',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -387,7 +396,11 @@ final class WPAB_Editor {
 			$instruction = substr( $instruction, 0, 2000 );
 		}
 
-		$result = WPAB_Cloud::request( 'agent/edit-theme', array( 'instruction' => $instruction ), 180 );
+		$edit_payload = array( 'instruction' => $instruction );
+		if ( isset( $params['plan'] ) && is_array( $params['plan'] ) ) {
+			$edit_payload['plan'] = array_slice( $params['plan'], 0, 8 );
+		}
+		$result = WPAB_Cloud::request( 'agent/edit-theme', $edit_payload, 180 );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -845,6 +858,17 @@ final class WPAB_Editor {
 		return is_array( $params ) ? $params : array();
 	}
 
+	/** Edit planning: the cheap model turns an instruction into a numbered plan. */
+	public static function rest_edit_plan( WP_REST_Request $request ) {
+		$params      = self::json_params( $request );
+		$instruction = isset( $params['instruction'] ) ? trim( (string) $params['instruction'] ) : '';
+		if ( '' === $instruction ) {
+			return new WP_Error( 'wpab_plan_empty', 'An instruction is required.', array( 'status' => 400 ) );
+		}
+		$result = WPAB_Cloud::request( 'agent/edit-plan', array( 'instruction' => $instruction ), 90 );
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
 	/** Chat archive: list conversations, or fetch one conversation's messages. */
 	public static function rest_chat_history( WP_REST_Request $request ) {
 		$params  = self::json_params( $request );
@@ -996,6 +1020,7 @@ final class WPAB_Editor {
 			'restSession'     => esc_url_raw( rest_url( self::NAMESPACE . '/cloud/session' ) ),
 			'restChat'        => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat' ) ),
 			'restChatHistory' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat/history' ) ),
+			'restEditPlan'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-plan' ) ),
 			'restContext'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/context' ) ),
 			'restCreateTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/create-theme' ) ),
 			'restBuildPlan'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/plan' ) ),
@@ -1126,17 +1151,17 @@ final class WPAB_Editor {
 			#wpcontent { margin-left: 0 !important; }
 			.wpab-ed { position: fixed; inset: 0; z-index: 99990; background: var(--ed-bg); color: var(--ed-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 				--ed-bg: #f6f5f3; --ed-surface: #ffffff; --ed-surface-2: #faf9f7; --ed-border: #e8e5df; --ed-border-strong: #d9d5cc;
-				--ed-text: #1b1a18; --ed-muted: #6f6b64; --ed-faint: #9b968d; --ed-accent: #6366f1; --ed-accent-2: #8b5cf6; --ed-accent-soft: rgba(99,102,241,.1);
+				--ed-text: #1b1a18; --ed-muted: #6f6b64; --ed-faint: #9b968d; --ed-accent: #141312; --ed-accent-2: #454340; --ed-accent-soft: rgba(20,19,18,.08);
 				--ed-radius: 14px; --ed-shadow: 0 1px 2px rgba(20,18,16,.05), 0 10px 30px rgba(20,18,16,.09); --ed-shadow-lg: 0 24px 70px rgba(20,18,16,.20); }
 			.wpab-ed__float { position: absolute; top: 14px; right: 16px; z-index: 20; display: flex; align-items: center; gap: 10px; }
 			.wpab-ed__exit { color: var(--ed-muted); text-decoration: none; font-size: 13px; border: 1px solid var(--ed-border); border-radius: 9px; padding: 7px 14px; background: rgba(255,255,255,.85); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--ed-shadow); }
 			.wpab-ed__exit:hover { background: #fff; color: var(--ed-text); }
-			.wpab-ed__newtheme { background: var(--ed-accent); color: #fff; border: 0; border-radius: 9px; padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px rgba(99,102,241,.3); }
-			.wpab-ed__newtheme:hover { background: #5457e5; }
+			.wpab-ed__newtheme { background: var(--ed-accent); color: #fff; border: 0; border-radius: 9px; padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px rgba(20,19,18,.22); }
+			.wpab-ed__newtheme:hover { background: #000; }
 			.wpab-ed__wizard { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 620px at 50% -12%, rgba(99,102,241,.14), transparent 60%), rgba(28,26,22,.32); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 24px; }
 			.wpab-ed__wizard[hidden] { display: none !important; }
 			.wpab-ed__wcard { position: relative; width: 100%; max-width: 500px; max-height: 88vh; overflow-y: auto; background: rgba(255,255,255,.86); border: 1px solid rgba(20,18,16,.08); border-radius: 20px; padding: 28px; box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); animation: wpab-ed-cardin .45s cubic-bezier(.2,.75,.25,1); }
-			.wpab-ed__wcard::before { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1px; background: linear-gradient(135deg, rgba(99,102,241,.4), rgba(139,92,246,.12) 42%, transparent 72%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
+			.wpab-ed__wcard::before { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1px; background: linear-gradient(135deg, rgba(20,19,18,.28), rgba(20,19,18,.08) 42%, transparent 72%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
 			@keyframes wpab-ed-cardin { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
 			.wpab-ed__winput + .wpab-ed__wlabel { margin-top: 14px; }
 			.wpab-ed__wlabel { margin-top: 14px; }
@@ -1151,7 +1176,7 @@ final class WPAB_Editor {
 			.wpab-ed__step.is-active { background: var(--ed-accent-soft); color: var(--ed-text); }
 			.wpab-ed__step.is-done { color: var(--ed-muted); }
 			.wpab-ed__stepicon { position: relative; flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--ed-border-strong); box-sizing: border-box; transition: border-color .3s ease, background .3s ease; }
-			.wpab-ed__step.is-active .wpab-ed__stepicon { border-color: rgba(99,102,241,.25); border-top-color: var(--ed-accent); border-right-color: var(--ed-accent); animation: wpab-ed-spin .7s linear infinite; }
+			.wpab-ed__step.is-active .wpab-ed__stepicon { border-color: rgba(20,19,18,.2); border-top-color: var(--ed-accent); border-right-color: var(--ed-accent); animation: wpab-ed-spin .7s linear infinite; }
 			.wpab-ed__step.is-done .wpab-ed__stepicon { border-color: var(--ed-accent); background: var(--ed-accent); animation: none; }
 			.wpab-ed__step.is-done .wpab-ed__stepicon::after { content: ""; position: absolute; left: 6px; top: 2px; width: 4px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
 			.wpab-ed__steptext { flex: 1 1 auto; }
@@ -1196,7 +1221,7 @@ final class WPAB_Editor {
 			.wpab-ed__wresult.is-ok { color: #067647; }
 			.wpab-ed__wactions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 			.wpab-ed__wbtn { appearance: none; border: 0; border-radius: 10px; padding: 10px 20px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--ed-accent); color: #fff; box-shadow: 0 6px 18px rgba(99,102,241,.28); }
-			.wpab-ed__wbtn:hover:not(:disabled) { background: #5457e5; }
+			.wpab-ed__wbtn:hover:not(:disabled) { background: #000; }
 			.wpab-ed__wbtn:disabled { opacity: .55; cursor: default; }
 			.wpab-ed__wbtn--ghost { background: transparent; border: 1px solid var(--ed-border-strong); color: var(--ed-muted); box-shadow: none; }
 			.wpab-ed__wbtn--ghost:hover:not(:disabled) { background: var(--ed-surface-2); color: var(--ed-text); }
@@ -1237,15 +1262,17 @@ final class WPAB_Editor {
 			.wpab-ed__new { background: none; border: 0; color: var(--ed-muted); font-size: 12px; cursor: pointer; }
 			.wpab-ed__new:hover { color: var(--ed-text); }
 			.wpab-ed__send { appearance: none; border: 0; border-radius: 9px; padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--ed-accent); color: #fff; }
-			.wpab-ed__send:hover:not(:disabled) { background: #5457e5; }
+			.wpab-ed__send:hover:not(:disabled) { background: #000; }
 			.wpab-ed__send:disabled { opacity: .55; cursor: default; }
 			.wpab-ed__undo { margin-top: 8px; appearance: none; border: 1px solid var(--ed-border-strong); border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--ed-surface); color: var(--ed-text); }
 			.wpab-ed__undo:hover:not(:disabled) { border-color: var(--ed-accent); color: var(--ed-accent); }
 			.wpab-ed__undo:disabled { opacity: .55; cursor: default; }
 			.wpab-ed__editdone { font-weight: 600; color: var(--ed-text); }
+			.wpab-ed__plansteps { margin: 8px 0 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.6; color: var(--ed-muted); }
+			.wpab-ed__plansteps li { margin-bottom: 3px; }
 			.wpab-ed__chips2 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 			.wpab-ed__chipslead { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ed-faint); margin-right: 2px; }
-			.wpab-ed__filechip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--ed-accent-soft); border: 1px solid rgba(99,102,241,.2); color: var(--ed-accent); font-size: 11.5px; font-weight: 600; }			.wpab-ed__filechip--soft { opacity: .6; }
+			.wpab-ed__filechip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--ed-accent-soft); border: 1px solid rgba(20,19,18,.14); color: var(--ed-accent); font-size: 11.5px; font-weight: 600; }			.wpab-ed__filechip--soft { opacity: .6; }
 			.wpab-ed__editdone + .wpab-ed__chips2 + .wpab-ed__undo, .wpab-ed__chips2 + .wpab-ed__undo { margin-top: 10px; }
 		.wpab-ed__preview { display: flex; flex-direction: column; }
 		.wpab-ed__devbar { display: flex; justify-content: center; gap: 2px; padding: 0; background: transparent; }
@@ -1429,19 +1456,50 @@ final class WPAB_Editor {
 					mbody.appendChild(b);
 				}
 			}
+			function addPlanMessage(plan) {
+				var wrap = addMessage('assistant', '');
+				var mbody = wrap.querySelector('.wpab-msg__body');
+				if (!mbody) { return; }
+				var head = document.createElement('div');
+				head.className = 'wpab-ed__editdone';
+				head.textContent = 'Plan' + (plan.summary ? ': ' + plan.summary : '');
+				mbody.appendChild(head);
+				var ol = document.createElement('ol');
+				ol.className = 'wpab-ed__plansteps';
+				for (var pi = 0; pi < plan.steps.length; pi++) {
+					var li = document.createElement('li');
+					var st = plan.steps[pi];
+					li.textContent = st.title + (st.detail ? ' — ' + st.detail : '');
+					ol.appendChild(li);
+				}
+				mbody.appendChild(ol);
+			}
 			function runEdit(instruction) {
 				var typing = addTyping();
 				var t = typing.querySelector('.wpab-typing');
-				if (t) { t.textContent = 'Reading the theme files…'; }
-				var phase = 0;
-				var phases = ['Reading the theme files…', 'Understanding the change…', 'Writing the update…', 'Almost there…'];
-				var ticker = setInterval(function () {
-					phase = Math.min(phase + 1, phases.length - 1);
-					if (t) { t.textContent = phases[phase]; }
-					frameBusy(true, phases[phase]);
-				}, 9000);
-				frameBusy(true, phases[0]);
-				return api('POST', cfg.restEditTheme, { instruction: instruction }).then(function (out) {
+				if (t) { t.textContent = 'Planning the change…'; }
+				frameBusy(true, 'Planning the change…');
+				var planPromise = cfg.restEditPlan
+					? api('POST', cfg.restEditPlan, { instruction: instruction }).then(function (pOut) {
+						return (pOut.ok && pOut.data && pOut.data.success && pOut.data.plan) ? pOut.data.plan : null;
+					}).catch(function () { return null; })
+					: Promise.resolve(null);
+				return planPromise.then(function (plan) {
+					if (plan && plan.steps && plan.steps.length) { addPlanMessage(plan); }
+					var phases = (plan && plan.steps && plan.steps.length)
+						? plan.steps.map(function (st, i) { return 'Step ' + (i + 1) + '/' + plan.steps.length + ' — ' + st.title + '…'; })
+						: ['Reading the theme files…', 'Understanding the change…', 'Writing the update…', 'Almost there…'];
+					var phase = 0;
+					if (t) { t.textContent = phases[0]; }
+					frameBusy(true, phases[0]);
+					var ticker = setInterval(function () {
+						phase = Math.min(phase + 1, phases.length - 1);
+						if (t) { t.textContent = phases[phase]; }
+						frameBusy(true, phases[phase]);
+					}, 9000);
+					var payload = { instruction: instruction };
+					if (plan && plan.steps) { payload.plan = plan.steps; }
+					return api('POST', cfg.restEditTheme, payload).then(function (out) {
 					clearInterval(ticker);
 					typing.remove();
 					if (!out.ok || !out.data || out.data.success === false) {
@@ -1451,11 +1509,12 @@ final class WPAB_Editor {
 					}
 					addUndoMessage(out.data.summary, out.data.files, out.data.inspected);
 					reloadPreview();
-				}).catch(function () {
-					clearInterval(ticker);
-					frameBusy(false);
-					typing.remove();
-					addMessage('assistant', 'Network error applying the change.');
+					}).catch(function () {
+						clearInterval(ticker);
+						frameBusy(false);
+						typing.remove();
+						addMessage('assistant', 'Network error applying the change.');
+					});
 				});
 			}
 
