@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
   let usage = { inputTokens: 0, outputTokens: 0 };
   try {
     const gen = await generateText({
-      model: pickModel(modelConfig, "build"),
+      model: pickModel(modelConfig, "plan"),
       system: INSTRUCTIONS,
       input: `Brief:\n${JSON.stringify(brief, null, 2)}`,
       maxTokens: 8000,

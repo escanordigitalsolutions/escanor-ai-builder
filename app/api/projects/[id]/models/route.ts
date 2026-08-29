@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-const TIERS = ["build", "edit", "chat", "review"] as const;
+const TIERS = ["plan", "build", "edit", "chat", "review"] as const;
 
 export async function GET(
   _request: NextRequest,

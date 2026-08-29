@@ -3,18 +3,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Tier = "build" | "edit" | "chat" | "review";
+type Tier = "plan" | "build" | "edit" | "chat" | "review";
 type Cfg = Partial<Record<Tier, string>>;
 
 const TIERS: { key: Tier; label: string; hint: string }[] = [
   {
-    key: "build",
-    label: "Theme generation",
-    hint: "Blueprint + files. Runs on OpenAI or Claude.",
+    key: "plan",
+    label: "Blueprint & design plan",
+    hint: "The creative step — pick your STRONGEST model here. Empty = same as file generation.",
   },
-  { key: "edit", label: "Edits & design", hint: "Chat edits + design elevation. OpenAI or Claude." },
-  { key: "chat", label: "Chat", hint: "AI Editor conversation. OpenAI or Claude." },
-  { key: "review", label: "Quality check", hint: "Correctness review pass. OpenAI or Claude." },
+  {
+    key: "build",
+    label: "File generation",
+    hint: "Writes the theme files from the blueprint — a fast, cheap model does fine.",
+  },
+  { key: "edit", label: "Edits & design", hint: "Chat edits + design elevation. A strong model pays off here too." },
+  { key: "chat", label: "Chat", hint: "AI Editor conversation — fast model recommended." },
+  { key: "review", label: "Quality check", hint: "Correctness review pass." },
 ];
 
 const SUGGESTIONS = [
@@ -23,6 +28,7 @@ const SUGGESTIONS = [
   "gpt-5.6-terra",
   "claude-haiku-4-5",
   "claude-sonnet-4-5",
+  "claude-sonnet-5",
 ];
 
 export default function ProjectModelPanel({

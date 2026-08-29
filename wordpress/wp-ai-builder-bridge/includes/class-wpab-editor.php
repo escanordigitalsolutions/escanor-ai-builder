@@ -1490,6 +1490,7 @@ final class WPAB_Editor {
 				if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
 
 				var built = [];
+				var repairsLeft = 2; // single-file regenerations allowed when the writer rejects a file
 				var doneMap = {};
 				for (var di = 0; di < (prevBuilt || []).length; di++) {
 					var bf = prevBuilt[di];
@@ -1592,7 +1593,33 @@ final class WPAB_Editor {
 						}, sig).then(function (cOut) {
 							if (!alive(myRun)) { return; }
 							if (!cOut.ok || !cOut.data || cOut.data.success === false) {
-								throw new Error(errText(cOut, 'Could not write the theme.'));
+								// The writer validates every file; when it names ONE bad file
+								// (e.g. "PHP syntax error in 404.php"), regenerate just that
+								// file and retry the write instead of discarding the whole run.
+								var wmsg = String(errText(cOut, 'Could not write the theme.'));
+								var bad = null;
+								var fm = wmsg.match(/([A-Za-z0-9_\-\/.]+\.(?:php|css|js))/);
+								if (fm) {
+									for (var xi = 0; xi < built.length; xi++) {
+										var bpp = built[xi].path;
+										if (bpp === fm[1] || (fm[1].length > bpp.length && fm[1].slice(-bpp.length) === bpp)) { bad = bpp; break; }
+									}
+								}
+								if (repairsLeft > 0 && bad) {
+									repairsLeft--;
+									stepState('write', 'active', 'repair');
+									setBuildDetail('Regenerating ' + friendlyName(bad) + ' — ' + wmsg.slice(0, 70) + '…');
+									built = built.filter(function (f) { return f.path !== bad; });
+									delete doneMap[bad];
+									saveGenState(brand, blueprint, built);
+									return fetchBatchFiles([bad], 0, 1).then(function (got2) {
+										if (!alive(myRun)) { return; }
+										for (var gk = 0; gk < got2.length; gk++) { built.push(got2[gk]); doneMap[got2[gk].path] = 1; }
+										saveGenState(brand, blueprint, built);
+										return runBatch(totalB);
+									});
+								}
+								throw new Error(wmsg);
 							}
 							themeWritten = true;
 							clearGenState();
