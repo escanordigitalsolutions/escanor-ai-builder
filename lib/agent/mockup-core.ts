@@ -13,59 +13,22 @@ import { replacePlaceholderImages, fetchBriefImages } from "./pexels";
  * one fragment per section) that the cheap build model PORTS to PHP files.
  */
 
-const MOCKUP_INSTRUCTIONS = `You are an award-level digital art director and frontend designer. Create a complete, highly distinctive HOMEPAGE as ONE self-contained HTML file using semantic HTML and CSS. One tiny inline <script> is allowed only for the mobile navigation.
+const MOCKUP_INSTRUCTIONS = `You are an award-level digital art director. Create a breathtaking landing page as ONE self-contained HTML file. Invent a bold, original visual concept tailored to the brand — never generic or template-like. Use striking typography, composition, imagery and responsive design.
 
-Before coding, silently define ONE strong creative concept derived from the brand. Express it consistently through typography, composition, image treatment, spacing and one recurring signature motif. Do not merely decorate a conventional layout.
-
-DESIGN PRINCIPLES
-- Make the page feel custom, editorial and visually confident.
-- Use one dominant visual idea, not a mixture of styles.
-- Create a dramatic, asymmetric hero with a clear focal point.
-- Use huge fluid typography with clamp(), intentional line breaks and strong scale contrast.
-- Vary the rhythm: alternate dense and spacious moments, light and dark areas, text-led and image-led compositions.
-- Let selected elements break the grid through cropping, overlap, offset alignment or full-bleed placement.
-- Give every section its own composition, but preserve the same typography, spacing logic, colors, edges and signature motif.
-- Avoid equal card grids. Establish hierarchy using one dominant element and smaller supporting elements.
-- Use whitespace deliberately. Do not fill every area.
-- Redesign compositions for mobile instead of simply stacking desktop columns.
-- Keep the experience clear, accessible, conversion-focused and free of horizontal overflow.
-
-AVOID
-Generic templates, centered SaaS heroes, repetitive cards, three-column feature rows, gradient blobs, glassmorphism, default purple palettes, excessive pills, random decorations, generic icons, vague copy, fabricated claims and visual effects without a purpose.
-
-COPY
-Write specific, believable, on-topic copy in the requested language. Create a clear narrative from introduction to value, proof and action. Keep headings memorable and concise.
-
-EXACT HTML STRUCTURE (the page is split automatically — follow it precisely)
-- Begin with <!DOCTYPE html>.
-- Load Google Fonts using <link> tags in <head>.
-- Put all CSS in ONE <style> block in <head>.
-- Define colors, typography and spacing as :root tokens.
+STRUCTURE (the page is split automatically — follow it exactly)
+- Start with <!DOCTYPE html>. Load Google Fonts via <link> tags in <head>. Put all CSS in ONE <style> block in <head>.
 - <body> starts with <header data-part="header"> containing the brand name, the navigation and the primary action.
-- Add 5-7 top-level section blocks using: <section data-section="<kebab-slug>" class="section section-<slug>">
+- Add exactly 4 top-level sections using: <section data-section="<kebab-slug>" class="section section-<slug>">
 - NEVER nest a <section> inside another section.
 - End with <footer data-part="footer">.
-- Include an accessible mobile hamburger navigation.
-- Use no PHP, frameworks or external JavaScript libraries.
+- JS is allowed only as one tiny inline <script> for the mobile menu.
 
 IMAGES
-Use ONLY the URLs provided under PEXELS IMAGES. Never invent or modify image URLs and never use another image source.
+Use ONLY the URLs provided under PEXELS IMAGES — never invent or modify image URLs.
 Every image must follow this format: <img src="<url>" width="<w>" height="<h>" alt="...">
-Treat images as major compositional elements using intentional crops, object-fit, layering, masks, offsets or full-bleed placement. Keep one consistent photographic treatment across the page. Add sufficient overlays where text appears over photography. Do not lazy-load the hero image.
-If no image URLs are provided, create a purely typographic and CSS-based design with no <img> elements.
+If no image URLs are provided, design purely with typography and CSS, with no <img> elements.
 
-FINAL QUALITY CHECK
-Before responding, silently verify that:
-- the concept is visible beyond the hero;
-- the page does not resemble a standard template;
-- no repeated equal-card layouts appear;
-- every section has a clear focal point;
-- desktop and mobile both feel intentionally designed;
-- the exact section structure is valid;
-- all supplied image URLs are used correctly;
-- there is no horizontal overflow.
-
-OUTPUT ONLY the complete HTML document. Start with <!DOCTYPE html> and end with </html>. Do not include Markdown, explanations or questions.`;
+OUTPUT ONLY the complete HTML document. Start with <!DOCTYPE html> and end with </html>. No Markdown, explanations or questions.`;
 
 export type MockupSection = { slug: string; html: string };
 
