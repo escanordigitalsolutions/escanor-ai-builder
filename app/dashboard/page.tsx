@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import NewSiteForm from "@/components/new-site-form";
+import DashboardCardActions from "@/components/dashboard-card-actions";
 
 type SiteRow = {
   site_url: string | null;
@@ -127,13 +128,19 @@ export default async function DashboardPage() {
                         {site?.site_url ?? "No WordPress site connected"}
                       </p>
                     </div>
-                    <span
-                      className={
-                        "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium " +
-                        (fresh ? "pill-on" : "pill-off")
-                      }
-                    >
-                      {label}
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <span
+                        className={
+                          "rounded-full px-2.5 py-1 text-[11px] font-medium " +
+                          (fresh ? "pill-on" : "pill-off")
+                        }
+                      >
+                        {label}
+                      </span>
+                      <DashboardCardActions
+                        projectId={project.id}
+                        projectName={project.name}
+                      />
                     </span>
                   </div>
 
@@ -143,6 +150,7 @@ export default async function DashboardPage() {
                     <span>PHP: {site?.php_version ?? "—"}</span>
                     <span>Bridge: {site?.bridge_version ?? "—"}</span>
                     <span>Created {fmtDate(project.created_at)}</span>
+                    <span>Last seen {fmtDate(site?.last_connected_at)}</span>
                   </div>
                 </Link>
               );

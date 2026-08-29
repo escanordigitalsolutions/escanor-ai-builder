@@ -73,13 +73,33 @@ export async function DELETE(
     }
   }
 
-  const { error: projectError } = await service.from("projects").delete().eq("id", id);
+  // The signed-in user's client first (RLS delete policy); the service client
+  // as fallback. Either way, verify a row actually went away.
+  const { data: userDeleted } = await supabase
+    .from("projects")
+    .delete()
+    .eq("id", id)
+    .select("id");
 
-  if (projectError) {
-    return NextResponse.json(
-      { success: false, error: "Could not delete the project: " + projectError.message },
-      { status: 500 }
-    );
+  if (!userDeleted || userDeleted.length === 0) {
+    const { data: svcDeleted, error: projectError } = await service
+      .from("projects")
+      .delete()
+      .eq("id", id)
+      .select("id");
+
+    if (projectError || !svcDeleted || svcDeleted.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Could not delete the project: " +
+            (projectError?.message ?? "no delete permission") +
+            ' — in Supabase run: grant all on all tables in schema public to service_role;',
+        },
+        { status: 500 }
+      );
+    }
   }
 
   return NextResponse.json({ success: true });

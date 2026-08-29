@@ -89,7 +89,7 @@ const DEFAULT_PRICING: Record<string, ModelPricing> = {
   "claude-3-opus": { in: 15, out: 75 },
 };
 
-function priceFor(
+export function priceFor(
   model: string,
   pricing: Record<string, ModelPricing>
 ): ModelPricing | null {

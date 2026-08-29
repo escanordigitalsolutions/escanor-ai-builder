@@ -21,6 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class WPAB_Admin {
 
 	private const MENU_SLUG      = 'wp-ai-builder';
+	private const EDITOR_SLUG    = 'wp-ai-builder-editor';
 	private const BRIDGE_SLUG    = 'wp-ai-builder-bridge';
 	private const LOG_SLUG       = 'wp-ai-builder-log';
 
@@ -50,9 +51,18 @@ final class WPAB_Admin {
 			'ESCANOR',
 			'manage_options',
 			self::MENU_SLUG,
-			array( 'WPAB_Editor', 'render_page' ),
+			array( __CLASS__, 'render_dashboard' ),
 			'dashicons-superhero',
 			58
+		);
+
+		add_submenu_page(
+			self::MENU_SLUG,
+			'ESCANOR — Dashboard',
+			'Dashboard',
+			'manage_options',
+			self::MENU_SLUG,
+			array( __CLASS__, 'render_dashboard' )
 		);
 
 		add_submenu_page(
@@ -60,7 +70,7 @@ final class WPAB_Admin {
 			'ESCANOR — AI Editor',
 			'AI Editor',
 			'manage_options',
-			self::MENU_SLUG,
+			self::EDITOR_SLUG,
 			array( 'WPAB_Editor', 'render_page' )
 		);
 
@@ -198,6 +208,112 @@ final class WPAB_Admin {
 	/* ---------------------------------------------------------------------
 	 * Main page
 	 * ------------------------------------------------------------------ */
+
+	/** First menu section: the usage & prices dashboard. */
+	public static function render_dashboard(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		$connected = class_exists( 'WPAB_Cloud' ) && WPAB_Cloud::has_key();
+		$report    = $connected ? WPAB_Cloud::request( 'agent/usage', array(), 20 ) : null;
+		$editor    = esc_url( admin_url( 'admin.php?page=' . self::EDITOR_SLUG ) );
+
+		$stage_labels = array(
+			'design' => 'Design (mockup)',
+			'plan'   => 'Page plan',
+			'build'  => 'File generation',
+			'edit'   => 'Edits',
+			'chat'   => 'Chat',
+			'review' => 'Quality check',
+		);
+
+		$fmt = static function ( $n ) {
+			$n = (float) $n;
+			if ( $n >= 1000000 ) { return round( $n / 1000000, 1 ) . 'M'; }
+			if ( $n >= 1000 ) { return round( $n / 1000, 1 ) . 'k'; }
+			return (string) (int) $n;
+		};
+		$money = static function ( $n ) {
+			if ( null === $n || '' === $n ) { return '—'; }
+			$n = (float) $n;
+			return '$' . ( ( $n > 0 && $n < 0.01 ) ? number_format( $n, 4 ) : number_format( $n, 2 ) );
+		};
+		?>
+		<div class="wrap" style="max-width:1080px;">
+			<style>
+				.wpabd-cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin:18px 0; }
+				.wpabd-card { background:#fff; border:1px solid rgba(20,19,18,.08); border-radius:14px; padding:14px 16px; }
+				.wpabd-card .l { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#8a8783; }
+				.wpabd-card .v { font-size:22px; font-weight:600; color:#141312; margin-top:4px; }
+				.wpabd-panel { background:#fff; border:1px solid rgba(20,19,18,.08); border-radius:14px; padding:16px 18px; margin-bottom:14px; }
+				.wpabd-panel h2 { margin:0 0 10px; font-size:13px; }
+				.wpabd-table { width:100%; border-collapse:collapse; font-size:12px; }
+				.wpabd-table th { text-align:right; font-weight:400; color:#8a8783; padding:4px 8px; }
+				.wpabd-table th:first-child, .wpabd-table td:first-child { text-align:left; padding-left:0; }
+				.wpabd-table td { text-align:right; padding:6px 8px; border-top:1px solid rgba(20,19,18,.06); color:#3d3b38; }
+				.wpabd-btn { display:inline-block; background:#141312; color:#fff !important; border-radius:10px; padding:9px 18px; font-size:13px; font-weight:600; text-decoration:none; }
+				.wpabd-btn:hover { background:#000; }
+			</style>
+
+			<h1 style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+				<span>ESCANOR — Dashboard</span>
+				<a class="wpabd-btn" href="<?php echo $editor; ?>">Open AI Editor →</a>
+			</h1>
+
+			<?php if ( ! $connected ) : ?>
+				<div class="wpabd-panel"><p>This site is not connected to the AI Builder cloud yet. Open <a href="<?php echo esc_url( admin_url( 'admin.php?page=wp-ai-builder-bridge' ) ); ?>">Bridge settings</a> to connect.</p></div>
+			<?php elseif ( is_wp_error( $report ) ) : ?>
+				<div class="wpabd-panel"><p>Could not load usage: <?php echo esc_html( $report->get_error_message() ); ?></p></div>
+			<?php else :
+				$totals = isset( $report['totals'] ) && is_array( $report['totals'] ) ? $report['totals'] : array();
+				?>
+				<div class="wpabd-cards">
+					<div class="wpabd-card"><div class="l">Calls</div><div class="v"><?php echo esc_html( $fmt( $totals['calls'] ?? 0 ) ); ?></div></div>
+					<div class="wpabd-card"><div class="l">Input tokens</div><div class="v"><?php echo esc_html( $fmt( $totals['inputTokens'] ?? 0 ) ); ?></div></div>
+					<div class="wpabd-card"><div class="l">Output tokens</div><div class="v"><?php echo esc_html( $fmt( $totals['outputTokens'] ?? 0 ) ); ?></div></div>
+					<div class="wpabd-card"><div class="l"><?php echo empty( $totals['costComplete'] ) ? 'Cost (partial)' : 'Cost'; ?></div><div class="v"><?php echo esc_html( $money( $totals['costUsd'] ?? null ) ); ?></div></div>
+				</div>
+
+				<div class="wpabd-panel">
+					<h2>By model — rates are USD per 1M tokens</h2>
+					<table class="wpabd-table">
+						<tr><th>Model</th><th>Calls</th><th>In</th><th>Out</th><th>$/1M in</th><th>$/1M out</th><th>Cost</th></tr>
+						<?php foreach ( (array) ( $report['byModel'] ?? array() ) as $m ) : ?>
+							<tr>
+								<td><?php echo esc_html( $m['model'] ?? '' ); ?></td>
+								<td><?php echo esc_html( $fmt( $m['calls'] ?? 0 ) ); ?></td>
+								<td><?php echo esc_html( $fmt( $m['inputTokens'] ?? 0 ) ); ?></td>
+								<td><?php echo esc_html( $fmt( $m['outputTokens'] ?? 0 ) ); ?></td>
+								<td><?php echo isset( $m['rateIn'] ) && null !== $m['rateIn'] ? '$' . esc_html( $m['rateIn'] ) : '—'; ?></td>
+								<td><?php echo isset( $m['rateOut'] ) && null !== $m['rateOut'] ? '$' . esc_html( $m['rateOut'] ) : '—'; ?></td>
+								<td><strong><?php echo esc_html( $money( $m['costUsd'] ?? null ) ); ?></strong></td>
+							</tr>
+						<?php endforeach; ?>
+					</table>
+				</div>
+
+				<div class="wpabd-panel">
+					<h2>By stage</h2>
+					<table class="wpabd-table">
+						<tr><th>Stage</th><th>Calls</th><th>In</th><th>Out</th><th>Cost</th></tr>
+						<?php foreach ( (array) ( $report['byStage'] ?? array() ) as $st ) :
+							$slug = (string) ( $st['stage'] ?? '' );
+							?>
+							<tr>
+								<td><?php echo esc_html( $stage_labels[ $slug ] ?? $slug ); ?></td>
+								<td><?php echo esc_html( $fmt( $st['calls'] ?? 0 ) ); ?></td>
+								<td><?php echo esc_html( $fmt( $st['inputTokens'] ?? 0 ) ); ?></td>
+								<td><?php echo esc_html( $fmt( $st['outputTokens'] ?? 0 ) ); ?></td>
+								<td><strong><?php echo esc_html( $money( $st['costUsd'] ?? null ) ); ?></strong></td>
+							</tr>
+						<?php endforeach; ?>
+					</table>
+				</div>
+			<?php endif; ?>
+		</div>
+		<?php
+	}
 
 	public static function render_main(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
