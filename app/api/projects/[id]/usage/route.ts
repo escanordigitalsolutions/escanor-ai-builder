@@ -71,7 +71,7 @@ export async function GET(
     return NextResponse.json(
       {
         success: false,
-        error: "Could not load usage. Is the ai_usage table created in Supabase?",
+        error: "Could not load usage: " + usageError.message + " — run the ai_usage setup SQL in the SAME Supabase project Vercel uses.",
       },
       { status: 500 }
     );

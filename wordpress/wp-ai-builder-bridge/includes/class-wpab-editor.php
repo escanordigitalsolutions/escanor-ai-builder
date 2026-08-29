@@ -986,7 +986,23 @@ final class WPAB_Editor {
 			</div>
 
 			<div class="wpab-ed__preview">
-				<iframe id="wpab-ed-frame" class="wpab-ed__frame" title="Site preview"></iframe>
+				<div class="wpab-ed__devbar" id="wpab-ed-devbar" role="group" aria-label="Preview size">
+					<button type="button" class="wpab-ed__dev is-active" data-dev="desktop" title="Desktop" aria-label="Desktop">
+						<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+					</button>
+					<button type="button" class="wpab-ed__dev" data-dev="laptop" title="Laptop" aria-label="Laptop">
+						<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg>
+					</button>
+					<button type="button" class="wpab-ed__dev" data-dev="tablet" title="Tablet" aria-label="Tablet">
+						<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M11 18h2"/></svg>
+					</button>
+					<button type="button" class="wpab-ed__dev" data-dev="mobile" title="Mobile" aria-label="Mobile">
+						<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2.5" width="8" height="19" rx="2"/><path d="M11.2 18.5h1.6"/></svg>
+					</button>
+				</div>
+				<div class="wpab-ed__framewrap is-desktop" id="wpab-ed-framewrap">
+					<iframe id="wpab-ed-frame" class="wpab-ed__frame" title="Site preview"></iframe>
+				</div>
 			</div>
 
 			<aside class="wpab-ed__chat" id="wpab-ed-chatpanel">
@@ -1084,7 +1100,7 @@ final class WPAB_Editor {
 			.wpab-ed__wbtn:disabled { opacity: .55; cursor: default; }
 			.wpab-ed__wbtn--ghost { background: transparent; border: 1px solid var(--ed-border-strong); color: var(--ed-muted); box-shadow: none; }
 			.wpab-ed__wbtn--ghost:hover:not(:disabled) { background: var(--ed-surface-2); color: var(--ed-text); }
-			.wpab-ed__preview { position: absolute; inset: 0; background: #fff; }
+			.wpab-ed__preview { position: absolute; inset: 0; background: #f1f0ee; }
 			.wpab-ed__frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
 			.wpab-ed__chat { position: absolute; left: 25%; width: 50%; bottom: 14px; z-index: 15; height: 340px; min-height: 80px; max-height: 78vh; display: flex; flex-direction: column; background: rgba(255,255,255,.9); border: 1px solid var(--ed-border); border-radius: var(--ed-radius); box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(20px) saturate(1.3); backdrop-filter: blur(20px) saturate(1.3); overflow: hidden; }
 			.wpab-ed__chat.is-large { height: 78vh; }
@@ -1123,6 +1139,20 @@ final class WPAB_Editor {
 			.wpab-ed__chipslead { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ed-faint); margin-right: 2px; }
 			.wpab-ed__filechip { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; background: var(--ed-accent-soft); border: 1px solid rgba(99,102,241,.2); color: var(--ed-accent); font-size: 11.5px; font-weight: 600; }
 			.wpab-ed__editdone + .wpab-ed__chips2 + .wpab-ed__undo, .wpab-ed__chips2 + .wpab-ed__undo { margin-top: 10px; }
+		.wpab-ed__preview { display: flex; flex-direction: column; }
+		.wpab-ed__devbar { display: flex; justify-content: center; gap: 4px; padding: 8px 0 6px; background: transparent; }
+		.wpab-ed__dev { appearance: none; border: 1px solid transparent; background: transparent; color: var(--ed-muted); border-radius: 9px; width: 32px; height: 30px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s ease; }
+		.wpab-ed__dev:hover { color: #141312; }
+		.wpab-ed__dev.is-active { background: #141312; color: #fff; }
+		.wpab-ed__framewrap { flex: 1; display: flex; justify-content: center; overflow: auto; background: #f1f0ee; min-height: 0; }
+		.wpab-ed__framewrap .wpab-ed__frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; transition: width .25s ease; }
+		.wpab-ed__framewrap.is-laptop .wpab-ed__frame { width: 1280px; max-width: 100%; }
+		.wpab-ed__framewrap.is-tablet .wpab-ed__frame { width: 834px; max-width: 100%; border-left: 1px solid rgba(20,19,18,.08); border-right: 1px solid rgba(20,19,18,.08); }
+		.wpab-ed__framewrap.is-mobile .wpab-ed__frame { width: 390px; max-width: 100%; border-left: 1px solid rgba(20,19,18,.08); border-right: 1px solid rgba(20,19,18,.08); }
+		.wpab-ed__wbtn { background: #141312 !important; box-shadow: none !important; border-radius: 10px; }
+		.wpab-ed__wbtn:hover { background: #000 !important; }
+		.wpab-ed__wbtn--ghost { background: transparent !important; color: #4b4945 !important; border: 1px solid rgba(20,19,18,.22) !important; }
+		.wpab-ed__wbtn--ghost:hover { background: rgba(20,19,18,.05) !important; color: #141312 !important; }
 		.wpab-ed__mockwrap { margin-top: 14px; }
 		.wpab-ed__mockframe { width: 100%; height: 440px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: #fff; display: block; }
 		.wpab-ed__mockactions { display: flex; gap: 8px; margin-top: 10px; }
@@ -1325,6 +1355,22 @@ final class WPAB_Editor {
 					} catch (e) {}
 				});
 				frame.src = cfg.siteUrl;
+			}
+
+			// Preview device sizes.
+			var devBar = $('wpab-ed-devbar');
+			var frameWrap = $('wpab-ed-framewrap');
+			if (devBar && frameWrap) {
+				devBar.addEventListener('click', function (e) {
+					var t = e.target;
+					while (t && t !== devBar && !t.getAttribute('data-dev')) { t = t.parentNode; }
+					if (!t || t === devBar) { return; }
+					var dev = t.getAttribute('data-dev');
+					var btns = devBar.querySelectorAll('[data-dev]');
+					for (var di = 0; di < btns.length; di++) { btns[di].classList.remove('is-active'); }
+					t.classList.add('is-active');
+					frameWrap.className = 'wpab-ed__framewrap is-' + dev;
+				});
 			}
 
 			// Chat panel expand / shrink.

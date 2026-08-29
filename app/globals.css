@@ -97,14 +97,14 @@ a.glass-card:hover,
 }
 
 .btn-accent {
-  background: var(--accent);
+  background: #141312;
   color: #fff;
-  border-radius: 11px;
-  box-shadow: 0 6px 18px rgba(99, 102, 241, 0.28);
-  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  border-radius: 10px;
+  box-shadow: none;
+  transition: background 0.2s ease, transform 0.2s ease;
 }
 .btn-accent:hover:not(:disabled) {
-  background: #5457e5;
+  background: #000;
 }
 .btn-accent:disabled {
   opacity: 0.55;
