@@ -470,7 +470,13 @@ Workflow rules:
       },
     });
 
-    void logUsage(context.projectId, "chat", model, result.usage);
+    void logUsage(context.projectId, "chat", model, result.usage, {
+      message: message.slice(0, 400),
+      reply: (result.text || "").slice(0, 400),
+      toolCalls: result.toolCalls,
+      activity: activity.slice(0, 20),
+      editInstruction: editRequest ? editRequest.instruction.slice(0, 400) : null,
+    });
 
     if (result.exhausted) {
       throw new Error(

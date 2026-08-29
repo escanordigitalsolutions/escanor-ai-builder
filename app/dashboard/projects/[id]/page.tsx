@@ -7,6 +7,8 @@ import ProjectModelPanel from "@/components/project-model-panel";
 import ProjectUsagePanel from "@/components/project-usage-panel";
 import ProjectDanger from "@/components/project-danger";
 import ProjectDesignsPanel from "@/components/project-designs-panel";
+import ProjectOpsPanel from "@/components/project-ops-panel";
+import { TIER_DEFAULTS } from "@/lib/ai/resolve";
 
 type Props = {
   params: Promise<{
@@ -96,9 +98,14 @@ export default async function ProjectPage({ params }: Props) {
           <ProjectModelPanel
             projectId={project.id}
             initial={(project as { model_config?: Record<string, string> }).model_config ?? {}}
+            defaults={TIER_DEFAULTS}
           />
 
           <ProjectUsagePanel projectId={project.id} />
+        </div>
+
+        <div className="mt-4">
+          <ProjectOpsPanel projectId={project.id} />
         </div>
 
         <div className="mt-4">

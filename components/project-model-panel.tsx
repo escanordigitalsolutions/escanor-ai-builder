@@ -39,9 +39,11 @@ const SUGGESTIONS = [
 export default function ProjectModelPanel({
   projectId,
   initial,
+  defaults,
 }: {
   projectId: string;
   initial: Cfg;
+  defaults?: Partial<Record<Tier, string>>;
 }) {
   const router = useRouter();
   const [cfg, setCfg] = useState<Cfg>(initial ?? {});
@@ -90,7 +92,7 @@ export default function ProjectModelPanel({
             <input
               list="wpab-model-suggestions"
               className="field px-3 py-2 text-sm"
-              placeholder="default"
+              placeholder={defaults?.[t.key] ? `default: ${defaults[t.key]}` : "default"}
               value={cfg[t.key] ?? ""}
               onChange={(e) => setCfg((c) => ({ ...c, [t.key]: e.target.value }))}
             />

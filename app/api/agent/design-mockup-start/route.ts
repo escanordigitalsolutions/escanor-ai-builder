@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       let concept = null;
       try {
         const c = await generateConcept(modelConfig, brief, style);
-        await logUsage(projectId, "concept", c.model, c.usage);
+        await logUsage(projectId, "concept", c.model, c.usage, { style, concept: c.data?.concept ?? null });
         concept = c.data;
       } catch (conceptError) {
         console.error("concept stage error (continuing without):", conceptError);
@@ -113,7 +113,13 @@ export async function POST(request: NextRequest) {
           : "Stage 2/3 — drawing the homepage…"
       );
       const mock = await generateMockup(modelConfig, brief, variation, style, concept);
-      await logUsage(projectId, "design", mock.model, mock.usage);
+      await logUsage(projectId, "design", mock.model, mock.usage, {
+        style,
+        concept: concept?.concept ?? null,
+        sections: mock.sections.map((sec) => sec.slug),
+        chars: mock.html.length,
+        truncated: mock.truncated,
+      });
       const ok = mock.sections.length >= 3 && mock.css.length > 200 && !mock.truncated;
 
       // ---- Stage 3/3 (cheap model): short review for the user ----
@@ -122,7 +128,7 @@ export async function POST(request: NextRequest) {
         await setProgress("critique", "Stage 3/3 — quick design review…");
         try {
           const r = await critiqueMockup(modelConfig, mock.html);
-          await logUsage(projectId, "critique", r.model, r.usage);
+          await logUsage(projectId, "critique", r.model, r.usage, { critique: r.data.slice(0, 300) });
           critique = r.data;
         } catch (critiqueError) {
           console.error("critique stage error (continuing without):", critiqueError);

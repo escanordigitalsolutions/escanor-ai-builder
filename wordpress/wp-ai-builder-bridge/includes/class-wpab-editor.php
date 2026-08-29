@@ -1069,6 +1069,10 @@ final class WPAB_Editor {
 				</div>
 				<div class="wpab-ed__framewrap is-desktop" id="wpab-ed-framewrap">
 					<iframe id="wpab-ed-frame" class="wpab-ed__frame" title="Site preview"></iframe>
+					<div id="wpab-ed-frameload" class="wpab-ed__frameload" hidden>
+						<span class="wpab-ed__spin"></span>
+						<span id="wpab-ed-frameload-txt" class="wpab-ed__frameloadtxt">Working…</span>
+					</div>
 				</div>
 			</div>
 
@@ -1080,8 +1084,7 @@ final class WPAB_Editor {
 				<div id="wpab-ed-notice" class="wpab-ed__notice" hidden></div>
 				<div id="wpab-ed-thread" class="wpab-ed__thread" aria-live="polite">
 					<div class="wpab-ed__empty">
-						<p>Ask anything about this site — its theme, templates, pages or content.</p>
-						<button type="button" id="wpab-ed-newtheme2" class="wpab-ed__newtheme" style="margin-top:10px">✨ Generate a custom theme</button>
+						<p>Ask anything about this site — or tell me what to change.</p>
 					</div>
 				</div>
 				<form id="wpab-ed-form" class="wpab-ed__form" autocomplete="off">
@@ -1177,7 +1180,7 @@ final class WPAB_Editor {
 			.wpab-ed__wbtn--ghost:hover:not(:disabled) { background: var(--ed-surface-2); color: var(--ed-text); }
 			.wpab-ed__preview { position: absolute; inset: 0; background: #f1f0ee; }
 			.wpab-ed__frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
-			.wpab-ed__chat { position: absolute; left: 25%; width: 50%; bottom: 14px; z-index: 15; height: 340px; min-height: 80px; max-height: 78vh; display: flex; flex-direction: column; background: rgba(255,255,255,.9); border: 1px solid var(--ed-border); border-radius: var(--ed-radius); box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(20px) saturate(1.3); backdrop-filter: blur(20px) saturate(1.3); overflow: hidden; }
+			.wpab-ed__chat { position: absolute; left: 25%; width: 50%; bottom: 14px; z-index: 15; height: 235px; min-height: 80px; max-height: 78vh; display: flex; flex-direction: column; background: rgba(255,255,255,.9); border: 1px solid var(--ed-border); border-radius: var(--ed-radius); box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(20px) saturate(1.3); backdrop-filter: blur(20px) saturate(1.3); overflow: hidden; }
 			.wpab-ed__chat.is-large { height: 78vh; }
 			@media (max-width: 1100px) { .wpab-ed__chat { left: 6%; width: 88%; } }
 			.wpab-ed__chathead { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--ed-border); flex: 0 0 auto; }
@@ -1188,13 +1191,16 @@ final class WPAB_Editor {
 			.wpab-ed__notice a { color: #b42318; }
 			.wpab-ed__thread { flex: 1 1 auto; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
 			.wpab-ed__empty { color: var(--ed-faint); font-size: 13px; line-height: 1.6; margin: 0; }
-			.wpab-msg { display: flex; flex-direction: column; gap: 5px; }
-			.wpab-msg__role { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ed-faint); }
-			.wpab-msg__body { font-size: 14px; line-height: 1.6; color: #33312d; word-wrap: break-word; }
+			.wpab-msg { display: flex; flex-direction: column; gap: 2px; }
+			.wpab-msg__role { display: none; }
+			.wpab-msg__body { font-size: 13.5px; line-height: 1.55; color: #33312d; word-wrap: break-word; max-width: 82%; padding: 9px 13px; border-radius: 16px; background: rgba(20,19,18,.05); align-self: flex-start; border-bottom-left-radius: 5px; }
+			.wpab-msg--user { align-items: flex-end; }
+			.wpab-msg--user .wpab-msg__body { background: #141312; color: #fff; align-self: flex-end; border-bottom-left-radius: 16px; border-bottom-right-radius: 5px; }
+			.wpab-msg--user .wpab-msg__body a { color: #cfc9ff; }
+			.wpab-msg--assistant .wpab-typing { align-self: flex-start; background: rgba(20,19,18,.05); border-radius: 16px; border-bottom-left-radius: 5px; padding: 9px 13px; font-size: 13px; }
 			.wpab-msg__body code { background: var(--ed-surface-2); border: 1px solid var(--ed-border); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
 			.wpab-msg__body pre { background: var(--ed-surface-2); border: 1px solid var(--ed-border); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
 			.wpab-msg__body a { color: var(--ed-accent); }
-			.wpab-msg--user .wpab-msg__body { color: var(--ed-text); font-weight: 500; }
 			.wpab-typing { color: var(--ed-muted); font-size: 13px; }
 			.wpab-ed__form { border-top: 1px solid var(--ed-border); padding: 12px; flex: 0 0 auto; background: rgba(250,249,247,.7); }
 			.wpab-ed__input { width: 100%; box-sizing: border-box; resize: none; background: var(--ed-surface); border: 1px solid var(--ed-border-strong); border-radius: 10px; color: var(--ed-text); font: inherit; font-size: 14px; padding: 10px 12px; max-height: 160px; }
@@ -1219,7 +1225,11 @@ final class WPAB_Editor {
 		.wpab-ed__dev { appearance: none; border: 1px solid transparent; background: transparent; color: var(--ed-muted); border-radius: 9px; width: 32px; height: 30px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s ease; }
 		.wpab-ed__dev:hover { color: #141312; }
 		.wpab-ed__dev.is-active { background: #141312; color: #fff; }
-		.wpab-ed__framewrap { flex: 1; display: flex; justify-content: center; overflow: auto; background: #f1f0ee; min-height: 0; }
+		.wpab-ed__framewrap { flex: 1; display: flex; justify-content: center; overflow: auto; background: #f1f0ee; min-height: 0; position: relative; }
+		.wpab-ed__frameload { position: absolute; inset: 0; z-index: 12; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: rgba(241,240,238,.66); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+		.wpab-ed__spin { width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(20,19,18,.15); border-top-color: #141312; animation: wpabspin .8s linear infinite; }
+		@keyframes wpabspin { to { transform: rotate(360deg); } }
+		.wpab-ed__frameloadtxt { font-size: 12.5px; color: #5c5955; font-weight: 500; }
 		.wpab-ed__framewrap .wpab-ed__frame { width: 100%; height: 100%; border: 0; background: #fff; display: block; transition: width .25s ease; }
 		.wpab-ed__framewrap.is-laptop .wpab-ed__frame { width: 1280px; max-width: 100%; }
 		.wpab-ed__framewrap.is-tablet .wpab-ed__frame { width: 834px; max-width: 100%; border-left: 1px solid rgba(20,19,18,.08); border-right: 1px solid rgba(20,19,18,.08); }
@@ -1298,9 +1308,24 @@ final class WPAB_Editor {
 			}
 			function setBusy(b) { if (sendBtn) { sendBtn.disabled = b; } }
 
+			var frameLoad = $('wpab-ed-frameload');
+			var frameLoadTxt = $('wpab-ed-frameload-txt');
+			function frameBusy(on, txt) {
+				if (!frameLoad) { return; }
+				if (on) {
+					if (frameLoadTxt) { frameLoadTxt.textContent = txt || 'Working\u2026'; }
+					frameLoad.hidden = false;
+				} else {
+					frameLoad.hidden = true;
+				}
+			}
 			function reloadPreview() {
 				var fr = $('wpab-ed-frame');
-				if (!fr) { return; }
+				if (!fr) { frameBusy(false); return; }
+				frameBusy(true, 'Refreshing the preview\u2026');
+				var done = function () { frameBusy(false); fr.removeEventListener('load', done); };
+				fr.addEventListener('load', done);
+				setTimeout(done, 12000);
 				try { fr.contentWindow.location.reload(); } catch (e) { fr.src = fr.src; }
 			}
 			function addUndoMessage(summary, files, inspected) {
@@ -1371,11 +1396,14 @@ final class WPAB_Editor {
 				var ticker = setInterval(function () {
 					phase = Math.min(phase + 1, phases.length - 1);
 					if (t) { t.textContent = phases[phase]; }
+					frameBusy(true, phases[phase]);
 				}, 9000);
+				frameBusy(true, phases[0]);
 				return api('POST', cfg.restEditTheme, { instruction: instruction }).then(function (out) {
 					clearInterval(ticker);
 					typing.remove();
 					if (!out.ok || !out.data || out.data.success === false) {
+						frameBusy(false);
 						addMessage('assistant', (out.data && (out.data.message || out.data.error)) || 'Could not apply the change.');
 						return;
 					}
@@ -1383,6 +1411,7 @@ final class WPAB_Editor {
 					reloadPreview();
 				}).catch(function () {
 					clearInterval(ticker);
+					frameBusy(false);
 					typing.remove();
 					addMessage('assistant', 'Network error applying the change.');
 				});
@@ -1391,12 +1420,14 @@ final class WPAB_Editor {
 			function sendChat(message) {
 				addMessage('user', message);
 				setBusy(true);
+				frameBusy(true, 'Thinking\u2026');
 				var typing = addTyping();
 				var body = { message: message };
 				if (conversationId) { body.conversationId = conversationId; }
 				api('POST', cfg.restChat, body).then(function (out) {
 					typing.remove();
 					if (!out.ok || !out.data || out.data.success === false) {
+						frameBusy(false);
 						addMessage('assistant', (out.data && (out.data.message || out.data.error)) || 'Something went wrong. Please try again.');
 						return;
 					}
@@ -1406,9 +1437,11 @@ final class WPAB_Editor {
 					if (out.data.editRequest && out.data.editRequest.instruction) {
 						return runEdit(out.data.editRequest.instruction);
 					}
+					frameBusy(false);
 					if (!answer) { addMessage('assistant', '(no answer)'); }
 				}).catch(function () {
 					typing.remove();
+					frameBusy(false);
 					addMessage('assistant', 'Network error. Please try again.');
 				}).then(function () { setBusy(false); });
 			}

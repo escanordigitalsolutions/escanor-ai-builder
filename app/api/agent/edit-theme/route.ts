@@ -166,6 +166,7 @@ export async function POST(request: NextRequest) {
     }
 
     const inspected: string[] = [];
+    const startedAt = Date.now();
 
     const result = await runToolLoop({
       model: editModel,
@@ -193,9 +194,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    void logUsage(context.projectId, "edit", editModel, result.usage);
 
     if (result.exhausted) {
+      void logUsage(context.projectId, "edit", editModel, result.usage, {
+        instruction: instruction.slice(0, 400),
+        inspected: inspected.slice(0, 12),
+        toolCalls: result.toolCalls,
+        durationMs: Date.now() - startedAt,
+        exhausted: true,
+      });
       return NextResponse.json(
         { success: false, usage: result.usage, error: "The edit took too many steps. Try a more specific instruction." },
         { status: 502 }
@@ -203,6 +210,15 @@ export async function POST(request: NextRequest) {
     }
 
     const parsed = parseOutput(result.text);
+    void logUsage(context.projectId, "edit", editModel, result.usage, {
+      instruction: instruction.slice(0, 400),
+      inspected: inspected.slice(0, 12),
+      changed: parsed.files.map((f) => f.path).slice(0, 12),
+      summary: parsed.summary.slice(0, 300),
+      toolCalls: result.toolCalls,
+      durationMs: Date.now() - startedAt,
+      exhausted: result.exhausted,
+    });
     if (parsed.files.length === 0) {
       return NextResponse.json(
         { success: false, usage: result.usage, error: "The editor could not produce a change for that. Try rephrasing." },

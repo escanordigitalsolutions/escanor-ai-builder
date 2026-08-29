@@ -21,7 +21,8 @@ export async function logUsage(
   projectId: string,
   stage: UsageStage,
   model: string,
-  usage: Usage | { inputTokens?: number; outputTokens?: number } | null | undefined
+  usage: Usage | { inputTokens?: number; outputTokens?: number } | null | undefined,
+  meta?: Record<string, unknown>
 ): Promise<void> {
   try {
     const input = Math.max(0, Math.round(usage?.inputTokens ?? 0));
@@ -29,13 +30,24 @@ export async function logUsage(
     if (!projectId || (!input && !output)) {
       return;
     }
-    await createServiceClient().from("ai_usage").insert({
+    const db = createServiceClient();
+    const row: Record<string, unknown> = {
       project_id: projectId,
       stage,
       model,
       input_tokens: input,
       output_tokens: output,
-    });
+    };
+    if (meta && Object.keys(meta).length) {
+      // Debug detail for the operations log. If the meta column has not been
+      // added yet the insert fails — retry without it so accounting survives.
+      const withMeta = await db.from("ai_usage").insert({ ...row, meta });
+      if (withMeta.error) {
+        await db.from("ai_usage").insert(row);
+      }
+      return;
+    }
+    await db.from("ai_usage").insert(row);
   } catch (error) {
     console.error("usage log error:", error);
   }
