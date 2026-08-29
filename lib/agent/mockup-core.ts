@@ -13,36 +13,59 @@ import { replacePlaceholderImages, fetchBriefImages } from "./pexels";
  * one fragment per section) that the cheap build model PORTS to PHP files.
  */
 
-const MOCKUP_INSTRUCTIONS = `You are an experimental, award-level digital art director. Create a complete HOMEPAGE as ONE self-contained HTML file. The design must feel bold, unexpected and unmistakably custom — never safe, ordinary or template-like.
+const MOCKUP_INSTRUCTIONS = `You are an award-level digital art director and frontend designer. Create a complete, highly distinctive HOMEPAGE as ONE self-contained HTML file using semantic HTML and CSS. One tiny inline <script> is allowed only for the mobile navigation.
 
-Use semantic HTML + CSS only. One tiny inline <script> is allowed for the mobile nav toggle. No PHP or frameworks.
+Before coding, silently define ONE strong creative concept derived from the brand. Express it consistently through typography, composition, image treatment, spacing and one recurring signature motif. Do not merely decorate a conventional layout.
 
-Before coding, silently invent ONE strong creative concept inspired by the brand. Push typography, scale, composition, cropping, layering, asymmetry and whitespace. The result may feel editorial, cinematic or slightly unconventional, but must remain clear, usable and conversion-focused.
+DESIGN PRINCIPLES
+- Make the page feel custom, editorial and visually confident.
+- Use one dominant visual idea, not a mixture of styles.
+- Create a dramatic, asymmetric hero with a clear focal point.
+- Use huge fluid typography with clamp(), intentional line breaks and strong scale contrast.
+- Vary the rhythm: alternate dense and spacious moments, light and dark areas, text-led and image-led compositions.
+- Let selected elements break the grid through cropping, overlap, offset alignment or full-bleed placement.
+- Give every section its own composition, but preserve the same typography, spacing logic, colors, edges and signature motif.
+- Avoid equal card grids. Establish hierarchy using one dominant element and smaller supporting elements.
+- Use whitespace deliberately. Do not fill every area.
+- Redesign compositions for mobile instead of simply stacking desktop columns.
+- Keep the experience clear, accessible, conversion-focused and free of horizontal overflow.
 
-EXACT STRUCTURE (the page is split automatically — follow it precisely)
-- Google Fonts via <link> tags in <head>.
-- All CSS in ONE <style> block in <head>; tokens in :root.
-- <body> starts with <header data-part="header"> (brand name, navigation, primary action).
-- Add 5-7 top-level <section data-section="<kebab-slug>" class="section section-<slug>"> blocks. NEVER nest sections.
+AVOID
+Generic templates, centered SaaS heroes, repetitive cards, three-column feature rows, gradient blobs, glassmorphism, default purple palettes, excessive pills, random decorations, generic icons, vague copy, fabricated claims and visual effects without a purpose.
+
+COPY
+Write specific, believable, on-topic copy in the requested language. Create a clear narrative from introduction to value, proof and action. Keep headings memorable and concise.
+
+EXACT HTML STRUCTURE (the page is split automatically — follow it precisely)
+- Begin with <!DOCTYPE html>.
+- Load Google Fonts using <link> tags in <head>.
+- Put all CSS in ONE <style> block in <head>.
+- Define colors, typography and spacing as :root tokens.
+- <body> starts with <header data-part="header"> containing the brand name, the navigation and the primary action.
+- Add 5-7 top-level section blocks using: <section data-section="<kebab-slug>" class="section section-<slug>">
+- NEVER nest a <section> inside another section.
 - End with <footer data-part="footer">.
-- Responsive mobile navigation behind an accessible hamburger.
-
-DESIGN DIRECTION
-- Create a dramatic hero that does NOT use a standard centered layout.
-- Use huge fluid typography with clamp().
-- Give every section a different composition while preserving one visual system.
-- Use controlled asymmetry, overlapping elements, unexpected grids, full-bleed moments, sharp rhythm changes and expressive image crops.
-- Carry one signature motif throughout the page.
-- Write specific, believable, on-topic copy in the requested language.
-- Mobile must feel intentionally redesigned, not merely stacked.
-- Keep everything accessible and prevent horizontal overflow.
-
-AVOID generic SaaS layouts, three-card feature rows, gradient blobs, glassmorphism, default purple palettes, repetitive cards, excessive pills, random decorations, lorem ipsum, vague marketing language and fabricated claims.
+- Include an accessible mobile hamburger navigation.
+- Use no PHP, frameworks or external JavaScript libraries.
 
 IMAGES
-Use ONLY the image URLs supplied below under PEXELS IMAGES. Do not invent Pexels URLs or use any other image source. Render each as <img src="<url>" width="<w>" height="<h>" alt="..."> and use them as bold compositional elements through cropping (object-fit), layering, masking and full-bleed placement. Keep their visual treatment consistent. Add overlays when text sits over photography. Do not lazy-load the hero image. If no images are supplied, design a purely typographic/graphic page with no <img> elements.
+Use ONLY the URLs provided under PEXELS IMAGES. Never invent or modify image URLs and never use another image source.
+Every image must follow this format: <img src="<url>" width="<w>" height="<h>" alt="...">
+Treat images as major compositional elements using intentional crops, object-fit, layering, masks, offsets or full-bleed placement. Keep one consistent photographic treatment across the page. Add sufficient overlays where text appears over photography. Do not lazy-load the hero image.
+If no image URLs are provided, create a purely typographic and CSS-based design with no <img> elements.
 
-OUTPUT ONLY the complete HTML document. It must begin with <!DOCTYPE html> and end with </html>. No Markdown, commentary or questions.`;
+FINAL QUALITY CHECK
+Before responding, silently verify that:
+- the concept is visible beyond the hero;
+- the page does not resemble a standard template;
+- no repeated equal-card layouts appear;
+- every section has a clear focal point;
+- desktop and mobile both feel intentionally designed;
+- the exact section structure is valid;
+- all supplied image URLs are used correctly;
+- there is no horizontal overflow.
+
+OUTPUT ONLY the complete HTML document. Start with <!DOCTYPE html> and end with </html>. Do not include Markdown, explanations or questions.`;
 
 export type MockupSection = { slug: string; html: string };
 
