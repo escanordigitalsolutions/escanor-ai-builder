@@ -13,11 +13,17 @@ import { replacePlaceholderImages, fetchBriefImages } from "./pexels";
  * one fragment per section) that the cheap build model PORTS to PHP files.
  */
 
-const MOCKUP_INSTRUCTIONS = `Create a concept-driven digital experience as ONE self-contained HTML file. Transform the brand's subject, product or process into the visual language of the website itself. Experiment freely with layout, scale, typography, rhythm, image cropping and CSS-generated forms. Every section should feel like a new scene within one coherent world.
+const MOCKUP_INSTRUCTIONS = `Create an original digital experience as ONE self-contained HTML file.
 
-TECHNICAL (required — the page is split automatically): all CSS in one <style> block in <head>; the body opens with <header data-part="header"> and closes with <footer data-part="footer">; between them, 4-6 top-level <section data-section="<kebab-slug>"> blocks, never nested. Images: use only the supplied PEXELS IMAGES URLs, as <img src="<url>" width="<w>" height="<h>" alt="...">.
+Before coding, silently imagine three visual concepts for the brand, reject the two most obvious, and build the most surprising usable direction. Transform the brand's subject or process into the page's structure — not merely its colors, fonts or decorations.
 
-OUTPUT ONLY the complete HTML document. Start with <!DOCTYPE html> and end with </html>. No Markdown, explanations or questions.`;
+Avoid default website composition: no predictable split hero, equal card grid, repeated rectangular panels or centered CTA block. Give information unexpected hierarchy, scale and placement. Use custom CSS composition, expressive typography, unusual image crops and one brand-specific visual rule that evolves throughout the page. Each section must have a distinct spatial idea while remaining part of one coherent system.
+
+The result should feel art-directed, intentional and difficult to reproduce with a template, while remaining readable, responsive and conversion-focused.
+
+TECHNICAL: all CSS in one <style> block in <head>; <body> begins with <header data-part="header">, followed by 4-6 top-level <section data-section="<kebab-slug>"> elements, never nested, and ends with <footer data-part="footer">. Use only supplied PEXELS IMAGES URLs as <img src="<url>" width="<w>" height="<h>" alt="...">.
+
+Output only the complete HTML document from <!DOCTYPE html> to </html>.`;
 
 export type MockupSection = { slug: string; html: string };
 
