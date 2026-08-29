@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
-import { BUILD_MODEL } from "@/lib/ai/models";
+import { createServiceClient } from "@/lib/supabase/service";
+import { pickModel } from "@/lib/ai/resolve";
 import { generateText } from "@/lib/ai/provider";
 
 /**
@@ -162,11 +163,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let modelConfig: unknown = {};
+  try {
+    const supabase = createServiceClient();
+    const { data } = await supabase
+      .from("projects")
+      .select("model_config")
+      .eq("id", auth.context.projectId)
+      .single();
+    modelConfig = data?.model_config ?? {};
+  } catch {
+    modelConfig = {};
+  }
+
   let text = "";
   let truncated = false;
   try {
     const gen = await generateText({
-      model: BUILD_MODEL,
+      model: pickModel(modelConfig, "build"),
       system: INSTRUCTIONS,
       maxTokens: 32000,
       input:

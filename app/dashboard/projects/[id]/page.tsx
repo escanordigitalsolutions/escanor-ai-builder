@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import ProjectConnectionPanel from "@/components/project-connection-panel";
 import ProjectSiteKeys from "@/components/project-site-keys";
+import ProjectModelPanel from "@/components/project-model-panel";
 
 type Props = {
   params: Promise<{
@@ -30,6 +31,7 @@ export default async function ProjectPage({ params }: Props) {
       id,
       name,
       created_at,
+      model_config,
       wordpress_sites (
         site_url,
         bridge_version,
@@ -85,6 +87,13 @@ export default async function ProjectPage({ params }: Props) {
           />
 
           <ProjectSiteKeys projectId={project.id} />
+        </div>
+
+        <div className="mt-4">
+          <ProjectModelPanel
+            projectId={project.id}
+            initial={(project as { model_config?: Record<string, string> }).model_config ?? {}}
+          />
         </div>
       </div>
     </main>
