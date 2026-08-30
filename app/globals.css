@@ -154,3 +154,65 @@ a.glass-card:hover,
 .font-display {
   font-family: var(--font-fraunces), Georgia, "Times New Roman", serif;
 }
+
+/* ---- marketing motion --------------------------------------------------
+ * One entrance sequence on load: the prompt reveals line by line, then the
+ * preview rises. The order is the argument — input, then output — so the
+ * page enacts the claim instead of only stating it. Nothing loops except
+ * the caret and a slow ambient drift.
+ * ---------------------------------------------------------------------- */
+@keyframes mk-rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes mk-preview-in {
+  from { opacity: 0; transform: translateY(26px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes mk-caret {
+  0%, 44%  { opacity: 1; }
+  50%, 94% { opacity: 0; }
+  100%     { opacity: 1; }
+}
+
+@keyframes mk-drift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  50%  { transform: translate3d(0, -3px, 0) scale(1.035); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+.mk-rise {
+  animation: mk-rise 0.75s cubic-bezier(0.22, 0.68, 0.32, 1) both;
+  animation-delay: var(--mk-delay, 0s);
+}
+
+.mk-preview {
+  animation: mk-preview-in 0.9s cubic-bezier(0.22, 0.68, 0.32, 1) both;
+  animation-delay: var(--mk-delay, 0s);
+}
+
+.mk-caret {
+  display: inline-block;
+  width: 0.55ch;
+  animation: mk-caret 1.15s steps(1, end) infinite;
+  animation-delay: var(--mk-delay, 0s);
+}
+
+.mk-drift {
+  animation: mk-drift 9s ease-in-out infinite;
+  animation-delay: var(--mk-delay, 0s);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-rise,
+  .mk-preview,
+  .mk-caret,
+  .mk-drift {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

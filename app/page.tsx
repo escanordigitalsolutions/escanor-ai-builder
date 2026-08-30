@@ -10,10 +10,21 @@ export const metadata: Metadata = {
     "Describe the site you want. Meikero writes a custom WordPress theme — real PHP files, on your own hosting, editable in Gutenberg and by chat.",
 };
 
-const PROMPT = `A bold, editorial site for a subscription service
-delivering miniature self-sustaining forest
-ecosystems. Deep natural tones, macro
-photography, atmospheric motion.`;
+const PROMPT_LINES = [
+  "A bold, editorial site for a subscription service",
+  "delivering miniature self-sustaining forest",
+  "ecosystems. Deep natural tones, macro",
+  "photography, atmospheric motion.",
+];
+
+/** Each prompt line lands a beat after the one above it. */
+const PROMPT_STEP = 0.13;
+const PROMPT_START = 0.35;
+const PREVIEW_AT = PROMPT_START + PROMPT_LINES.length * PROMPT_STEP + 0.25;
+
+function delay(seconds: number): React.CSSProperties {
+  return { "--mk-delay": `${seconds.toFixed(2)}s` } as React.CSSProperties;
+}
 
 const STEPS = [
   {
@@ -85,21 +96,30 @@ export default function HomePage() {
       <section className="mx-auto max-w-6xl px-6 pb-20 pt-16 sm:pt-24">
         <div className="grid items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
+            <p
+              className="mk-rise text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]"
+              style={delay(0)}
+            >
               AI website builder for WordPress
             </p>
 
-            <h1 className="mt-4 text-balance text-[2.6rem] font-semibold leading-[1.04] tracking-[-0.03em] text-neutral-900 sm:text-[3.4rem]">
+            <h1 className="mk-rise mt-4 text-balance text-[2.6rem] font-semibold leading-[1.04] tracking-[-0.03em] text-neutral-900 sm:text-[3.4rem]" style={delay(0.08)}>
               Describe your site. Get a real WordPress theme.
             </h1>
 
-            <p className="mt-5 max-w-xl text-[1.05rem] leading-relaxed text-neutral-600">
+            <p
+              className="mk-rise mt-5 max-w-xl text-[1.05rem] leading-relaxed text-neutral-600"
+              style={delay(0.16)}
+            >
               Not a template you fill in. Not a builder that owns your layout.
               Meikero writes a custom PHP theme — section by section, stylesheet
               by stylesheet — straight into the WordPress you already run.
             </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div
+              className="mk-rise mt-8 flex flex-wrap items-center gap-3"
+              style={delay(0.24)}
+            >
               <Link
                 href="/signup"
                 className="rounded-[11px] bg-[#141312] px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-black"
@@ -114,7 +134,7 @@ export default function HomePage() {
               </Link>
             </div>
 
-            <p className="mt-4 text-xs text-neutral-500">
+            <p className="mk-rise mt-4 text-xs text-neutral-500" style={delay(0.32)}>
               No card required. Works on any WordPress 6.2+ site.
             </p>
           </div>
@@ -126,11 +146,32 @@ export default function HomePage() {
                 What was asked for
               </p>
               <pre className="whitespace-pre-wrap font-mono text-[12.5px] leading-relaxed text-neutral-700">
-                {PROMPT}
+                {PROMPT_LINES.map((line, i) => (
+                  <span
+                    key={line}
+                    className="mk-rise block"
+                    style={delay(PROMPT_START + i * PROMPT_STEP)}
+                  >
+                    {line}
+                    {i === PROMPT_LINES.length - 1 ? (
+                      <span
+                        aria-hidden
+                        className="mk-caret ml-0.5 bg-[#6366f1] align-middle"
+                        style={{
+                          ...delay(PROMPT_START + PROMPT_LINES.length * PROMPT_STEP),
+                          height: "1em",
+                        }}
+                      />
+                    ) : null}
+                  </span>
+                ))}
               </pre>
             </div>
 
-            <div className="flex items-center gap-3 px-1">
+            <div
+              className="mk-rise flex items-center gap-3 px-1"
+              style={delay(PREVIEW_AT - 0.12)}
+            >
               <span className="h-px flex-1 bg-neutral-900/10" />
               <span className="text-[10.5px] font-semibold uppercase tracking-[0.12em] text-neutral-400">
                 What came back
@@ -138,7 +179,9 @@ export default function HomePage() {
               <span className="h-px flex-1 bg-neutral-900/10" />
             </div>
 
-            <MossClubPreview />
+            <div className="mk-preview" style={delay(PREVIEW_AT)}>
+              <MossClubPreview />
+            </div>
           </div>
         </div>
       </section>
@@ -154,8 +197,8 @@ export default function HomePage() {
               ["11", "stylesheets, one per section plus the base"],
               ["5", "pages with real copy, written as Gutenberg blocks"],
               ["1", "prompt, plus a mockup you approve before the build"],
-            ].map(([figure, label]) => (
-              <div key={label}>
+            ].map(([figure, label], i) => (
+              <div key={label} className="mk-rise" style={delay(PREVIEW_AT + 0.2 + i * 0.08)}>
                 <p className="font-mono text-[2rem] font-medium leading-none tabular-nums text-[#6366f1]">
                   {figure}
                 </p>

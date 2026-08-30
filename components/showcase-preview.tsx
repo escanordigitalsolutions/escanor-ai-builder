@@ -121,11 +121,14 @@ export function MossClubPreview() {
             ].map((bg, i) => (
               <span
                 key={i}
-                className="aspect-square rounded-[10px]"
-                style={{
-                  background: bg,
-                  border: "1px solid rgba(215,185,106,.42)",
-                }}
+                className="mk-drift aspect-square rounded-[10px]"
+                style={
+                  {
+                    background: bg,
+                    border: "1px solid rgba(215,185,106,.42)",
+                    "--mk-delay": `${(i * 0.55).toFixed(2)}s`,
+                  } as React.CSSProperties
+                }
                 aria-hidden
               />
             ))}
