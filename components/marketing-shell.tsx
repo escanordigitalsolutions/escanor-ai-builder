@@ -3,6 +3,7 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { createClient } from "@/lib/supabase/server";
+import { RELEASE, showsStageChip } from "@/lib/release";
 
 /**
  * Frame for every public page.
@@ -21,7 +22,7 @@ const NAV = [
 
 function Wordmark() {
   return (
-    <Link href="/" className="flex items-center" aria-label="Meikero">
+    <Link href="/" className="flex items-center gap-2.5" aria-label="Meikero">
       <Image
         src="/brand/wordmark-dark.png"
         alt="Meikero"
@@ -30,6 +31,14 @@ function Wordmark() {
         priority
         className="h-6 w-auto"
       />
+      {showsStageChip() ? (
+        <span
+          title={RELEASE.note}
+          className="rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-brand"
+        >
+          {RELEASE.label}
+        </span>
+      ) : null}
     </Link>
   );
 }

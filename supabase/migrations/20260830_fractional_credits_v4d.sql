@@ -9,6 +9,10 @@
 -- numeric is exact decimal arithmetic, so summing thousands of small charges
 -- cannot drift the way repeated float addition would. Four decimal places is
 -- far finer than any single call, and the interface still shows whole credits.
+--
+-- Every function whose RETURN TYPE changes is dropped before it is recreated:
+-- CREATE OR REPLACE can change a function's body but never its return type,
+-- and Postgres refuses with 42P13 rather than guessing. Safe to re-run.
 
 alter table public.credit_ledger
   alter column delta type numeric(14, 4) using delta::numeric(14, 4);
@@ -17,13 +21,15 @@ comment on column public.credit_ledger.delta is
   'Credits, positive for grants and negative for usage. Fractional: one model call is usually worth less than a whole credit.';
 
 -- ---------------------------------------------------------------------------
--- The functions that read and write it
+-- Balance — was integer, now fractional
 -- ---------------------------------------------------------------------------
+
+drop function if exists public.credit_balance(uuid);
 
 -- Returned as double precision rather than numeric so the application gets a
 -- plain number instead of a string; the values here are nowhere near the range
 -- where that loses anything.
-create or replace function public.credit_balance(p_user_id uuid)
+create function public.credit_balance(p_user_id uuid)
 returns double precision
 language sql
 stable
@@ -35,9 +41,14 @@ as $$
    where user_id = p_user_id;
 $$;
 
-drop function if exists public.spend_credits(uuid, integer, text, text, text);
+-- ---------------------------------------------------------------------------
+-- Strict spend — the amount argument becomes numeric too
+-- ---------------------------------------------------------------------------
 
-create or replace function public.spend_credits(
+drop function if exists public.spend_credits(uuid, integer, text, text, text);
+drop function if exists public.spend_credits(uuid, numeric, text, text, text);
+
+create function public.spend_credits(
   p_user_id uuid,
   p_amount numeric,
   p_reason text default 'usage',
@@ -76,8 +87,13 @@ begin
 end;
 $$;
 
--- The admin overview reports the same fractional balance.
-create or replace function public.admin_user_overview()
+-- ---------------------------------------------------------------------------
+-- Admin overview — its credits column changes type, so it is dropped too
+-- ---------------------------------------------------------------------------
+
+drop function if exists public.admin_user_overview();
+
+create function public.admin_user_overview()
 returns table (
   id uuid,
   email text,
@@ -135,7 +151,7 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Access, restated because the signatures changed
+-- Access, restated because dropping a function drops its grants with it
 -- ---------------------------------------------------------------------------
 
 revoke execute on function public.credit_balance(uuid) from public;

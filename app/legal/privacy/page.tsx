@@ -165,6 +165,13 @@ export default function PrivacyPage() {
             keep for ten years.
           </p>
           <p>
+            You do not have to ask us: <strong>Settings &rarr; Delete my
+            account</strong> removes your profile, your credits and every site,
+            design, conversation and usage record attached to them, and cancels
+            any running subscription at the same time. It happens immediately
+            and cannot be undone.
+          </p>
+          <p>
             Themes already written to your own server are yours and are not
             affected — we cannot remove them, and deleting your account does not
             touch your WordPress site.

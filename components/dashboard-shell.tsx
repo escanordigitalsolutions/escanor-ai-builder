@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "@/components/sign-out-button";
+import { RELEASE, showsStageChip } from "@/lib/release";
 
 /**
  * Chrome for the signed-in app.
@@ -41,7 +42,7 @@ export default async function DashboardShell({
       <header className="border-b border-neutral-900/[0.07] bg-white/50 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-6">
           <div className="flex items-center gap-7">
-            <Link href="/dashboard" className="flex items-center" aria-label="Meikero">
+            <Link href="/dashboard" className="flex items-center gap-2.5" aria-label="Meikero">
               <Image
                 src="/brand/wordmark-dark.png"
                 alt="Meikero"
@@ -50,6 +51,14 @@ export default async function DashboardShell({
                 priority
                 className="h-6 w-auto"
               />
+      {showsStageChip() ? (
+                <span
+                  title={RELEASE.note}
+                  className="rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-brand"
+                >
+                  {RELEASE.label}
+                </span>
+              ) : null}
             </Link>
 
             <nav className="hidden items-center gap-6 sm:flex">

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { purgeProjectData } from "@/lib/account/purge";
+import { debugErrors } from "@/lib/debug";
 
 /**
  * DELETE /api/projects/[id] — remove a project and everything attached to it.
@@ -24,10 +26,15 @@ export async function DELETE(
     return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
   }
 
+  // owner_id is restated on top of the row policy. Everything after this point
+  // runs on the service client, which bypasses RLS, and it now destroys child
+  // rows — so this one SELECT is the whole ownership gate, and it should not
+  // rest on a policy defined outside this repository.
   const { data: project, error } = await supabase
     .from("projects")
     .select("id")
     .eq("id", id)
+    .eq("owner_id", user.id)
     .single();
 
   if (error || !project) {
@@ -36,42 +43,27 @@ export async function DELETE(
 
   const service = createServiceClient();
 
-  // Conversation-scoped children first.
-  const { data: convs } = await service
-    .from("ai_conversations")
-    .select("id")
-    .eq("project_id", id);
-  const convIds = (convs ?? []).map((c) => c.id as string);
-  if (convIds.length) {
-    await service.from("ai_messages").delete().in("conversation_id", convIds);
-    await service.from("ai_runs").delete().in("conversation_id", convIds);
-  }
+  // Same cascade the account-deletion path uses, so a child table added later
+  // cannot be remembered in one place and forgotten in the other.
+  const warnings = await purgeProjectData(service, id);
 
-  const { data: props } = await service
-    .from("ai_proposals")
-    .select("id")
-    .eq("project_id", id);
-  const propIds = (props ?? []).map((c) => c.id as string);
-  if (propIds.length) {
-    await service.from("ai_proposal_files").delete().in("proposal_id", propIds);
-  }
+  // These used to be logged and ignored, which meant a missing DELETE grant
+  // produced a cheerful 200 while designs and chat history stayed in the
+  // database. Saying so is the only honest option: the project row is kept, so
+  // what is left is still reachable and can be deleted again once fixed.
+  if (warnings.length) {
+    console.error("project delete warnings:", id, warnings);
 
-  // Project-scoped children (each best-effort — a missing table must not block).
-  for (const table of [
-    "ai_conversations",
-    "ai_proposals",
-    "ai_apply_runs",
-    "ai_jobs",
-    "ai_usage",
-    "ai_designs",
-    "ai_live_steps",
-    "site_api_keys",
-    "wordpress_sites",
-  ]) {
-    const { error: childError } = await service.from(table).delete().eq("project_id", id);
-    if (childError) {
-      console.error(`project delete: ${table}:`, childError.message);
-    }
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Some of this site's data could not be deleted, so the site was kept rather " +
+          "than leaving that data stranded. Try again in a moment.",
+        ...(debugErrors() ? { detail: warnings.join("; ") } : {}),
+      },
+      { status: 500 }
+    );
   }
 
   // The signed-in user's client first (RLS delete policy); the service client
