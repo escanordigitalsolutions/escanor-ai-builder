@@ -4,7 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { stripe, stripeConfigured, missingStripeConfig } from "@/lib/billing/stripe";
 import { errorDetail } from "@/lib/debug";
-import { isPlanKey, priceIdFor, topupPriceId } from "@/lib/billing/plans";
+import {
+  isPlanKey,
+  priceEnvFor,
+  priceIdFor,
+  priceProblem,
+  topupPriceId,
+} from "@/lib/billing/plans";
 import { SITE_URL } from "@/lib/site";
 
 export const runtime = "nodejs";
@@ -91,14 +97,19 @@ export async function POST(request: NextRequest) {
           : null;
 
     if (!priceId) {
-      const wanted =
-        mode === "topup" ? "STRIPE_PRICE_TOPUP" : `the price id for "${String(body.plan)}"`;
+      const envName =
+        mode === "topup"
+          ? "STRIPE_PRICE_TOPUP"
+          : (isPlanKey(body.plan) && priceEnvFor(body.plan)) || "";
+
       return NextResponse.json(
         {
           success: false,
-          error: `That plan is not available — ${wanted} is not set.`,
+          error: envName
+            ? (priceProblem(envName) ?? `${envName} is not usable.`)
+            : "That plan does not exist.",
           code: "price_not_configured",
-          missing,
+          env: envName || undefined,
         },
         { status: 400 }
       );

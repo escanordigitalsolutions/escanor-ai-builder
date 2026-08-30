@@ -25,7 +25,7 @@ export function AuthShell({
       <div className="w-full max-w-md">
         <div className="glass-card p-8">
           <div className="mb-7">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
               Meikero
             </p>
             <h1 className="mt-1.5 text-[1.55rem] font-semibold tracking-tight text-neutral-900">

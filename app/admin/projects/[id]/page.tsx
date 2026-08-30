@@ -62,7 +62,7 @@ export default async function AdminProjectPage({ params }: Props) {
       </Link>
 
       <div className="mt-7">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
           Internal workspace
         </p>
         <h1 className="mt-2 text-[1.7rem] font-semibold tracking-tight text-neutral-900">

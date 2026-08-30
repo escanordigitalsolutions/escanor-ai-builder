@@ -112,7 +112,7 @@ export default async function PricingPage() {
   return (
     <MarketingShell>
       <section className="mx-auto max-w-6xl px-6 pb-16 pt-16 sm:pt-20">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
           Pricing
         </p>
         <h1 className="mt-4 max-w-2xl text-balance text-[2.6rem] font-semibold leading-[1.06] tracking-[-0.03em] text-neutral-900">
@@ -205,7 +205,7 @@ export default async function PricingPage() {
                   <li key={f} className="flex gap-2">
                     <span
                       aria-hidden
-                      className={plan.featured ? "text-[#a9a9f7]" : "text-[#6366f1]"}
+                      className={plan.featured ? "text-[#a9a9f7]" : "text-[#4c6eea]"}
                     >
                       ·
                     </span>

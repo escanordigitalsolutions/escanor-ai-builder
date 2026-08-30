@@ -33,7 +33,7 @@ export default function TermsPage() {
             password and site keys safe. Tell us promptly at{" "}
             <a
               href="mailto:hello@meikero.com"
-              className="font-medium text-[#6366f1] underline-offset-4 hover:underline"
+              className="font-medium text-[#4c6eea] underline-offset-4 hover:underline"
             >
               hello@meikero.com
             </a>{" "}
@@ -167,7 +167,7 @@ export default function TermsPage() {
             Data held by us is removed as described in the{" "}
             <a
               href="/legal/privacy"
-              className="font-medium text-[#6366f1] underline-offset-4 hover:underline"
+              className="font-medium text-[#4c6eea] underline-offset-4 hover:underline"
             >
               Privacy Policy
             </a>

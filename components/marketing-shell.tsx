@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { createClient } from "@/lib/supabase/server";
@@ -21,12 +22,14 @@ const NAV = [
 function Wordmark() {
   return (
     <Link href="/" className="flex items-center gap-2.5">
-      <span
-        aria-hidden
-        className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#141312] text-[13px] font-semibold text-white"
-      >
-        M
-      </span>
+<Image
+        src="/brand/mark.png"
+        alt=""
+        width={28}
+        height={28}
+        priority
+        className="h-7 w-7 rounded-[9px]"
+      />
       <span className="text-[15px] font-semibold tracking-tight text-neutral-900">
         Meikero
       </span>

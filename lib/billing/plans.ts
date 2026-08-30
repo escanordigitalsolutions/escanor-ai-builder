@@ -60,16 +60,43 @@ export function isPlanKey(value: unknown): value is PlanKey {
   return typeof value === "string" && value in PLANS;
 }
 
+/**
+ * A Stripe price id, or null if the variable holds something else.
+ *
+ * The mistake this catches is pasting the *amount* ("29") where the price id
+ * belongs. Stripe rejects that with a message about price objects, three
+ * layers away from the setting that caused it — checking the shape here names
+ * the variable instead.
+ */
+function readPriceId(envName: string): string | null {
+  const raw = (process.env[envName] ?? "").trim();
+  return /^price_[A-Za-z0-9]+$/.test(raw) ? raw : null;
+}
+
+/** Why a price id is unusable, in words, or null when it is fine. */
+export function priceProblem(envName: string): string | null {
+  const raw = (process.env[envName] ?? "").trim();
+
+  if (!raw) return `${envName} is not set.`;
+
+  if (!/^price_[A-Za-z0-9]+$/.test(raw)) {
+    return `${envName} is set to "${raw}", which is not a Stripe price id. Copy the id that starts with price_ from the price in Stripe → Products, not the amount.`;
+  }
+
+  return null;
+}
+
+export function priceEnvFor(key: PlanKey): string | null {
+  return PLANS[key].priceEnv ?? null;
+}
+
 export function priceIdFor(key: PlanKey): string | null {
-  const plan = PLANS[key];
-  if (!plan.priceEnv) return null;
-  const id = process.env[plan.priceEnv];
-  return id && id.trim() ? id.trim() : null;
+  const envName = PLANS[key].priceEnv;
+  return envName ? readPriceId(envName) : null;
 }
 
 export function topupPriceId(): string | null {
-  const id = process.env.STRIPE_PRICE_TOPUP;
-  return id && id.trim() ? id.trim() : null;
+  return readPriceId("STRIPE_PRICE_TOPUP");
 }
 
 /**

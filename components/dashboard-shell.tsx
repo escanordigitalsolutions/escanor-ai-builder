@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -41,12 +42,14 @@ export default async function DashboardShell({
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-6">
           <div className="flex items-center gap-7">
             <Link href="/dashboard" className="flex items-center gap-2.5">
-              <span
-                aria-hidden
-                className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#141312] text-[13px] font-semibold text-white"
-              >
-                M
-              </span>
+<Image
+                src="/brand/mark.png"
+                alt=""
+                width={28}
+                height={28}
+                priority
+                className="h-7 w-7 rounded-[9px]"
+              />
               <span className="text-[15px] font-semibold tracking-tight text-neutral-900">
                 Meikero
               </span>
@@ -68,7 +71,7 @@ export default async function DashboardShell({
               {isAdmin ? (
                 <Link
                   href="/admin"
-                  className="text-sm font-medium text-[#6366f1] transition-opacity hover:opacity-75"
+                  className="text-sm font-medium text-[#4c6eea] transition-opacity hover:opacity-75"
                 >
                   Admin
                 </Link>

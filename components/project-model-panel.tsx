@@ -75,7 +75,7 @@ export default function ProjectModelPanel({
 
   return (
     <div className="glass-card p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
         Models
       </p>
       <p className="mt-2 text-sm text-neutral-600">
