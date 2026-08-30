@@ -165,10 +165,14 @@ async function designExistsFor(
   supabase: ReturnType<typeof createServiceClient>,
   jobId: string
 ): Promise<boolean> {
+  // The job_id COLUMN, not brief->>jobId. The v4F migration added the column and
+  // an index for it; querying the json path instead left that index unused and
+  // made this a sequential scan of every design in the system — on a lookup that
+  // runs inside a request handler, for every poll of a stalled job.
   const { data, error } = await supabase
     .from("ai_designs")
     .select("id")
-    .eq("brief->>jobId", jobId)
+    .eq("job_id", jobId)
     .limit(1);
 
   if (error) {

@@ -117,6 +117,12 @@ export default async function AdminLayout({
               >
                 Designs
               </Link>
+              <Link
+                href="/admin/jobs"
+                className="text-sm text-neutral-400 transition-colors hover:text-white"
+              >
+                Generations
+              </Link>
             </nav>
           </div>
 

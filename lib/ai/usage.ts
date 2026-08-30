@@ -87,8 +87,12 @@ export async function recordUsage(
 
   if (!projectId || (!input && !output)) return;
 
+  // The job id rides along in meta as well as on the ledger row, so the
+  // operations log can be read back per generation rather than per project.
+  const withJob = jobId ? { ...(meta ?? {}), jobId } : meta;
+
   await Promise.allSettled([
-    writeUsageRow(projectId, stage, model, input, output, meta),
+    writeUsageRow(projectId, stage, model, input, output, withJob),
     chargeCredits(projectId, model, input, output, jobId),
   ]);
 }
