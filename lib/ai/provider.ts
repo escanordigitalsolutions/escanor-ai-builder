@@ -49,13 +49,30 @@ export function anthropicHeaders(): Record<string, string> {
  * Anthropic
  * ---------------------------------------------------------------------- */
 
+/**
+ * How much output a model will accept differs by model and changes over time.
+ *
+ * Asking for more than the maximum is rejected outright with a 400 — the run
+ * dies in seconds having produced nothing, for a number that was only ever
+ * meant as headroom. The API names the real limit in that message, so the
+ * honest response is to take it and go again rather than to hard-code a
+ * ceiling here that will be wrong after the next model.
+ */
+function allowedMaxTokens(detail: string): number | null {
+  const match = detail.match(/max_tokens:\s*\d+\s*>\s*(\d+)/i);
+  const allowed = match ? Number.parseInt(match[1], 10) : NaN;
+
+  return Number.isFinite(allowed) && allowed > 0 ? allowed : null;
+}
+
 async function anthropicGenerate(
   model: string,
   system: string,
   input: string,
   maxTokens: number,
   signal?: AbortSignal,
-  onChunk?: OnChunk
+  onChunk?: OnChunk,
+  retried = false
 ): Promise<GenResult> {
   const res = await fetch(ANTHROPIC_API, {
     method: "POST",
@@ -72,6 +89,19 @@ async function anthropicGenerate(
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
+
+    if (res.status === 400 && !retried) {
+      const allowed = allowedMaxTokens(detail);
+
+      if (allowed && allowed < maxTokens) {
+        console.warn(
+          `[ai] ${model} caps output at ${allowed}; asked for ${maxTokens}. Retrying at the cap.`
+        );
+
+        return anthropicGenerate(model, system, input, allowed, signal, onChunk, true);
+      }
+    }
+
     throw new Error(`Anthropic API ${res.status}: ${detail.slice(0, 300)}`);
   }
 

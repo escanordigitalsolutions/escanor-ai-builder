@@ -247,7 +247,13 @@ export async function generateMockup(
   const gen = await generateText({
     model,
     system: DESIGNER,
-    maxTokens: 32000,
+    // 64k because a complete bespoke homepage did not fit in 32k: the measured
+    // run stopped at exactly the ceiling, mid-sentence, and was thrown away.
+    // The cap is headroom, not a target — cost follows what the model actually
+    // writes, and the prompt still asks for a finished page over an elaborate
+    // one. Providers disagree about the maximum, so a cap this model will not
+    // accept is stepped down automatically rather than failing the run.
+    maxTokens: 64000,
     timeoutMs,
     input:
       `BRIEF — for content and voice\n${JSON.stringify(brief, null, 2)}` +
