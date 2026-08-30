@@ -93,7 +93,7 @@ final class WPAB_Cloud {
 	 * ------------------------------------------------------------------ */
 
 	public static function builder_url(): string {
-		$base = (string) apply_filters( 'wpab_builder_url', 'https://builder.escanor.lt' );
+		$base = (string) apply_filters( 'wpab_builder_url', 'https://meikero.com' );
 
 		return untrailingslashit( $base );
 	}

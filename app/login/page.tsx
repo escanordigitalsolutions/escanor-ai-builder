@@ -1,16 +1,36 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { FormEvent, Suspense, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+import { createClient } from "@/lib/supabase/client";
+import {
+  AuthError,
+  AuthField,
+  AuthNotice,
+  AuthShell,
+  AuthSubmit,
+} from "@/components/auth-shell";
+
+/** Only ever follow an in-app path — an absolute `next` would be an open redirect. */
+function safeNext(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
+  return raw;
+}
+
+function LoginForm() {
   const router = useRouter();
+  const params = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // /auth/callback reports expired or already-used links back here.
+  const linkError = params.get("error") ?? "";
+  const notice = params.get("message") ?? "";
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -20,10 +40,7 @@ export default function LoginPage() {
 
     const supabase = createClient();
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       setError(error.message);
@@ -31,71 +48,68 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
+    router.push(safeNext(params.get("next")));
     router.refresh();
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-[#f5f6f7] text-neutral-900">
-      <div className="w-full max-w-md border border-neutral-200 bg-white rounded-2xl p-8">
-        <div className="mb-8">
-          <p className="text-[11px] uppercase tracking-wide text-neutral-400 mb-2">
-            AI WEBSITE BUILDER
-          </p>
+    <AuthShell
+      title="Sign in"
+      subtitle="Welcome back to your Meikero workspace."
+      footer={
+        <>
+          No account yet?{" "}
+          <Link href="/signup" className="font-medium text-neutral-900 underline underline-offset-2">
+            Create one
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={handleLogin} className="flex flex-col gap-5">
+        <AuthField
+          id="email"
+          label="Email"
+          type="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
 
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Meikero
-          </h1>
-
-          <p className="text-neutral-500 mt-2">
-            Sign in to your development workspace.
-          </p>
+        <div>
+          <AuthField
+            id="password"
+            label="Password"
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+          <div className="mt-2 text-right">
+            <Link
+              href="/forgot-password"
+              className="text-xs text-neutral-500 underline underline-offset-2 hover:text-neutral-800"
+            >
+              Forgot your password?
+            </Link>
+          </div>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div>
-            <label className="block text-sm mb-2">
-              Email
-            </label>
+        <AuthNotice>{notice}</AuthNotice>
+        <AuthError>{error || linkError}</AuthError>
 
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-3 text-neutral-900 placeholder:text-neutral-400 outline-none focus:border-neutral-400"
-            />
-          </div>
+        <AuthSubmit loading={loading} idle="Sign in" busy="Signing in…" />
+      </form>
+    </AuthShell>
+  );
+}
 
-          <div>
-            <label className="block text-sm mb-2">
-              Password
-            </label>
-
-            <input
-              type="password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-lg border border-neutral-200 bg-white px-4 py-3 text-neutral-900 placeholder:text-neutral-400 outline-none focus:border-neutral-400"
-            />
-          </div>
-
-          {error && (
-            <p className="text-sm text-red-600">
-              {error}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-neutral-900 text-white py-3 font-medium hover:bg-neutral-800 disabled:opacity-50"
-          >
-            {loading ? "Signing in..." : "Sign in"}
-          </button>
-        </form>
-      </div>
-    </main>
+export default function LoginPage() {
+  // useSearchParams needs a Suspense boundary or the production build fails.
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }
