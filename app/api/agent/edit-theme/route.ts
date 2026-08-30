@@ -33,6 +33,7 @@ Rules:
 5. Do not create references to missing files or add external JS libraries.
 6. Do not use unsafe PHP, filesystem access, network calls or dynamic code execution.
 7. If the request cannot be completed safely from the available files, return no file blocks and explain the blocker in SUMMARY.
+8. Copy is sacred: never change visible text unless the request explicitly asks for a text change — and then use the EXACT wording given in the request, character for character. Never paraphrase, shorten or invent copy.
 
 Final format:
 SUMMARY: <what changed and where>

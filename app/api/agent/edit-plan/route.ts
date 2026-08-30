@@ -29,7 +29,8 @@ Rules:
 - Prefer the fewest files necessary.
 - Do not add unrelated improvements.
 - The final step verifies responsive layout and consistency; it may use an empty files array.
-- If the selected element is provided, use it to identify the correct section.`;
+- If the selected element is provided, use it to identify the correct section.
+- Include a text change only when the request explicitly asks for one; quote the exact new wording in the step detail.`;
 
 type Json = Record<string, unknown>;
 

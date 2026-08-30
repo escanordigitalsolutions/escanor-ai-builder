@@ -3,7 +3,7 @@
  * Plugin Name:       Meikero Bridge
  * Plugin URI:        https://builder.escanor.lt
  * Description:       Read-only bridge between this WordPress site and Meikero, the AI website builder. Lets the AI Editor inspect the active theme and the site's content.
- * Version:           1.12.0
+ * Version:           1.13.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            ESCANOR Digital Solutions
@@ -32,7 +32,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAB_VERSION', '1.12.0' );
+define( 'WPAB_VERSION', '1.13.0' );
 define( 'WPAB_FILE', __FILE__ );
 define( 'WPAB_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAB_URL', plugin_dir_url( __FILE__ ) );

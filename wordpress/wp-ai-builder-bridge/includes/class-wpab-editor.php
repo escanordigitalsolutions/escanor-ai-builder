@@ -459,7 +459,7 @@ final class WPAB_Editor {
 			return $applied;
 		}
 
-		try { self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
+		self::after_theme_write();
 
 		$changed = array();
 		foreach ( $files as $f ) {
@@ -487,7 +487,7 @@ final class WPAB_Editor {
 		$result = WPAB_Theme_Writer::undo();
 
 		if ( ! is_wp_error( $result ) ) {
-			try { self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
+			self::after_theme_write();
 		}
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
@@ -538,7 +538,7 @@ final class WPAB_Editor {
 			);
 		}
 
-		try { self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
+		self::after_theme_write();
 
 		return new WP_REST_Response(
 			array(
@@ -822,7 +822,7 @@ final class WPAB_Editor {
 		// images included — and (re)arm the sync hash.
 		$front_synced = false;
 		try {
-			$fs           = self::sync_front_content( true );
+			$fs           = self::after_theme_write( true );
 			$front_synced = ! empty( $fs['synced'] );
 		} catch ( \Throwable $e ) {} // phpcs:ignore
 
@@ -970,7 +970,7 @@ final class WPAB_Editor {
 		if ( is_wp_error( $applied ) ) {
 			return $applied;
 		}
-		try { self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
+		self::after_theme_write();
 		$changed = array();
 		foreach ( $files as $f ) {
 			if ( is_array( $f ) && isset( $f['path'] ) && '' !== trim( (string) $f['path'] ) ) {
@@ -1095,8 +1095,7 @@ final class WPAB_Editor {
 			return $applied;
 		}
 
-		$synced = array( 'synced' => false );
-		try { $synced = self::sync_front_content(); } catch ( \Throwable $e ) {} // phpcs:ignore
+		$synced = self::after_theme_write();
 
 		return new WP_REST_Response(
 			array(
@@ -1124,6 +1123,31 @@ final class WPAB_Editor {
 	 * longer matches the page, syncing pauses until the next full generation
 	 * (which passes $force).
 	 */
+	/**
+	 * Everything that must happen after theme files change: refresh the front
+	 * page's Gutenberg mirror and purge page caches so the change is actually
+	 * visible (LiteSpeed & co. otherwise keep serving the old HTML).
+	 */
+	private static function after_theme_write( bool $force_sync = false ): array {
+		$sync = array( 'synced' => false );
+		try {
+			$sync = self::sync_front_content( $force_sync );
+		} catch ( \Throwable $e ) {} // phpcs:ignore
+		self::purge_caches();
+		return $sync;
+	}
+
+	/** Best-effort purge of the common page caches after a theme/content write. */
+	private static function purge_caches(): void {
+		try {
+			do_action( 'litespeed_purge_all' );
+			if ( function_exists( 'w3tc_flush_all' ) ) { w3tc_flush_all(); }
+			if ( function_exists( 'wp_cache_clear_cache' ) ) { wp_cache_clear_cache(); }
+			if ( function_exists( 'rocket_clean_domain' ) ) { rocket_clean_domain(); }
+			wp_cache_flush();
+		} catch ( \Throwable $e ) {} // phpcs:ignore
+	}
+
 	public static function sync_front_content( bool $force = false ): array {
 		$generated = (string) get_option( WPAB_Theme_Writer::GENERATED_OPTION, '' );
 		if ( '' === $generated || $generated !== get_stylesheet() ) {
@@ -1147,12 +1171,10 @@ final class WPAB_Editor {
 		if ( ! $post ) {
 			return array( 'synced' => false, 'reason' => 'no-page' );
 		}
-		$last = (string) get_post_meta( $front_id, '_wpab_synced_hash', true );
-		$curr = md5( (string) $post->post_content );
-		if ( ! $force && '' !== trim( (string) $post->post_content ) && ( '' === $last || $last !== $curr ) ) {
-			// Edited by hand (or predates syncing) — leave it alone.
-			return array( 'synced' => false, 'reason' => 'manual-edits' );
-		}
+		// The front page is a MIRROR of the designed homepage — the design is
+		// the source of truth, so the mirror always follows it. (Manual edits
+		// to this one page get replaced on the next AI edit; the editor's
+		// Meikero panel says so.)
 
 		$blocks = array();
 		$total  = 0;
@@ -1306,7 +1328,7 @@ final class WPAB_Editor {
 		echo '<div style="display:flex;flex-direction:column;gap:8px;">';
 		echo '<p style="margin:0;color:#50575e;">' . esc_html(
 			$is_front
-				? 'This page mirrors the designed homepage and is kept in sync by Meikero — every AI edit updates it here too. If you edit it by hand, syncing pauses until the next theme generation.'
+				? 'This page mirrors the designed homepage — every Meikero AI edit refreshes it automatically. Changes made by hand here are replaced on the next AI edit, so edit the homepage in the AI Editor instead.'
 				: 'Made with Meikero. This content renders through the generated theme — edit it freely here, or use the AI Editor for design changes.'
 		) . '</p>';
 		echo '<a class="button button-primary" style="text-align:center;background:#141312;border-color:#141312;" href="' . esc_url( $url ) . '">Open AI Editor</a>';

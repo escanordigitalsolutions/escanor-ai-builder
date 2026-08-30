@@ -122,7 +122,7 @@ const tools: ToolDef[] = [
   {
     name: "edit_theme",
     description:
-      "Request a change to the active generated theme. Provide one precise instruction covering the intended result, selected element, constraints, and what must remain unchanged. Do not include code.",
+      "Request a change to the active generated theme. Provide one precise instruction covering the intended result, selected element, constraints, and what must remain unchanged. For any text change, quote the user's exact wording — never paraphrase or invent copy. Do not include code.",
     parameters: {
       type: "object",
       properties: {
