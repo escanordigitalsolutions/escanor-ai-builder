@@ -6,7 +6,7 @@ import MarketingShell from "@/components/marketing-shell";
 export const metadata: Metadata = {
   title: "Install the Meikero plugin — Docs",
   description:
-    "Connect your WordPress site to Meikero in about three minutes: download the bridge plugin, install it, paste your site key.",
+    "Connect your WordPress site to Meikero in about three minutes: create the site, install the plugin, paste one key.",
 };
 
 type Step = {
@@ -39,9 +39,8 @@ const STEPS: Step[] = [
     body: (
       <>
         <p>
-          On the dashboard choose <strong>New site</strong>, give it a name and
-          enter the address of the WordPress site you want to build on. Meikero
-          shows you a <em>site key</em> that starts with{" "}
+          On the dashboard choose <strong>New site</strong> and give it a name.
+          Meikero creates the site and shows you one key, starting with{" "}
           <code className="rounded bg-neutral-900/[0.06] px-1.5 py-0.5 font-mono text-[0.85em]">
             esk_live_
           </code>
@@ -49,21 +48,28 @@ const STEPS: Step[] = [
         </p>
         <p className="rounded-xl border border-amber-900/15 bg-amber-50/70 px-4 py-3 text-[0.88rem] text-amber-900">
           The key is shown once and never again. Copy it before you leave the
-          page — if you lose it, revoke it and make a new one, which takes a
-          few seconds.
+          page — if you lose it, create a new one from the site&rsquo;s page,
+          which takes a few seconds.
         </p>
       </>
     ),
   },
   {
     n: "03",
-    title: "Install the bridge plugin",
+    title: "Install the plugin",
     body: (
       <>
         <p>
-          Download the plugin zip from your dashboard, then in your WordPress
-          admin go to <strong>Plugins → Add New → Upload Plugin</strong>, choose
-          the zip and activate it.
+          <a
+            href="/plugin/meikero-bridge.zip"
+            download
+            className="font-medium text-brand underline-offset-4 hover:underline"
+          >
+            Download the plugin
+          </a>
+          , then in your WordPress admin go to{" "}
+          <strong>Plugins → Add New → Upload Plugin</strong>, choose the zip and
+          activate it.
         </p>
         <p>
           A <strong>Meikero</strong> item appears in your admin sidebar. Nothing
@@ -75,21 +81,25 @@ const STEPS: Step[] = [
   },
   {
     n: "04",
-    title: "Paste the key into Cloud connection",
+    title: "Paste the key — that is the whole connection",
     body: (
       <>
         <p>
-          Go to <strong>Meikero → Cloud connection</strong>, paste the site key
-          and save. The plugin calls Meikero once to introduce itself; when it
-          succeeds, your dashboard flips that site to{" "}
-          <strong>Connected</strong>.
+          Go to <strong>Meikero → Cloud connection</strong>, paste the key and
+          save. The plugin introduces itself to Meikero and hands over its own
+          access token in the same step, so there is nothing to copy back the
+          other way.
+        </p>
+        <p>
+          Your dashboard flips the site to <strong>Connected</strong> within a
+          few seconds.
         </p>
       </>
     ),
   },
   {
     n: "05",
-    title: "Open the AI Editor and describe your site",
+    title: "Describe your site",
     body: (
       <>
         <p>
@@ -98,9 +108,7 @@ const STEPS: Step[] = [
           Meikero designs a homepage and shows it to you before writing
           anything — approve the direction, and it builds the theme.
         </p>
-        <p>
-          Your existing theme stays installed and untouched the whole time.
-        </p>
+        <p>Your existing theme stays installed and untouched the whole time.</p>
       </>
     ),
   },
@@ -114,6 +122,10 @@ const TROUBLE = [
   {
     q: "“Invalid or revoked site API key.”",
     a: "The key belongs to a project that was deleted, or you revoked it. Generate a new key on the dashboard for the site you want and paste that one.",
+  },
+  {
+    q: "“The key was accepted, but Meikero could not read this site back.”",
+    a: "The key is fine — Meikero just cannot reach your site from the internet. This happens on local installs, sites behind HTTP auth, or hosts that block outside requests. Once the site is publicly reachable, save the key again to retry.",
   },
   {
     q: "A redirect error mentioning another domain",
@@ -141,8 +153,8 @@ export default function InstallDocsPage() {
         </h1>
         <p className="mt-4 text-[1.02rem] leading-relaxed text-neutral-600">
           About three minutes, most of it waiting for WordPress to install a
-          plugin. You will need admin access to the site and somewhere to paste
-          a key.
+          plugin. You need admin access to the site, and you will paste exactly
+          one key, in one direction.
         </p>
 
         <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-neutral-900/[0.09] bg-white/65 px-5 py-4 text-[0.88rem] text-neutral-700">

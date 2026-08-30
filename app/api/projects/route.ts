@@ -7,6 +7,7 @@ import {
 } from "@/lib/security/url-guard";
 import { createServiceClient } from "@/lib/supabase/service";
 import { entitlementFor } from "@/lib/billing/credits";
+import { generateApiKey, maskKeyId } from "@/lib/security/api-key";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -64,14 +65,67 @@ export async function POST(request: NextRequest) {
     const token =
       typeof body.token === "string" ? body.token.trim() : "";
 
-    if (!name || !siteUrl || !token) {
+    if (!name) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Project name, WordPress URL and token are required.",
-        },
+        { success: false, error: "A site name is required." },
         { status: 400 }
       );
+    }
+
+    /**
+     * The ordinary path: create the project and hand back one site key.
+     *
+     * Nothing about the WordPress site is needed yet. The plugin reports its
+     * address and bridge token itself, through agent/connect, the moment this
+     * key is pasted into it — so the customer never carries a value back the
+     * other way.
+     *
+     * The old shape, where the browser supplies a bridge token it collected by
+     * hand, still works when both fields are sent; it is what already-running
+     * installations use.
+     */
+    if (!siteUrl || !token) {
+      const service = createServiceClient();
+
+      const { data: project, error: projectError } = await service
+        .from("projects")
+        .insert({ owner_id: user.id, name })
+        .select("id, name")
+        .single();
+
+      if (projectError || !project) {
+        console.error("create project error:", projectError);
+        return NextResponse.json(
+          { success: false, error: "Could not create the site." },
+          { status: 500 }
+        );
+      }
+
+      const generated = generateApiKey();
+
+      const { error: keyError } = await service.from("site_api_keys").insert({
+        project_id: project.id,
+        label: "WordPress plugin",
+        key_id: generated.keyId,
+        key_hash: generated.keyHash,
+        created_by: user.id,
+      });
+
+      if (keyError) {
+        console.error("mint site key error:", keyError);
+        return NextResponse.json(
+          { success: false, error: "The site was created but its key was not." },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        project,
+        // Shown once, then only its hash exists.
+        siteKey: generated.plaintext,
+        keyMasked: maskKeyId(generated.keyId),
+      });
     }
 
     let origin: string;

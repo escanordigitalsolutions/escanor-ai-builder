@@ -183,17 +183,17 @@ function Onboarding() {
     {
       n: "01",
       title: "Add your site",
-      body: "Use “New site” above. You will get a site key that starts with esk_live_ — copy it, it is shown only once.",
+      body: "Use “New site” above and give it a name. Meikero shows you one site key, starting with esk_live_ — copy it, it is shown only once.",
     },
     {
       n: "02",
-      title: "Install the bridge plugin",
-      body: "In your WordPress admin: Plugins → Add New → Upload Plugin. Activate it, then paste the key under Meikero → Cloud connection.",
+      title: "Install the plugin",
+      body: "Download it below, then in your WordPress admin: Plugins → Add New → Upload Plugin. Activate it.",
     },
     {
       n: "03",
-      title: "Describe the site you want",
-      body: "Open Meikero → AI Editor in wp-admin. Say what the site is for and approve the homepage design — then it builds the theme.",
+      title: "Paste the key, once",
+      body: "In WordPress go to Meikero → Cloud connection, paste the key and save. The plugin introduces itself and the site appears here as connected — there is nothing to copy back.",
     },
   ];
 
@@ -223,12 +223,21 @@ function Onboarding() {
         ))}
       </ol>
 
-      <Link
-        href="/docs/install"
-        className="mt-7 inline-block text-sm font-medium text-brand underline-offset-4 hover:underline"
-      >
-        Read the full install guide →
-      </Link>
+      <div className="mt-7 flex flex-wrap items-center gap-3">
+        <a
+          href="/plugin/meikero-bridge.zip"
+          download
+          className="btn-accent px-4 py-2.5 text-sm font-medium"
+        >
+          Download the plugin
+        </a>
+        <Link
+          href="/docs/install"
+          className="text-sm font-medium text-brand underline-offset-4 hover:underline"
+        >
+          Read the full install guide →
+        </Link>
+      </div>
     </div>
   );
 }

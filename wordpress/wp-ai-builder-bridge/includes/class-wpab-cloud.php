@@ -169,6 +169,50 @@ final class WPAB_Cloud {
 	}
 
 	/**
+	 * Introduce this site to Meikero.
+	 *
+	 * Called right after a site key is saved. The plugin mints its own bridge
+	 * token and posts it together with this site's address, so Meikero can
+	 * read the theme without anyone carrying a second value back by hand.
+	 *
+	 * A fresh token is generated on every connect on purpose: the previous one
+	 * stops working immediately, so re-connecting a site is also how you rotate
+	 * its credentials.
+	 *
+	 * @return true|WP_Error
+	 */
+	public static function connect() {
+		if ( ! class_exists( 'WPAB_Auth' ) || ! method_exists( 'WPAB_Auth', 'generate_token' ) ) {
+			return new WP_Error(
+				'wpab_cloud_no_auth',
+				'This installation cannot issue a bridge token.',
+				array( 'status' => 500 )
+			);
+		}
+
+		$token = WPAB_Auth::generate_token();
+
+		if ( ! is_string( $token ) || '' === $token ) {
+			return new WP_Error(
+				'wpab_cloud_no_token',
+				'Could not issue a bridge token for this site.',
+				array( 'status' => 500 )
+			);
+		}
+
+		$result = self::request(
+			'agent/connect',
+			array(
+				'siteUrl'     => home_url( '/' ),
+				'bridgeToken' => $token,
+			),
+			30
+		);
+
+		return is_wp_error( $result ) ? $result : true;
+	}
+
+	/**
 	 * Strips anything that could smuggle a second header.
 	 */
 	private static function header_value( string $value ): string {
@@ -425,7 +469,23 @@ final class WPAB_Cloud {
 
 				$session = self::session();
 
-				$notice = is_wp_error( $session ) ? 'unverified' : 'connected';
+				if ( is_wp_error( $session ) ) {
+					$notice = 'unverified';
+				} else {
+					// The key is good, so finish the job: hand Meikero a bridge
+					// token instead of asking the user to fetch one themselves.
+					$connected = self::connect();
+
+					$notice = is_wp_error( $connected ) ? 'halfway' : 'connected';
+
+					if ( is_wp_error( $connected ) ) {
+						set_transient(
+							'wpab_connect_error',
+							$connected->get_error_message(),
+							120
+						);
+					}
+				}
 			}
 		}
 
@@ -473,7 +533,23 @@ final class WPAB_Cloud {
 			<h1>AI Builder — Cloud connection</h1>
 
 			<?php if ( 'connected' === $notice ) : ?>
-				<div class="notice notice-success"><p>Connected to the AI Builder cloud.</p></div>
+				<div class="notice notice-success"><p>Connected. This site is now linked to Meikero &mdash; nothing else to paste.</p></div>
+			<?php elseif ( 'halfway' === $notice ) : ?>
+				<div class="notice notice-warning">
+					<p>
+						The key was accepted, but Meikero could not read this site back.
+						That usually means the site is not reachable from the internet,
+						or something in front of it is blocking the request.
+					</p>
+					<?php
+					$connect_error = get_transient( 'wpab_connect_error' );
+					if ( $connect_error ) {
+						delete_transient( 'wpab_connect_error' );
+						echo '<p><code>' . esc_html( (string) $connect_error ) . '</code></p>';
+					}
+					?>
+					<p>Save the key again to retry.</p>
+				</div>
 			<?php elseif ( 'invalid' === $notice ) : ?>
 				<div class="notice notice-error"><p>That does not look like a valid site key. Copy it again from the builder dashboard.</p></div>
 			<?php elseif ( 'unverified' === $notice ) : ?>
