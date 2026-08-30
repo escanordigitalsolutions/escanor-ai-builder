@@ -107,6 +107,38 @@ async function upsertSubscription(sub: Stripe.Subscription): Promise<string | nu
   return userId;
 }
 
+
+/**
+ * The subscription an invoice belongs to.
+ *
+ * Stripe moved this. Up to API version 2025-03-31 it was `invoice.subscription`;
+ * from 2025-04-30 it lives at `invoice.parent.subscription_details.subscription`
+ * and the old field is gone entirely. Reading only the old one — which this did,
+ * behind an `as unknown as` cast that hid the mistake from the compiler — meant
+ * every renewal silently granted nothing: the plan updated from the
+ * subscription event, and the credits never arrived.
+ *
+ * Both are read so the handler keeps working across an SDK upgrade in either
+ * direction.
+ */
+function subscriptionIdOf(invoice: Stripe.Invoice): string | null {
+  const parent = invoice.parent?.subscription_details?.subscription;
+
+  if (typeof parent === "string") return parent;
+  if (parent && typeof parent === "object" && "id" in parent) {
+    return String(parent.id);
+  }
+
+  const legacy = (invoice as unknown as { subscription?: unknown }).subscription;
+
+  if (typeof legacy === "string") return legacy;
+  if (legacy && typeof legacy === "object" && "id" in legacy) {
+    return String((legacy as { id: unknown }).id);
+  }
+
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   const signature = request.headers.get("stripe-signature");
 
@@ -166,38 +198,84 @@ export async function POST(request: NextRequest) {
           session.metadata?.supabase_user_id ??
           (await userIdForCustomer(customerId));
 
-        if (userId && session.payment_status === "paid") {
-          await grantCredits(
-            userId,
-            TOPUP_CREDITS,
-            "topup",
-            session.id,
-            "Credit top-up"
-          );
+        if (!userId) {
+          return NextResponse.json({
+            received: true,
+            handled: false,
+            reason: "no Meikero account for this Stripe customer",
+          });
         }
-        break;
+
+        // "no_payment_required" is what a fully discounted purchase reports —
+        // a 100% coupon leaves nothing to charge, so Stripe never marks it
+        // "paid". The customer still bought the thing and is owed the credits.
+        const settled =
+          session.payment_status === "paid" ||
+          session.payment_status === "no_payment_required";
+
+        if (!settled) {
+          return NextResponse.json({
+            received: true,
+            handled: false,
+            reason: `payment_status is ${session.payment_status}`,
+          });
+        }
+
+        const granted = await grantCredits(
+          userId,
+          TOPUP_CREDITS,
+          "topup",
+          session.id,
+          "Credit top-up"
+        );
+
+        return NextResponse.json({
+          received: true,
+          handled: true,
+          granted: granted ? TOPUP_CREDITS : 0,
+          reason: granted ? undefined : "already granted for this session",
+        });
       }
 
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
-        await upsertSubscription(event.data.object as Stripe.Subscription);
-        break;
+        const sub = event.data.object as Stripe.Subscription;
+        const userId = await upsertSubscription(sub);
+        const planKey = planForPriceId(sub.items.data[0]?.price?.id);
+
+        return NextResponse.json({
+          received: true,
+          handled: Boolean(userId),
+          plan: planKey,
+          status: sub.status,
+          // A subscription that starts on a trial is never invoiced, so no
+          // credits arrive until the trial converts. Worth seeing here.
+          reason: userId
+            ? planKey
+              ? undefined
+              : `price ${sub.items.data[0]?.price?.id} maps to no plan — check STRIPE_PRICE_*`
+            : "no Meikero account for this Stripe customer",
+        });
       }
 
       case "invoice.paid": {
         const invoice = event.data.object as Stripe.Invoice;
 
-        const subscriptionId =
-          (invoice as unknown as { subscription?: string | { id: string } })
-            .subscription;
+        const subId = subscriptionIdOf(invoice);
 
-        const subId =
-          typeof subscriptionId === "string"
-            ? subscriptionId
-            : subscriptionId?.id ?? null;
-
-        if (!subId) break;
+        if (!subId) {
+          // Not every paid invoice belongs to a subscription — a one-off
+          // charge produces one too. Say so in the response rather than
+          // returning a silent success, because Stripe's dashboard shows this
+          // body per event and it is the fastest place to see why an invoice
+          // granted nothing.
+          return NextResponse.json({
+            received: true,
+            handled: false,
+            reason: "invoice has no subscription",
+          });
+        }
 
         // Refresh our mirror first so the plan we credit is the one just paid
         // for, not the one from before an upgrade.
@@ -208,22 +286,41 @@ export async function POST(request: NextRequest) {
         const planKey = planForPriceId(sub.items.data[0]?.price?.id);
         const credits = planKey ? PLANS[planKey].monthlyCredits : 0;
 
-        if (credits > 0) {
-          // ref is the invoice id, so one grant per billing period — a
-          // redelivered invoice.paid cannot top the account up twice.
-          await grantCredits(
-            userId,
-            credits,
-            "plan_grant",
-            invoice.id ?? `${subId}-${event.id}`,
-            `${planKey} monthly credits`
-          );
+        if (credits <= 0) {
+          return NextResponse.json({
+            received: true,
+            handled: false,
+            reason: planKey
+              ? `${planKey} grants no monthly credits`
+              : `price ${sub.items.data[0]?.price?.id} maps to no plan — check STRIPE_PRICE_*`,
+          });
         }
-        break;
+
+        // ref is the invoice id, so one grant per billing period — a
+        // redelivered invoice.paid cannot top the account up twice.
+        const granted = await grantCredits(
+          userId,
+          credits,
+          "plan_grant",
+          invoice.id ?? `${subId}-${event.id}`,
+          `${planKey} monthly credits`
+        );
+
+        return NextResponse.json({
+          received: true,
+          handled: true,
+          plan: planKey,
+          granted: granted ? credits : 0,
+          reason: granted ? undefined : "already granted for this invoice",
+        });
       }
 
       default:
-        break;
+        return NextResponse.json({
+          received: true,
+          handled: false,
+          reason: `${event.type} is not handled`,
+        });
     }
 
     return NextResponse.json({ received: true });
