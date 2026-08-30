@@ -149,3 +149,8 @@ a.glass-card:hover,
   background: rgba(20, 18, 16, 0.05);
   color: #6f6b64;
 }
+
+/* ---- marketing: the showcase preview borrows a generated theme's face ---- */
+.font-display {
+  font-family: var(--font-fraunces), Georgia, "Times New Roman", serif;
+}
