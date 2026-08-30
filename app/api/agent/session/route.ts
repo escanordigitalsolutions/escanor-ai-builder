@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
+import { entitlementFor } from "@/lib/billing/credits";
 
 /**
  * WordPress -> SaaS handshake.
@@ -22,6 +23,22 @@ export async function POST(request: NextRequest) {
   }
 
   const { context } = auth;
+
+  // The customer works inside wp-admin, so the balance has to be legible from
+  // there. Sending it on the handshake means the editor knows before the first
+  // request is refused, rather than discovering it as a 402 mid-generation.
+  let credits: { balance: number; plan: string; planName: string } | null = null;
+
+  try {
+    const entitlement = await entitlementFor(context.ownerId);
+    credits = {
+      balance: entitlement.balance,
+      plan: entitlement.plan.key,
+      planName: entitlement.plan.name,
+    };
+  } catch {
+    credits = null;
+  }
 
   return NextResponse.json({
     success: true,
@@ -48,6 +65,13 @@ export async function POST(request: NextRequest) {
       login: context.actor.login,
       displayName: context.actor.displayName,
     },
+
+    // Advertised to wp-admin. This is the clean base: read-only chat +
+    // live preview. Build/edit capabilities were removed to be rebuilt.
+    credits,
+
+    // Where to send someone who has run out.
+    accountUrl: "https://meikero.com/dashboard",
 
     // Advertised to wp-admin. This is the clean base: read-only chat +
     // live preview. Build/edit capabilities were removed to be rebuilt.

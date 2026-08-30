@@ -115,6 +115,26 @@ export default async function ProjectPage({ params }: Props) {
           <ProjectDesignsPanel projectId={project.id} />
         </div>
 
+        <section className="glass-card mt-4 flex flex-wrap items-center justify-between gap-4 p-6">
+          <div>
+            <h2 className="text-[1.02rem] font-semibold tracking-tight text-neutral-900">
+              The bridge plugin
+            </h2>
+            <p className="mt-1.5 max-w-lg text-sm leading-relaxed text-neutral-600">
+              Already installed sites update themselves from your Plugins
+              screen. This copy is here for reinstalling, or for connecting the
+              same key on another WordPress.
+            </p>
+          </div>
+          <a
+            href="/plugin/meikero-bridge.zip"
+            download
+            className="btn-ghost shrink-0 px-4 py-2.5 text-sm font-medium"
+          >
+            Download the plugin
+          </a>
+        </section>
+
         <ProjectDanger projectId={project.id} projectName={project.name} />
       </div>
     </DashboardShell>

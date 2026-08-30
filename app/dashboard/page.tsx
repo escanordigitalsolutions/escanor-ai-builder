@@ -165,6 +165,27 @@ export default async function DashboardPage() {
             })}
           </div>
         )}
+
+        {projects.length > 0 ? (
+          <p className="mt-6 text-sm text-neutral-500">
+            Connecting another WordPress?{" "}
+            <a
+              href="/plugin/meikero-bridge.zip"
+              download
+              className="font-medium text-brand underline-offset-4 hover:underline"
+            >
+              Download the plugin
+            </a>{" "}
+            or{" "}
+            <Link
+              href="/docs/install"
+              className="font-medium text-brand underline-offset-4 hover:underline"
+            >
+              read the install guide
+            </Link>
+            .
+          </p>
+        ) : null}
       </div>
     </DashboardShell>
   );

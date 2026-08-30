@@ -1702,6 +1702,7 @@ final class WPAB_Editor {
 					<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M20 14v5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19V6a1.5 1.5 0 0 1 1.5-1.5H10"/></svg>
 				</button>
 				<span class="wpab-ed__themetag" title="Active theme"><?php echo esc_html( wp_get_theme()->get( 'Name' ) ); ?></span>
+				<a id="wpab-ed-credits" class="wpab-ed__credits" href="https://meikero.com/dashboard" target="_blank" rel="noopener" title="Credits remaining" hidden></a>
 			</div>
 
 			<div id="wpab-ed-wizard" class="wpab-ed__wizard" hidden>
@@ -1834,6 +1835,9 @@ final class WPAB_Editor {
 			.wpab-ed__float { position: absolute; top: 12px; left: 14px; right: auto; z-index: 20; display: flex; align-items: center; gap: 8px; }
 			.wpab-ed__wpbtn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--ed-muted); border: 1px solid var(--ed-border); border-radius: 10px; background: rgba(255,255,255,.85); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--ed-shadow); cursor: pointer; text-decoration: none; transition: all .15s ease; }
 			.wpab-ed__wpbtn:hover { background: #141312; border-color: #141312; color: #fff; }
+			.wpab-ed__credits { font-size: 11px; font-weight: 600; color: var(--ed-muted); background: rgba(255,255,255,.7); border: 1px solid var(--ed-border); border-radius: 999px; padding: 5px 11px; text-decoration: none; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); white-space: nowrap; }
+			.wpab-ed__credits:hover { color: #141312; }
+			.wpab-ed__credits.is-empty { color: #b42318; border-color: rgba(180,35,24,.35); background: rgba(255,247,247,.9); }
 			.wpab-ed__themetag { font-size: 11px; font-weight: 600; color: var(--ed-muted); background: rgba(255,255,255,.7); border: 1px solid var(--ed-border); border-radius: 999px; padding: 5px 11px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 			.wpab-ed__newtheme { background: var(--ed-accent); color: #fff; border: 0; border-radius: 9px; padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px rgba(20,19,18,.22); }
 			.wpab-ed__newtheme:hover { background: #000; }
@@ -2494,6 +2498,52 @@ final class WPAB_Editor {
 				});
 				frame.src = cfg.initialUrl || cfg.siteUrl;
 			}
+
+			// Credits, shown in the chrome. The handshake already carries the
+			// balance, so this costs one request on load and tells the person
+			// where they stand before a generation is refused instead of after.
+			(function () {
+				var pill = $('wpab-ed-credits');
+				if (!pill || !cfg.restSession) { return; }
+
+				function paint(credits, accountUrl) {
+					if (!credits || typeof credits.balance !== 'number') { return; }
+					var n = credits.balance;
+					pill.textContent = n.toLocaleString() + ' credits';
+					pill.title = (credits.planName || 'Free') + ' plan · ' +
+						(n > 0 ? 'click to manage your account' : 'top up to keep building');
+					pill.classList.toggle('is-empty', n <= 0);
+					if (accountUrl) { pill.href = accountUrl; }
+					pill.hidden = false;
+				}
+
+				fetch(cfg.restSession, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce, 'Accept': 'application/json' },
+					credentials: 'same-origin',
+					body: '{}'
+				}).then(function (r) {
+					return r.json();
+				}).then(function (j) {
+					var session = (j && j.session) ? j.session : j;
+					if (session) { paint(session.credits, session.accountUrl); }
+				}).catch(function () {
+					// A missing balance is not worth an error state in the chrome.
+				});
+
+				// Generating spends credits, so refresh the figure once work settles.
+				window.wpabRefreshCredits = function () {
+					fetch(cfg.restSession, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': cfg.nonce, 'Accept': 'application/json' },
+						credentials: 'same-origin',
+						body: '{}'
+					}).then(function (r) { return r.json(); }).then(function (j) {
+						var session = (j && j.session) ? j.session : j;
+						if (session) { paint(session.credits, session.accountUrl); }
+					}).catch(function () {});
+				};
+			})();
 
 			// Open the page currently shown in the preview in a real browser tab.
 			(function () {

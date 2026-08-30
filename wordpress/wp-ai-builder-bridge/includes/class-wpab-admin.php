@@ -219,6 +219,16 @@ final class WPAB_Admin {
 		$report    = $connected ? WPAB_Cloud::request( 'agent/usage', array(), 20 ) : null;
 		$editor    = esc_url( admin_url( 'admin.php?page=' . self::EDITOR_SLUG ) );
 
+		// The balance rides along on the handshake, so the person working here
+		// sees what is left before a generation is refused rather than after.
+		$session = $connected ? WPAB_Cloud::session() : null;
+		$credits = ( is_array( $session ) && isset( $session['credits'] ) && is_array( $session['credits'] ) )
+			? $session['credits']
+			: null;
+		$account_url = ( is_array( $session ) && ! empty( $session['accountUrl'] ) )
+			? (string) $session['accountUrl']
+			: 'https://meikero.com/dashboard';
+
 		$stage_labels = array(
 			'design' => 'Design (mockup)',
 			'plan'   => 'Page plan',
@@ -254,12 +264,47 @@ final class WPAB_Admin {
 				.wpabd-table td { text-align:right; padding:6px 8px; border-top:1px solid rgba(20,19,18,.06); color:#3d3b38; }
 				.wpabd-btn { display:inline-block; background:#141312; color:#fff !important; border-radius:10px; padding:9px 18px; font-size:13px; font-weight:600; text-decoration:none; }
 				.wpabd-btn:hover { background:#000; }
+				.wpabd-credits .wpabd-creditrow { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; flex-wrap:wrap; }
+				.wpabd-credits .l { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#8a8783; }
+				.wpabd-credits .bal { font-size:34px; font-weight:600; line-height:1.1; color:#141312; margin-top:2px; font-variant-numeric:tabular-nums; }
+				.wpabd-credits .plan { font-size:16px; font-weight:600; color:#141312; margin-top:2px; }
+				.wpabd-credits .hint { margin:6px 0 0; font-size:12px; color:#6f6b64; }
+				.wpabd-credits.is-empty { border-color:rgba(190,40,40,.35); background:#fff7f7; }
+				.wpabd-credits.is-empty .bal { color:#b42318; }
 			</style>
 
 			<h1 style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
 				<span>Meikero — Dashboard</span>
 				<a class="wpabd-btn" href="<?php echo $editor; ?>">Open AI Editor →</a>
 			</h1>
+
+			<?php if ( $credits ) :
+				$balance = (int) ( $credits['balance'] ?? 0 );
+				$empty   = $balance <= 0;
+				?>
+				<div class="wpabd-panel wpabd-credits<?php echo $empty ? ' is-empty' : ''; ?>">
+					<div class="wpabd-creditrow">
+						<div>
+							<div class="l">Credits</div>
+							<div class="bal"><?php echo esc_html( number_format_i18n( $balance ) ); ?></div>
+							<p class="hint">
+								<?php if ( $empty ) : ?>
+									Out of credits — the AI Editor is paused until you top up.
+								<?php else : ?>
+									Spent as the AI works. A full site build is about 43.
+								<?php endif; ?>
+							</p>
+						</div>
+						<div style="text-align:right;">
+							<div class="l">Plan</div>
+							<div class="plan"><?php echo esc_html( (string) ( $credits['planName'] ?? 'Free' ) ); ?></div>
+							<a class="wpabd-btn" style="margin-top:8px;" href="<?php echo esc_url( $account_url ); ?>" target="_blank" rel="noopener">
+								<?php echo $empty ? 'Top up credits' : 'Manage account'; ?> →
+							</a>
+						</div>
+					</div>
+				</div>
+			<?php endif; ?>
 
 			<?php if ( ! $connected ) : ?>
 				<div class="wpabd-panel"><p>This site is not connected to the Meikero cloud yet. Open <a href="<?php echo esc_url( admin_url( 'admin.php?page=wp-ai-builder-bridge' ) ); ?>">Bridge settings</a> to connect.</p></div>

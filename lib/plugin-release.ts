@@ -11,13 +11,16 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.16.0",
+  version: "1.17.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-30",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.17.0</h4><ul>" +
+    "<li>Your credit balance now shows in the Meikero dashboard and in the AI Editor, so you can see what is left without leaving WordPress.</li>" +
+    "</ul>" +
     "<h4>1.16.0</h4><ul>" +
     "<li>Connecting a site now takes one key: the plugin registers itself with Meikero and hands over its own bridge token.</li>" +
     "<li>The plugin now offers its own updates, so fixes arrive like any other plugin.</li>" +
