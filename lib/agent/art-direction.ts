@@ -330,6 +330,65 @@ export function enforceReadability(tokens: DesignTokens): DesignTokens {
 // The direction itself
 // ---------------------------------------------------------------------------
 
+/**
+ * A logo, in the only form we can honestly produce.
+ *
+ * There is no image model in this pipeline, so a brand mark has to be drawable:
+ * a typographic wordmark and a geometric monogram in inline SVG. That is not a
+ * consolation prize — a mark cut from the same geometry as the page's signature
+ * move belongs to the design in a way a stock icon never does.
+ */
+export type BrandMark = {
+  /** How the name is set: face, weight, tracking, case, any cut or ligature. */
+  wordmark: string;
+  /** What the mark is, in one line, so a person can judge it without reading SVG. */
+  monogram: string;
+  /** The mark itself. Sanitised: see sanitiseSvg. */
+  markSvg: string;
+};
+
+/**
+ * A second and third palette for the same design.
+ *
+ * Nearly free, and the reason it is free is the token architecture: the
+ * validator makes every rule below :root go through a custom property, so
+ * replacing the eight colour values re-skins the entire page with no model call
+ * at all. One generation, three looks to choose between.
+ */
+export type Colorway = {
+  name: string;
+  color: Record<string, string>;
+};
+
+/**
+ * Make model-authored SVG safe to put on someone else's website.
+ *
+ * This markup is written by a language model and ends up inline in a WordPress
+ * theme, so it is untrusted by definition. Scripts, event handlers, external
+ * references and foreignObject are removed rather than escaped — a logo needs
+ * none of them, and anything that survives here runs on a real customer's site.
+ */
+export function sanitiseSvg(value: unknown, maxLength = 4000): string {
+  let svg = typeof value === "string" ? value.trim() : "";
+
+  if (!svg || !/^<svg[\s>]/i.test(svg)) return "";
+
+  svg = svg
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, "")
+    .replace(/<(image|use|iframe|object|embed|link|style)\b[^>]*>/gi, "")
+    // on*= handlers, in either quote style or unquoted
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    // javascript: and data: urls in href/xlink:href/src
+    .replace(/\s(?:xlink:)?href\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (match) =>
+      /^\s*(?:xlink:)?href\s*=\s*["']?#/i.test(match) ? match : ""
+    );
+
+  if (!/<\/svg>\s*$/i.test(svg)) return "";
+
+  return svg.length > maxLength ? "" : svg;
+}
+
 export type SectionPlan = { slug: string; job: string; shape: string };
 
 export type ArtDirection = {
@@ -351,6 +410,8 @@ export type ArtDirection = {
   motion: string;
   voice: { tone: string; sample: { h1: string; sub: string; cta: string } };
   avoid: string[];
+  brand: BrandMark;
+  colorways: Colorway[];
 };
 
 const STRATEGIES = ["photography", "typographic", "css-illustration", "mixed"] as const;
@@ -499,6 +560,8 @@ export function parseArtDirection(text: string): ArtDirection | null {
       queries: strList(imagery.queries, 3, 60),
     },
     motion: str(raw.motion, "", 400),
+    brand: brandMark(raw.brand),
+    colorways: colorways(raw.colorways, tokens),
     voice: {
       tone: str(voice.tone, "", 200),
       sample: {
@@ -509,4 +572,55 @@ export function parseArtDirection(text: string): ArtDirection | null {
     },
     avoid: strList(raw.avoid, 8, 200),
   };
+}
+
+function brandMark(value: unknown): BrandMark {
+  const raw = (value ?? {}) as Record<string, unknown>;
+
+  return {
+    wordmark: str(raw.wordmark, "", 300),
+    monogram: str(raw.monogram, "", 300),
+    markSvg: sanitiseSvg(raw.markSvg),
+  };
+}
+
+/**
+ * Alternative palettes, held to the same readability floor as the first.
+ *
+ * A colourway that fails contrast is not a choice, it is a broken page — and
+ * since the person switching between them will never check, the check happens
+ * here.
+ */
+function colorways(value: unknown, base: DesignTokens): Colorway[] {
+  if (!Array.isArray(value)) return [];
+
+  const out: Colorway[] = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+
+    const row = item as Record<string, unknown>;
+    const name = str(row.name, "", 40);
+    const source = (row.color ?? {}) as Record<string, unknown>;
+
+    if (!name) continue;
+
+    const color: Record<string, string> = {};
+
+    for (const role of COLOR_ROLES) {
+      color[role] = hex(source[role], base.color[role]);
+    }
+
+    // Identical to the base palette is not an alternative.
+    const same = COLOR_ROLES.every((role) => color[role] === base.color[role]);
+    if (same) continue;
+
+    const checked = enforceReadability({ ...base, color });
+
+    out.push({ name, color: checked.color });
+
+    if (out.length >= 2) break;
+  }
+
+  return out;
 }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { PAGE_LABEL, type DesignPage } from "@/lib/agent/design-pages";
+
 type DesignRow = {
   id: string;
   brief: { name?: string; prompt?: string } | null;
@@ -43,7 +45,8 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openHtml, setOpenHtml] = useState("");
-  const [openWhich, setOpenWhich] = useState<"home" | "inner">("home");
+  const [openWhich, setOpenWhich] = useState<DesignPage>("home");
+  const [openPages, setOpenPages] = useState<DesignPage[]>(["home"]);
   const [openNote, setOpenNote] = useState("");
   const [openLoading, setOpenLoading] = useState(false);
 
@@ -69,7 +72,7 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
     void load();
   }, [load]);
 
-  async function openPreview(designId: string, which: "home" | "inner" = "home") {
+  async function openPreview(designId: string, which: DesignPage = "home") {
     if (openId === designId && which === openWhich) {
       setOpenId(null);
       setOpenHtml("");
@@ -90,7 +93,9 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
 
       if (json.success) {
         setOpenHtml(json.design?.html ?? "");
+        setOpenPages((json.available ?? ["home"]) as DesignPage[]);
       } else {
+        if (Array.isArray(json.available)) setOpenPages(json.available as DesignPage[]);
         // A design from before inner pages were archived has only one screen.
         // Saying so beats an empty frame that looks like a bug.
         setOpenNote(json.error ?? "Could not load the preview.");
@@ -188,26 +193,19 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
             {openId === d.id && (
               <div className="mt-3">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => void openPreview(d.id, "home")}
-                    className={
-                      openWhich === "home"
-                        ? "btn-accent px-2.5 py-1 text-[11px] font-medium"
-                        : "btn-ghost px-2.5 py-1 text-[11px]"
-                    }
-                  >
-                    Homepage
-                  </button>
-                  <button
-                    onClick={() => void openPreview(d.id, "inner")}
-                    className={
-                      openWhich === "inner"
-                        ? "btn-accent px-2.5 py-1 text-[11px] font-medium"
-                        : "btn-ghost px-2.5 py-1 text-[11px]"
-                    }
-                  >
-                    Inner page
-                  </button>
+                  {openPages.map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => void openPreview(d.id, page)}
+                      className={
+                        openWhich === page
+                          ? "btn-accent px-2.5 py-1 text-[11px] font-medium"
+                          : "btn-ghost px-2.5 py-1 text-[11px]"
+                      }
+                    >
+                      {PAGE_LABEL[page]}
+                    </button>
+                  ))}
                   {openNote ? (
                     <span className="text-[11px] text-neutral-500">{openNote}</span>
                   ) : null}

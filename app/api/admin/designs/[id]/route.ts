@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { requireAdmin } from "@/lib/security/admin";
 import { errorDetail } from "@/lib/debug";
+import {
+  availablePages,
+  colorwayCss,
+  pickPage,
+  resolvePage,
+} from "@/lib/agent/design-pages";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,12 +25,12 @@ export async function GET(
   }
 
   const { id } = await params;
-  const which = request.nextUrl.searchParams.get("which") === "inner" ? "inner" : "home";
+  const which = resolvePage(request.nextUrl.searchParams.get("which"));
 
   try {
     const { data, error } = await createServiceClient()
       .from("ai_designs")
-      .select("id, html, inner_html, direction, validation, critique, concept, created_at")
+      .select("id, html, inner_html, pages, direction, validation, critique, concept, created_at")
       .eq("id", id)
       .single();
 
@@ -32,13 +38,12 @@ export async function GET(
       return NextResponse.json({ success: false, error: "Design not found." }, { status: 404 });
     }
 
-    const inner = (data.inner_html as string | null) ?? "";
-
     return NextResponse.json({
       success: true,
       which,
-      html: which === "inner" ? inner : data.html,
-      hasInner: Boolean(inner),
+      html: pickPage(data, which),
+      available: availablePages(data),
+      colorways: colorwayCss(data.direction),
       concept: data.concept,
       critique: data.critique,
       direction: data.direction,

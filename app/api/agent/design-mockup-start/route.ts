@@ -6,10 +6,14 @@ import {
   generateArtDirection,
   generateMockup,
   generateInnerMockup,
+  generateComponentSheet,
+  generateExtraPage,
   critiqueMockup,
   splitMockup,
   type MockupResult,
 } from "@/lib/agent/mockup-core";
+import { renderBrandSheet } from "@/lib/agent/brand-sheet";
+import { colorwayCss } from "@/lib/agent/design-pages";
 import { resolveShape, type ArtDirection } from "@/lib/agent/art-direction";
 import {
   repairMockup,
@@ -311,32 +315,76 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // ---- Stage 3 (cheap model): the review the person reads ----
-      if (msLeft() > 40_000) {
-        await setProgress("critique", "Stage 3/4 — quick design review…");
+      // ---- The brand sheet: free, so it is never gated ----
+      //
+      // Every fact on it was decided by the art director already; rendering a
+      // document from decisions already made needs no model at all.
+      const pages: Record<string, string> = {};
+
+      if (direction) {
         try {
-          const r = await critiqueMockup(modelConfig, mock.html, direction);
-          await recordUsage(projectId, "critique", r.model, r.usage, {
-            critique: r.data.slice(0, 300),
-          }, jobId);
-          done.critique = r.data || null;
-        } catch (critiqueError) {
-          console.error("critique stage error (continuing without):", critiqueError);
+          pages.brand = renderBrandSheet(direction, brandName(brief, direction));
+          done.hasBrandSheet = true;
+          // The CSS, not just the names: a colourway nobody can apply is a
+          // label. One :root block is the whole re-skin.
+          done.colorways = colorwayCss(direction);
+        } catch (brandError) {
+          console.error("brand sheet render failed:", brandError);
         }
       }
 
-      // ---- Stage 4 (cheap model): a representative inner page ----
-      // The most expendable stage, so it is the first to be dropped: without it
-      // the build falls back to deriving inner pages from the homepage.
-      if (msLeft() > 110_000) {
-        await setProgress("inner", "Stage 4/4 — designing an inner page…");
+      const home = {
+        css: mock.css,
+        header: mock.header,
+        footer: mock.footer,
+        fonts: mock.fonts,
+      };
+
+      // ---- The component system, derived from the finished page ----
+      //
+      // First of the derived stages because everything after it reuses its
+      // classes: an archive built without it invents its own card and pagination.
+      let componentCss = "";
+
+      if (msLeft() > 150_000) {
+        await setProgress("components", "Building the component set…");
         try {
-          const inn = await generateInnerMockup(modelConfig, brief, direction, {
-            css: mock.css,
-            header: mock.header,
-            footer: mock.footer,
-            fonts: mock.fonts,
-          });
+          const sheet = await generateComponentSheet(
+            modelConfig,
+            brief,
+            direction,
+            home,
+            Math.max(45_000, msLeft() - 90_000)
+          );
+
+          await recordUsage(projectId, "inner", sheet.model, sheet.usage, {
+            kind: "components",
+            blocks: sheet.blocks.map((b) => b.slug),
+            truncated: sheet.truncated,
+          }, jobId);
+
+          if (!sheet.truncated && sheet.blocks.length >= 4) {
+            pages.components = sheet.html;
+            componentCss = sheet.css;
+            done.components = sheet.blocks;
+            done.componentsCss = sheet.css;
+          }
+        } catch (sheetError) {
+          console.error("component sheet error (continuing without):", sheetError);
+        }
+      }
+
+      // ---- A representative inner page ----
+      if (msLeft() > 130_000) {
+        await setProgress("inner", "Designing an inner page…");
+        try {
+          const inn = await generateInnerMockup(
+            modelConfig,
+            brief,
+            direction,
+            home
+          );
+
           await recordUsage(projectId, "inner", inn.model, inn.usage, {
             chars: inn.html.length,
             heroFound: !!inn.pageHero,
@@ -352,13 +400,71 @@ export async function POST(request: NextRequest) {
         } catch (innerError) {
           console.error("inner-page stage error (continuing without):", innerError);
         }
-      } else {
-        console.log(`inner page skipped: only ${Math.round(msLeft() / 1000)}s left`);
+      }
+
+      // ---- The archive, then the 404 ----
+      //
+      // Ordered by how much they are missed. A theme without an archive has no
+      // blog; a theme without a designed 404 has a plain one.
+      for (const kind of ["archive", "notfound"] as const) {
+        const need = kind === "archive" ? 130_000 : 70_000;
+
+        if (msLeft() < need) {
+          console.log(`${kind} skipped: only ${Math.round(msLeft() / 1000)}s left`);
+          continue;
+        }
+
+        await setProgress(
+          kind,
+          kind === "archive" ? "Designing the blog archive…" : "Designing the 404 page…"
+        );
+
+        try {
+          const page = await generateExtraPage(
+            modelConfig,
+            brief,
+            direction,
+            home,
+            kind,
+            componentCss,
+            Math.max(40_000, msLeft() - 50_000)
+          );
+
+          await recordUsage(projectId, "inner", page.model, page.usage, {
+            kind,
+            chars: page.html.length,
+            bodyFound: Boolean(page.body),
+            truncated: page.truncated,
+          }, jobId);
+
+          if (!page.truncated && page.body) {
+            pages[kind] = page.html;
+            (done as Record<string, unknown>)[`${kind}Css`] = page.css;
+            (done as Record<string, unknown>)[`${kind}Body`] = page.body;
+          }
+        } catch (pageError) {
+          console.error(`${kind} page error (continuing without):`, pageError);
+        }
+      }
+
+      // ---- The review the person reads ----
+      if (msLeft() > 40_000) {
+        await setProgress("critique", "Quick design review…");
+        try {
+          const r = await critiqueMockup(modelConfig, mock.html, direction);
+          await recordUsage(projectId, "critique", r.model, r.usage, {
+            critique: r.data.slice(0, 300),
+          }, jobId);
+          done.critique = r.data || null;
+        } catch (critiqueError) {
+          console.error("critique stage error (continuing without):", critiqueError);
+        }
       }
 
       await enrich(
         db,
         designId,
+        pages,
         String(done.critique ?? ""),
         done.innerHtml
           ? {
@@ -502,6 +608,7 @@ async function archive(
 async function enrich(
   db: Db,
   designId: string | null,
+  pages: Record<string, string>,
   critique: string,
   inner: { html: string; css: string; pageHero: string } | null,
   assets: Record<string, unknown>
@@ -511,6 +618,7 @@ async function enrich(
   const patch: Record<string, unknown> = {};
 
   if (critique) patch.critique = critique;
+  if (Object.keys(pages).length) patch.pages = pages;
 
   if (inner) {
     patch.inner_html = inner.html;
@@ -604,6 +712,27 @@ async function failJob(
   } catch (refundError) {
     console.error("refund after failed design job:", refundError);
   }
+}
+
+/**
+ * The name to letter the brand sheet with.
+ *
+ * The wizard's own field first — it is what the person typed — and the concept
+ * name only when they left it blank.
+ */
+function brandName(brief: unknown, direction: ArtDirection): string {
+  const row = (brief ?? {}) as Record<string, unknown>;
+  const brand = (row.brand ?? {}) as Record<string, unknown>;
+
+  const candidates = [row.name, brand.name, direction.concept.name];
+
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim().slice(0, 60);
+    }
+  }
+
+  return "Brand";
 }
 
 function fatalCount(result: { failures: { fatal: boolean }[] }): number {

@@ -3,11 +3,18 @@
 import { useState } from "react";
 
 import type { AdminDesignRow } from "@/lib/admin/designs";
+import {
+  applyColorway,
+  PAGE_LABEL,
+  type ColorwayCss,
+  type DesignPage,
+} from "@/lib/agent/design-pages";
 
 type Loaded = {
   html: string;
-  which: "home" | "inner";
-  hasInner: boolean;
+  which: DesignPage;
+  available: DesignPage[];
+  colorways: ColorwayCss[];
   critique: string | null;
 };
 
@@ -34,8 +41,10 @@ function fmt(iso: string): string {
  */
 export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [which, setWhich] = useState<"home" | "inner">("home");
+  const [which, setWhich] = useState<DesignPage>("home");
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  // -1 is the palette the design was generated with.
+  const [way, setWay] = useState(-1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
@@ -47,7 +56,7 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
    * consequence of rendering — and an effect that begins by clearing three
    * pieces of state re-renders twice before the request even leaves.
    */
-  async function open(id: string, page: "home" | "inner") {
+  async function open(id: string, page: DesignPage) {
     setOpenId(id);
     setWhich(page);
     setBusy(true);
@@ -66,9 +75,11 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
       setLoaded({
         html: data.html ?? "",
         which: data.which,
-        hasInner: Boolean(data.hasInner),
+        available: (data.available ?? ["home"]) as DesignPage[],
+        colorways: (data.colorways ?? []) as ColorwayCss[],
         critique: data.critique ?? null,
       });
+      setWay(-1);
     } catch {
       setError("Could not load the design.");
     } finally {
@@ -174,27 +185,21 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
               {isOpen ? (
                 <div className="border-t border-neutral-900/10 bg-neutral-900/[0.02] p-5">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => void open(d.id, "home")}
-                      className={
-                        which === "home"
-                          ? "btn-accent px-3 py-1.5 text-xs font-medium"
-                          : "btn-ghost px-3 py-1.5 text-xs"
-                      }
-                    >
-                      Homepage
-                    </button>
-                    <button
-                      onClick={() => void open(d.id, "inner")}
-                      disabled={!d.hasInner}
-                      className={
-                        which === "inner"
-                          ? "btn-accent px-3 py-1.5 text-xs font-medium"
-                          : "btn-ghost px-3 py-1.5 text-xs disabled:opacity-40"
-                      }
-                    >
-                      Inner page
-                    </button>
+                    {/* Only the screens this design actually has: a generation
+                        that ran short of time simply produced fewer. */}
+                    {(loaded?.available ?? ["home"]).map((page) => (
+                      <button
+                        key={page}
+                        onClick={() => void open(d.id, page)}
+                        className={
+                          which === page
+                            ? "btn-accent px-3 py-1.5 text-xs font-medium"
+                            : "btn-ghost px-3 py-1.5 text-xs"
+                        }
+                      >
+                        {PAGE_LABEL[page]}
+                      </button>
+                    ))}
 
                     {d.outputTokens ? (
                       <span className="ml-auto font-mono text-[11px] text-neutral-500">
@@ -202,6 +207,29 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
                       </span>
                     ) : null}
                   </div>
+
+                  {loaded?.colorways.length ? (
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-neutral-400">
+                        Colourway
+                      </span>
+                      {[{ name: "As generated", rootCss: "" }, ...loaded.colorways].map(
+                        (option, index) => (
+                          <button
+                            key={option.name}
+                            onClick={() => setWay(index - 1)}
+                            className={
+                              way === index - 1
+                                ? "btn-accent px-2.5 py-1 text-[11px] font-medium"
+                                : "btn-ghost px-2.5 py-1 text-[11px]"
+                            }
+                          >
+                            {option.name}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  ) : null}
 
                   {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
 
@@ -221,8 +249,14 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
                         // sandbox without allow-scripts: an archived page is
                         // untrusted markup, and nothing here needs it to run.
                         sandbox=""
-                        srcDoc={loaded.html}
-                        title={`${d.concept ?? "Design"} — ${which}`}
+                        // Swapping the :root block is the entire re-skin: every
+                        // rule below it goes through the custom properties.
+                        srcDoc={
+                          way >= 0 && loaded.colorways[way]
+                            ? applyColorway(loaded.html, loaded.colorways[way].rootCss)
+                            : loaded.html
+                        }
+                        title={`${d.concept ?? "Design"} — ${PAGE_LABEL[which]}`}
                         className="h-[620px] w-full border-0 bg-white"
                       />
                     ) : (

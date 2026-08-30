@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
+import {
+  availablePages,
+  missingMessage,
+  pickPage,
+  resolvePage,
+} from "@/lib/agent/design-pages";
 
 /**
  * WordPress -> SaaS : one archived design's HTML for the wp-admin preview.
@@ -25,7 +31,7 @@ export async function POST(request: NextRequest) {
   }
 
   const designId = typeof body.designId === "string" ? body.designId.trim() : "";
-  const which = body.which === "inner" ? "inner" : "home";
+  const which = resolvePage(body.which);
 
   if (!designId) {
     return NextResponse.json(
@@ -36,7 +42,7 @@ export async function POST(request: NextRequest) {
 
   const { data: design, error } = await createServiceClient()
     .from("ai_designs")
-    .select("id, html, inner_html")
+    .select("id, html, inner_html, pages")
     .eq("id", designId)
     .eq("project_id", auth.context.projectId)
     .single();
@@ -45,22 +51,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "Design not found." }, { status: 404 });
   }
 
-  const inner = (design.inner_html as string | null) ?? "";
+  const html = pickPage(design, which);
+  const available = availablePages(design);
 
-  if (which === "inner" && !inner) {
+  if (!html) {
     return NextResponse.json(
-      {
-        success: false,
-        error: "This design has no inner page — it was generated before inner pages were kept, or that stage was skipped.",
-      },
+      { success: false, error: missingMessage(which), available },
       { status: 404 }
     );
   }
 
-  return NextResponse.json({
-    success: true,
-    which,
-    html: which === "inner" ? inner : design.html,
-    hasInner: Boolean(inner),
-  });
+  return NextResponse.json({ success: true, which, html, available });
+
 }

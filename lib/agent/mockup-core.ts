@@ -66,6 +66,27 @@ THE SECTION PLAN
 
 Between 4 and 7 sections. For each, give a kebab-case slug, the job it does for the visitor, and its structural shape. No two adjacent sections may share a shape — if two would, change one. A page of identically shaped sections is a list, not a design.
 
+THE BRAND MARK
+
+There is no image model here, so the mark has to be drawable — which is a
+constraint, not a limitation. Give two things:
+
+- the WORDMARK: how the brand name is set. Face, weight, tracking, case, and any
+  cut, ligature or substituted letterform that ties it to the page.
+- the MONOGRAM: one geometric mark, described in a line, and written as inline
+  SVG on a 32x32 viewBox using only path, rect, circle, polygon and g. Cut it
+  from the same geometry as your signature move, so it belongs to this design
+  rather than sitting on top of it. currentColor for fills; no gradients, no
+  text elements, no external references, no script.
+
+ALTERNATIVE PALETTES
+
+Give two more complete colour sets for the same design, each with a short name.
+They are not variations in taste — they are different arguments for the same
+brand, and each must hold together on its own. Same eight roles, same rules
+about contrast and about one accent. Keep the typefaces and the structure: only
+the colour changes.
+
 THE AVOID LIST
 
 Write 4 to 8 items. Each names something concrete a designer would plausibly do on THIS brief and that would make the page ordinary. "Avoid clichés" is not an item. "No wheat-field photograph behind the hero" is.
@@ -99,7 +120,11 @@ Answer with only JSON in exactly this shape. No markdown, no commentary, nothing
   "imagery": { "strategy": "photography|typographic|css-illustration|mixed", "treatment": "", "queries": [] },
   "motion": "",
   "voice": { "tone": "", "sample": { "h1": "", "sub": "", "cta": "" } },
-  "avoid": []
+  "avoid": [],
+  "brand": { "wordmark": "", "monogram": "", "markSvg": "<svg viewBox=\"0 0 32 32\" xmlns=\"http://www.w3.org/2000/svg\">...</svg>" },
+  "colorways": [
+    { "name": "", "color": { "ground": "#", "surface": "#", "ink": "#", "ink-2": "#", "muted": "#", "line": "#", "accent": "#", "accent-ink": "#" } }
+  ]
 }
 
 size runs smallest to largest, seven steps, clamp() allowed. space runs tightest to widest, seven steps. Every string is written for a designer to act on, not for a client to admire: concrete, short, specific.`;
@@ -117,7 +142,7 @@ export async function generateArtDirection(
   const gen = await generateText({
     model,
     system: ART_DIRECTOR,
-    maxTokens: 4000,
+    maxTokens: 6000,
     input:
       `BRIEF\n${JSON.stringify(brief, null, 2)}` +
       `\n\nREQUESTED SHAPE: ${shape} — ${SHAPES[shape]}` +
@@ -475,3 +500,243 @@ export async function generateInnerMockup(
 
 /** Kept under its old name: the route and the plugin both still say "style". */
 export const resolveStyle = resolveShape;
+
+// ---------------------------------------------------------------------------
+// Stage 5 — the component system, extracted from the finished page
+// ---------------------------------------------------------------------------
+
+/**
+ * The order here is the whole argument.
+ *
+ * A component library generated FIRST and composed into pages afterwards
+ * produces exactly the assembled, catalogue look this pipeline exists to avoid:
+ * the model never sees a whole page, so nothing on it is composed for the page
+ * it is on. Generating the page first and DERIVING the system from it keeps the
+ * bespoke result and still yields a vocabulary — one that inherits the design's
+ * character because it was cut from it.
+ *
+ * What the sheet adds is everything a WordPress theme needs and a homepage
+ * happens not to contain: form fields, tables, pagination, comments, a
+ * blockquote, a sidebar widget. Those are the parts that otherwise get invented
+ * separately on every inner page and never match.
+ */
+const COMPONENTS_RULES = `You are extending a finished website design into the component set its WordPress theme needs.
+
+You are given the design's tokens, its typefaces, its header and footer, and the class names its stylesheet already defines. Your job is NOT to redesign anything. It is to write the pieces the homepage happens not to contain, in the same visual language, so that a page built from them looks like it belongs to the same site.
+
+Build each of these, styled and in every state a person will actually see:
+- buttons: primary, secondary and quiet, each with rest, hover, focus-visible and disabled
+- a form: text input, textarea, select, checkbox, radio, a validation error, and a submit
+- a card, in the design's own idiom
+- long-form content: h2, h3, paragraph, unordered and ordered list, blockquote with attribution, inline link, code, a horizontal rule, and a figure with a caption
+- a data table with a header row
+- pagination, and a breadcrumb
+- a tag or badge, and a notice or callout
+- a sidebar widget with a heading and a list
+- a comment, with avatar placeholder, name, date and body
+
+RULES
+- Reuse the existing classes wherever one already fits. Invent a class only when nothing does.
+- Every colour, size, space and radius goes through the design's custom properties. No new hex values, no new typefaces.
+- Hover and focus-visible states on everything interactive, matching the homepage's behaviour.
+- Real, plausible copy in the brief's language. No lorem, no "Button" as a button label.
+
+TECHNICAL CONTRACT (required by the automatic splitter):
+- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim and nothing else inside), then <style data-part="components"> holding ONLY the new rules.
+- <body>: the given header markup verbatim, then one <section data-component="<kebab-slug>"> per group above, each opening with an <h2> naming it, then the given footer markup verbatim.
+- No <script>. No <img> unless its url already appears in the given markup.
+
+Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;
+
+export type SheetResult = {
+  html: string;
+  css: string;
+  blocks: MockupSection[];
+  truncated: boolean;
+  usage: Usage;
+  model: string;
+};
+
+export async function generateComponentSheet(
+  modelConfig: unknown,
+  brief: unknown,
+  direction: ArtDirection | null,
+  home: { css: string; header: string; footer: string; fonts: string[] },
+  timeoutMs?: number
+): Promise<SheetResult> {
+  const model = pickModel(modelConfig, "cheap");
+
+  const gen = await generateText({
+    model,
+    system: COMPONENTS_RULES,
+    maxTokens: 12000,
+    timeoutMs,
+    input: contextBlock(brief, direction, home),
+  });
+
+  const html = cleanDocument(gen.text, home.css);
+
+  const cssMatch = html.match(
+    /<style[^>]*data-part=["']components["'][^>]*>([\s\S]*?)<\/style>/i
+  );
+
+  const blocks: MockupSection[] = [];
+  const seen = new Set<string>();
+
+  for (const m of html.matchAll(
+    /<section[^>]*data-component=["']([a-z0-9-]+)["'][\s\S]*?<\/section>/gi
+  )) {
+    const slug = m[1].toLowerCase();
+    if (!seen.has(slug)) {
+      seen.add(slug);
+      blocks.push({ slug, html: m[0] });
+    }
+  }
+
+  console.log(
+    `components model=${model} chars=${html.length} blocks=${blocks.length} truncated=${gen.truncated}`
+  );
+
+  return {
+    html,
+    css: cssMatch ? cssMatch[1].trim() : "",
+    blocks,
+    truncated: gen.truncated,
+    usage: gen.usage,
+    model,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Stage 6 — the other pages a theme needs
+// ---------------------------------------------------------------------------
+
+export type ExtraPageKind = "archive" | "notfound";
+
+const PAGE_BRIEFS: Record<ExtraPageKind, string> = {
+  archive: `Design the BLOG ARCHIVE — the page that lists posts. It needs a page heading, an optional filter or category row, a list or grid of post cards (title, date, excerpt, and a link), and pagination. This is the one remaining page whose structure is genuinely different from the homepage's, so give it a real layout decision of its own rather than a grid of identical boxes.`,
+  notfound: `Design the 404 PAGE. Short, and useful: say plainly that the page is not there, give the visitor two or three real ways onward, and include the search field. Small, so make it count — a designed 404 is one of the few pages people remember.`,
+};
+
+/**
+ * A page built from the system, and allowed to leave it.
+ *
+ * The instruction below is deliberate: given a component sheet, a model will
+ * assemble pages out of it and stop designing. The sheet is a vocabulary — it
+ * guarantees that a button here matches a button there — but a page that only
+ * ever arranges existing parts is the catalogue look again, one level up.
+ */
+const EXTRA_PAGE_RULES = `Design ONE more page for a site whose design is already decided, matching it exactly — same tokens, typefaces, palette, spacing, motion and voice.
+
+The component set you are given is a VOCABULARY, NOT A TEMPLATE. Use it wherever it fits, so that a button, a card or a form on this page is the same as everywhere else. But this page is still designed, not assembled: where its content asks for a shape the components do not have, make that shape. A page that only rearranges existing parts is a catalogue, not a design.
+
+TECHNICAL CONTRACT (required by the automatic splitter):
+- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the existing CSS there — write the placeholder comment verbatim and nothing else inside), then <style data-part="page"> holding ONLY the rules this page adds.
+- <body>: the given header markup verbatim; then <main data-part="page-body"> containing the page; then the given footer markup verbatim.
+- Every colour, size, space and radius goes through the existing custom properties. No new hex values, no new typefaces, no new Google Fonts.
+- Hover and focus-visible states follow the existing design. No <script> unless the page genuinely needs one, and then vanilla and under 30 lines.
+- Real copy in the brief's language. No lorem.
+
+Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;
+
+export type ExtraPageResult = {
+  kind: ExtraPageKind;
+  html: string;
+  css: string;
+  body: string;
+  truncated: boolean;
+  usage: Usage;
+  model: string;
+};
+
+export async function generateExtraPage(
+  modelConfig: unknown,
+  brief: unknown,
+  direction: ArtDirection | null,
+  home: { css: string; header: string; footer: string; fonts: string[] },
+  kind: ExtraPageKind,
+  components?: string,
+  timeoutMs?: number
+): Promise<ExtraPageResult> {
+  const model = pickModel(modelConfig, "cheap");
+
+  const gen = await generateText({
+    model,
+    system: EXTRA_PAGE_RULES,
+    maxTokens: kind === "notfound" ? 6000 : 12000,
+    timeoutMs,
+    input:
+      `${PAGE_BRIEFS[kind]}\n\n` +
+      contextBlock(brief, direction, home) +
+      (components
+        ? `\n\nCOMPONENT CSS ALREADY AVAILABLE — reuse these classes\n${components.slice(0, 6000)}`
+        : ""),
+  });
+
+  const html = cleanDocument(gen.text, home.css);
+
+  const cssMatch = html.match(/<style[^>]*data-part=["']page["'][^>]*>([\s\S]*?)<\/style>/i);
+  const bodyMatch = html.match(/<main[^>]*data-part=["']page-body["'][\s\S]*?<\/main>/i);
+
+  console.log(
+    `extra-page kind=${kind} model=${model} chars=${html.length} body=${
+      bodyMatch ? "yes" : "MISSING"
+    } truncated=${gen.truncated}`
+  );
+
+  return {
+    kind,
+    html,
+    css: cssMatch ? cssMatch[1].trim() : "",
+    body: bodyMatch ? bodyMatch[0] : "",
+    truncated: gen.truncated,
+    usage: gen.usage,
+    model,
+  };
+}
+
+/** The shared briefing every derived page and sheet is given. */
+function contextBlock(
+  brief: unknown,
+  direction: ArtDirection | null,
+  home: { css: string; header: string; footer: string; fonts: string[] }
+): string {
+  const tokens = direction
+    ? serialiseTokens(direction.tokens)
+    : (home.css.match(/:root\s*\{[\s\S]*?\}/i) ?? [""])[0];
+
+  return (
+    `BRIEF\n${JSON.stringify(brief)}` +
+    (direction
+      ? `\n\nCONCEPT: "${direction.concept.name}" — ${direction.concept.thesis}` +
+        `\nVOICE: ${direction.voice.tone}`
+      : "") +
+    (home.fonts.length ? `\n\nGOOGLE FONTS (link these)\n${home.fonts.join("\n")}` : "") +
+    `\n\nDESIGN TOKENS — already defined; use them, do not redefine them\n${tokens}` +
+    `\n\nCLASSES ALREADY DEFINED — reuse where they fit\n${classInventory(home.css).join(", ")}` +
+    `\n\nHEADER MARKUP (copy verbatim)\n${home.header}` +
+    `\n\nFOOTER MARKUP (copy verbatim)\n${home.footer}`
+  );
+}
+
+/** Strip fences, trim to the document, and inject the real CSS for preview. */
+function cleanDocument(text: string, homeCss: string): string {
+  let html = text.trim();
+
+  const fence = html.match(/```(?:html)?\s*([\s\S]*?)```/i);
+  if (fence) html = fence[1].trim();
+
+  const start = html.search(/<!DOCTYPE/i);
+  if (start > 0) html = html.slice(start);
+
+  const end = html.lastIndexOf("</html>");
+  if (end !== -1) html = html.slice(0, end + "</html>".length);
+
+  if (html.includes("/*HOMEPAGE-CSS*/")) {
+    html = html.replace("/*HOMEPAGE-CSS*/", () => homeCss);
+  } else {
+    html = html.replace(/<head([^>]*)>/i, (m) => `${m}\n<style>${homeCss}</style>`);
+  }
+
+  return html;
+}

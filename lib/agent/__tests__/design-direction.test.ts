@@ -6,6 +6,7 @@ import {
   parseArtDirection,
   readRootTokens,
   resolveShape,
+  sanitiseSvg,
   serialiseTokens,
 } from "@/lib/agent/art-direction";
 import {
@@ -78,6 +79,27 @@ const REPLY = JSON.stringify({
   motion: "subtle",
   voice: { tone: "dry", sample: { h1: "Set in lead.", sub: "Since 1998.", cta: "Get a quote" } },
   avoid: ["No stock photo of hands on paper", "No cream-and-serif default"],
+  brand: {
+    wordmark: "Set in Fraunces, tight tracking, the R's leg cut flat.",
+    monogram: "A pressed rule, two bars offset by the width of one.",
+    markSvg:
+      '<svg viewBox="0 0 32 32"><script>bad()</script><path d="M2 8h28v4H2z" onclick="x()"/><path d="M2 20h20v4H2z"/></svg>',
+  },
+  colorways: [
+    {
+      name: "Night press",
+      color: {
+        ground: "#12100d",
+        surface: "#1b1815",
+        ink: "#f3efe6",
+        "ink-2": "#cdc6b8",
+        muted: "#8d8578",
+        line: "#2e2a25",
+        accent: "#e2673f",
+        "accent-ink": "#12100d",
+      },
+    },
+  ],
 });
 
 const direction = parseArtDirection(REPLY)!;
@@ -287,5 +309,100 @@ describe("retryNote", () => {
 
   it("is empty when nothing fatal happened", () => {
     expect(retryNote([{ code: "banned.font", detail: "Inter", fatal: false }])).toBe("");
+  });
+});
+
+describe("sanitiseSvg", () => {
+  /**
+   * This markup is written by a model and ends up inline on a customer's
+   * WordPress site. Everything below is something a model could plausibly
+   * produce and that must not survive.
+   */
+  const ok = '<svg viewBox="0 0 32 32"><path d="M0 0h32v32H0z"/></svg>';
+
+  it("keeps a plain mark", () => {
+    expect(sanitiseSvg(ok)).toContain("<path");
+  });
+
+  it("strips a script element", () => {
+    const dirty = '<svg viewBox="0 0 32 32"><script>fetch("/steal")</script><circle r="4"/></svg>';
+    const clean = sanitiseSvg(dirty);
+
+    expect(clean).not.toContain("script");
+    expect(clean).toContain("<circle");
+  });
+
+  it("strips event handlers in any quoting style", () => {
+    const dirty =
+      `<svg viewBox="0 0 32 32"><rect onload="alert(1)" onmouseover='x()' onclick=y() width="4"/></svg>`;
+    const clean = sanitiseSvg(dirty);
+
+    expect(clean).not.toMatch(/onload|onmouseover|onclick/i);
+    expect(clean).toContain("<rect");
+  });
+
+  it("strips javascript: and external links but keeps in-document ones", () => {
+    const dirty =
+      '<svg viewBox="0 0 32 32"><a href="javascript:alert(1)"><path d="M0 0"/></a>' +
+      '<use href="#mark"/></svg>';
+    const clean = sanitiseSvg(dirty);
+
+    expect(clean).not.toContain("javascript:");
+  });
+
+  it("removes elements that can pull in remote content", () => {
+    const dirty =
+      '<svg viewBox="0 0 32 32"><image href="https://evil.example/x.png"/><path d="M0 0"/></svg>';
+    const clean = sanitiseSvg(dirty);
+
+    expect(clean).not.toContain("evil.example");
+  });
+
+  it("refuses anything that is not an svg document", () => {
+    expect(sanitiseSvg('<div onclick="x()">hi</div>')).toBe("");
+    expect(sanitiseSvg("<svg viewBox='0 0 1 1'><path/>")).toBe("");
+    expect(sanitiseSvg("")).toBe("");
+    expect(sanitiseSvg(null)).toBe("");
+    expect(sanitiseSvg(42)).toBe("");
+  });
+
+  it("refuses a mark that is implausibly large", () => {
+    const huge = '<svg viewBox="0 0 32 32">' + "<path d='M0 0'/>".repeat(500) + "</svg>";
+    expect(sanitiseSvg(huge)).toBe("");
+  });
+});
+
+describe("colourways", () => {
+  it("keeps alternatives and holds each to the readability floor", () => {
+    for (const way of direction.colorways) {
+      expect(way.name.length).toBeGreaterThan(0);
+      expect(contrastRatio(way.color.ink, way.color.ground)).toBeGreaterThanOrEqual(4.5);
+      expect(Object.keys(way.color).length).toBeGreaterThanOrEqual(8);
+    }
+  });
+
+  it("drops a palette identical to the base one", () => {
+    const base = JSON.parse(REPLY);
+    base.colorways = [{ name: "Same", color: base.tokens.color }];
+
+    expect(parseArtDirection(JSON.stringify(base))?.colorways).toHaveLength(0);
+  });
+
+  it("never returns more than two", () => {
+    const base = JSON.parse(REPLY);
+    base.colorways = ["a", "b", "c", "d"].map((n, i) => ({
+      name: n,
+      color: { ...base.tokens.color, accent: `#00${i}0${i}0` },
+    }));
+
+    expect(parseArtDirection(JSON.stringify(base))?.colorways.length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("brand mark", () => {
+  it("survives parsing with the svg cleaned", () => {
+    expect(direction.brand.wordmark.length).toBeGreaterThan(0);
+    expect(direction.brand.markSvg).toContain("<path");
+    expect(direction.brand.markSvg).not.toContain("script");
   });
 });

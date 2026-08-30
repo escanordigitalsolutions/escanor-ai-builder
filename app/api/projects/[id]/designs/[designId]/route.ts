@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import {
+  availablePages,
+  missingMessage,
+  pickPage,
+  resolvePage,
+} from "@/lib/agent/design-pages";
 
 /** Dashboard: one archived design — GET returns its HTML, DELETE removes it. */
 
@@ -28,8 +34,7 @@ export async function GET(
 
   // A design has two screens: the homepage and the representative inner page.
   // Until the archive kept the second one there was nothing to choose between.
-  const which =
-    new URL(request.url).searchParams.get("which") === "inner" ? "inner" : "home";
+  const which = resolvePage(new URL(request.url).searchParams.get("which"));
 
   if (!(await authorize(id))) {
     return NextResponse.json({ success: false, error: "Not found." }, { status: 404 });
@@ -37,7 +42,7 @@ export async function GET(
 
   const { data: design, error } = await createServiceClient()
     .from("ai_designs")
-    .select("id, html, inner_html, concept, critique, model, status, created_at")
+    .select("id, html, inner_html, pages, concept, critique, model, status, created_at")
     .eq("id", designId)
     .eq("project_id", id)
     .single();
@@ -46,15 +51,12 @@ export async function GET(
     return NextResponse.json({ success: false, error: "Design not found." }, { status: 404 });
   }
 
-  const inner = (design.inner_html as string | null) ?? "";
+  const html = pickPage(design, which);
+  const available = availablePages(design);
 
-  if (which === "inner" && !inner) {
+  if (!html) {
     return NextResponse.json(
-      {
-        success: false,
-        error:
-          "No inner page was kept for this design — it predates the archive keeping them, or that stage was skipped.",
-      },
+      { success: false, error: missingMessage(which), available },
       { status: 404 }
     );
   }
@@ -62,10 +64,10 @@ export async function GET(
   return NextResponse.json({
     success: true,
     which,
-    hasInner: Boolean(inner),
+    available,
     design: {
       id: design.id,
-      html: which === "inner" ? inner : design.html,
+      html,
       concept: design.concept,
       critique: design.critique,
       model: design.model,
