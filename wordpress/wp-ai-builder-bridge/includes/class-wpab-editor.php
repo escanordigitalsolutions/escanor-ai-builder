@@ -26,6 +26,18 @@ final class WPAB_Editor {
 		// WPAB_Admin — the AI Editor is the primary tool, so it does not
 		// register a separate submenu of its own.
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
+
+		// Meikero-managed pages render through the generated theme, not through
+		// hand edits — send anyone opening one in the classic Pages editor
+		// straight to the AI Editor instead, with that page preloaded.
+		add_action( 'load-post.php', array( __CLASS__, 'guard_manual_page_edit' ) );
+		add_filter( 'page_row_actions', array( __CLASS__, 'filter_page_row_actions' ), 10, 2 );
+	}
+
+	/** True while a Meikero-generated theme is the active theme. */
+	private static function is_generated_theme_active(): bool {
+		$generated = (string) get_option( WPAB_Theme_Writer::GENERATED_OPTION, '' );
+		return '' !== $generated && $generated === get_stylesheet();
 	}
 
 	/* ---------------------------------------------------------------------
@@ -719,6 +731,15 @@ final class WPAB_Editor {
 			$body = '';
 			if ( isset( $content[ $slug ] ) && is_string( $content[ $slug ] ) ) {
 				$body = wp_kses_post( (string) $content[ $slug ] );
+				// Store real Gutenberg blocks, not raw HTML — otherwise the block
+				// editor shows one opaque HTML blob with no editable links or
+				// buttons. Same converter the front page mirror uses.
+				if ( '' !== $body ) {
+					$blocked = self::html_to_blocks( $body );
+					if ( '' !== $blocked ) {
+						$body = $blocked;
+					}
+				}
 			}
 
 			$existing = get_page_by_path( $slug );
@@ -734,6 +755,9 @@ final class WPAB_Editor {
 							'post_content' => $body,
 						)
 					);
+					// The content just written is Meikero's, so this page is now
+					// managed by the AI Editor, not the block editor.
+					update_post_meta( (int) $existing->ID, '_wpab_generated_page', 1 );
 				}
 			} else {
 				$id = wp_insert_post(
@@ -752,6 +776,7 @@ final class WPAB_Editor {
 				}
 
 				$created[ $slug ] = (int) $id;
+				update_post_meta( $id, '_wpab_generated_page', 1 );
 			}
 
 			if ( $slug === $front_slug ) {
@@ -764,6 +789,7 @@ final class WPAB_Editor {
 		if ( $front_id > 0 ) {
 			update_option( 'show_on_front', 'page' );
 			update_option( 'page_on_front', $front_id );
+			update_post_meta( $front_id, '_wpab_generated_page', 1 );
 		}
 
 		// Build the primary menu from the blueprint order.
@@ -1133,8 +1159,43 @@ final class WPAB_Editor {
 		try {
 			$sync = self::sync_front_content( $force_sync );
 		} catch ( \Throwable $e ) {} // phpcs:ignore
+		try {
+			self::backfill_managed_pages();
+		} catch ( \Throwable $e ) {} // phpcs:ignore
 		self::purge_caches();
 		return $sync;
+	}
+
+	/**
+	 * Tag the front page and every page with a matching page-<slug>.php
+	 * template as Meikero-managed (_wpab_generated_page), so the manual-edit
+	 * guard and the Pages list "Edit in Meikero" link cover them too. Cheap
+	 * and idempotent — safe to call on every write, and it also catches up
+	 * sites generated before this existed, without a separate migration.
+	 */
+	private static function backfill_managed_pages(): void {
+		if ( ! self::is_generated_theme_active() ) {
+			return;
+		}
+		$front_id = (int) get_option( 'page_on_front', 0 );
+		if ( $front_id > 0 && ! get_post_meta( $front_id, '_wpab_generated_page', true ) ) {
+			update_post_meta( $front_id, '_wpab_generated_page', 1 );
+		}
+		$dir   = trailingslashit( wp_normalize_path( get_stylesheet_directory() ) );
+		$files = glob( $dir . 'page-*.php' );
+		if ( ! is_array( $files ) ) {
+			return;
+		}
+		foreach ( $files as $file ) {
+			$slug = preg_replace( '/^page-|\.php$/', '', basename( $file ) );
+			if ( '' === $slug ) {
+				continue;
+			}
+			$page = get_page_by_path( $slug );
+			if ( $page instanceof WP_Post && ! get_post_meta( $page->ID, '_wpab_generated_page', true ) ) {
+				update_post_meta( $page->ID, '_wpab_generated_page', 1 );
+			}
+		}
 	}
 
 	/** Best-effort purge of the common page caches after a theme/content write. */
@@ -1149,8 +1210,7 @@ final class WPAB_Editor {
 	}
 
 	public static function sync_front_content( bool $force = false ): array {
-		$generated = (string) get_option( WPAB_Theme_Writer::GENERATED_OPTION, '' );
-		if ( '' === $generated || $generated !== get_stylesheet() ) {
+		if ( ! self::is_generated_theme_active() ) {
 			return array( 'synced' => false, 'reason' => 'not-generated' );
 		}
 		$front_id = (int) get_option( 'page_on_front', 0 );
@@ -1285,6 +1345,19 @@ final class WPAB_Editor {
 				}
 				continue;
 			}
+			if ( 'p' === $tag ) {
+				$solo_link = self::paragraph_is_solo_link( $node );
+				if ( $solo_link instanceof DOMElement ) {
+					$href = $solo_link->getAttribute( 'href' );
+					$text = trim( wp_strip_all_tags( self::inline_html( $doc, $solo_link, array( 'strong' => array(), 'em' => array(), 'b' => array(), 'i' => array() ) ) ) );
+					if ( '' !== $href && '' !== $text && ! isset( $seen_text[ $text ] ) ) {
+						$seen_text[ $text ] = true;
+						$out[]              = "<!-- wp:buttons -->\n<div class=\"wp-block-buttons\"><!-- wp:button -->\n<div class=\"wp-block-button\"><a class=\"wp-block-button__link wp-element-button\" href=\"" . esc_url( $href ) . '">' . esc_html( $text ) . "</a></div>\n<!-- /wp:button --></div>\n<!-- /wp:buttons -->";
+						$done[ spl_object_id( $node ) ] = true;
+						continue;
+					}
+				}
+			}
 			$t     = self::inline_html( $doc, $node, $inline );
 			$plain = trim( wp_strip_all_tags( $t ) );
 			if ( '' === $plain || strlen( $plain ) < 2 || strlen( $plain ) > 1200 || isset( $seen_text[ $plain ] ) ) {
@@ -1313,26 +1386,112 @@ final class WPAB_Editor {
 		return trim( wp_kses( $html, $allowed ) );
 	}
 
+	/**
+	 * If a <p> contains nothing but a single <a> (no other text or elements),
+	 * return that anchor so it can become a real wp:buttons block instead of
+	 * an inert link buried in a paragraph. Returns null otherwise.
+	 */
+	private static function paragraph_is_solo_link( $node ): ?DOMElement {
+		$link = null;
+		foreach ( $node->childNodes as $child ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+			if ( XML_TEXT_NODE === $child->nodeType ) {
+				if ( '' !== trim( (string) $child->textContent ) ) {
+					return null;
+				}
+				continue;
+			}
+			if ( XML_ELEMENT_NODE !== $child->nodeType ) {
+				continue;
+			}
+			if ( 'a' !== strtolower( (string) $child->nodeName ) || null !== $link ) { // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+				return null;
+			}
+			$link = $child;
+		}
+		return $link instanceof DOMElement ? $link : null;
+	}
+
 	/** "Made with Meikero" panel in the page editor. */
 	public static function register_meta_boxes(): void {
-		$generated = (string) get_option( WPAB_Theme_Writer::GENERATED_OPTION, '' );
-		if ( '' === $generated || $generated !== get_stylesheet() ) {
+		if ( ! self::is_generated_theme_active() ) {
 			return;
 		}
 		add_meta_box( 'wpab-made-with', 'Meikero', array( __CLASS__, 'render_meta_box' ), 'page', 'side', 'high' );
 	}
 
+	/**
+	 * Defensive fallback only — a Meikero-managed page's edit screen normally
+	 * never reaches this point, because guard_manual_page_edit() redirects to
+	 * the AI Editor before WordPress renders it.
+	 */
 	public static function render_meta_box( $post ): void {
 		$is_front = (int) get_option( 'page_on_front', 0 ) === (int) $post->ID;
-		$url      = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
+		$url      = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&edit_page=' . (int) $post->ID );
 		echo '<div style="display:flex;flex-direction:column;gap:8px;">';
 		echo '<p style="margin:0;color:#50575e;">' . esc_html(
 			$is_front
-				? 'This page mirrors the designed homepage — every Meikero AI edit refreshes it automatically. Changes made by hand here are replaced on the next AI edit, so edit the homepage in the AI Editor instead.'
-				: 'Made with Meikero. This content renders through the generated theme — edit it freely here, or use the AI Editor for design changes.'
+				? 'This page mirrors the designed homepage — every Meikero AI edit refreshes it automatically. It is not meant to be edited by hand; use the AI Editor instead.'
+				: 'Made with Meikero. This page renders through the generated theme and is managed by the AI Editor, not the block editor.'
 		) . '</p>';
 		echo '<a class="button button-primary" style="text-align:center;background:#141312;border-color:#141312;" href="' . esc_url( $url ) . '">Open AI Editor</a>';
 		echo '</div>';
+	}
+
+	/**
+	 * A Meikero-managed page opened via post.php (the classic Pages editor)
+	 * never shows the block editor — it goes straight to the AI Editor with
+	 * that page preloaded in the live preview. Manual edits to generated
+	 * pages get lost on the next AI edit anyway; this stops that surprise
+	 * before it happens instead of just warning about it after the fact.
+	 */
+	public static function guard_manual_page_edit(): void {
+		if ( ! isset( $_GET['action'], $_GET['post'] ) || 'edit' !== sanitize_key( wp_unslash( $_GET['action'] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return;
+		}
+		// Match the AI Editor page's own capability requirement — never send
+		// someone to a screen they are not allowed to open.
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		$post_id = absint( $_GET['post'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( $post_id <= 0 || 'page' !== get_post_type( $post_id ) ) {
+			return;
+		}
+		if ( ! self::is_generated_theme_active() ) {
+			return;
+		}
+		// Sites generated before this guard existed have no meta yet — tag
+		// them now instead of waiting for the next AI edit.
+		if ( ! get_post_meta( $post_id, '_wpab_generated_page', true ) ) {
+			self::backfill_managed_pages();
+		}
+		if ( ! get_post_meta( $post_id, '_wpab_generated_page', true ) ) {
+			return;
+		}
+		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&edit_page=' . $post_id ) );
+		exit;
+	}
+
+	/** Pages list: point the Edit link at the AI Editor for managed pages, and drop Quick Edit (it bypasses the guard above). */
+	public static function filter_page_row_actions( array $actions, WP_Post $post ): array {
+		if ( ! self::is_generated_theme_active() ) {
+			return $actions;
+		}
+		if ( ! get_post_meta( $post->ID, '_wpab_generated_page', true ) ) {
+			self::backfill_managed_pages();
+		}
+		if ( ! get_post_meta( $post->ID, '_wpab_generated_page', true ) ) {
+			return $actions;
+		}
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return $actions;
+		}
+		if ( isset( $actions['edit'] ) ) {
+			$url             = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&edit_page=' . (int) $post->ID );
+			$actions['edit'] = '<a href="' . esc_url( $url ) . '">Edit in Meikero</a>';
+		}
+		unset( $actions['inline hide-if-no-js'] );
+		return $actions;
 	}
 
 	/** Edit planning: the cheap model turns an instruction into a numbered plan. */
@@ -1528,6 +1687,18 @@ final class WPAB_Editor {
 			return;
 		}
 
+		// Deep link from the Pages list / manual-edit guard: preload the
+		// preview on the specific page someone was trying to open, instead of
+		// always landing on the homepage.
+		$initial_url  = '';
+		$edit_page_id = isset( $_GET['edit_page'] ) ? absint( $_GET['edit_page'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( $edit_page_id > 0 ) {
+			$permalink = get_permalink( $edit_page_id );
+			if ( is_string( $permalink ) && '' !== $permalink ) {
+				$initial_url = $permalink;
+			}
+		}
+
 		$config = array(
 			'restSession'     => esc_url_raw( rest_url( self::NAMESPACE . '/cloud/session' ) ),
 			'restChat'        => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat' ) ),
@@ -1554,6 +1725,7 @@ final class WPAB_Editor {
 			'cloudPage'   => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-cloud' ) ),
 			'exitUrl'     => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
 			'siteUrl'     => esc_url_raw( home_url( '/' ) ),
+			'initialUrl'  => '' !== $initial_url ? esc_url_raw( $initial_url ) : '',
 			'connected'   => (bool) WPAB_Cloud::has_key(),
 		);
 		?>
@@ -2356,7 +2528,7 @@ final class WPAB_Editor {
 						}
 					} catch (e) {}
 				});
-				frame.src = cfg.siteUrl;
+				frame.src = cfg.initialUrl || cfg.siteUrl;
 			}
 
 			// Open the page currently shown in the preview in a real browser tab.

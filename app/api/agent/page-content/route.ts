@@ -26,6 +26,8 @@ Return only JSON:
 Rules:
 - One entry per requested page, using the exact slug given.
 - content is the page BODY only, as clean semantic HTML: <p>, <h2>, <h3>, <ul>/<li>, <strong>, <em>, <a href="/slug/">. No <h1> (the template renders the title), no images, no inline styles, no classes, no scripts, no wrapper <div>.
+- Link generously to other real pages of this site (by slug, as <a href="/slug/">) wherever the copy naturally references them — these become real, trackable links, not decoration.
+- Optionally close the page with one short standalone paragraph containing nothing but a single call-to-action link, e.g. <p><a href="/membership/">Join the club</a></p> — this renders as a button, so keep the link text to 2-4 words and do not add any other sentence in that paragraph.
 - 120-250 words per page, specific to this brand and its voice — never lorem ipsum, never generic filler that could describe any business.
 - Write in the same language as the brief.
 - A contact page may only use contact details the brief actually provides; otherwise invite contact without inventing addresses, emails or phone numbers.`;
