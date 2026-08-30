@@ -15,12 +15,28 @@ export function debugErrors(): boolean {
   return process.env.DEBUG_ERRORS !== "0";
 }
 
-/** A readable one-liner for any thrown value. */
-export function describeError(error: unknown): string {
+/**
+ * A readable one-liner for any thrown value, cause chain included.
+ *
+ * Node's fetch throws `TypeError: fetch failed` and puts the real reason in
+ * `cause` — so a stored `error.message` reads "fetch failed" and says nothing.
+ * That cost an hour of investigation for a failure whose cause was
+ * `UND_ERR_BODY_TIMEOUT`, a name that would have identified it instantly.
+ *
+ * The chain is walked, not just the first link: undici nests the code one level
+ * below the message, and a transport error usually carries `code`, `errno` or
+ * `syscall` that name the failure far better than any prose.
+ */
+export function describeError(error: unknown, depth = 3): string {
   if (error instanceof Error) {
-    const cause =
-      error.cause instanceof Error ? ` (cause: ${error.cause.message})` : "";
-    return `${error.name}: ${error.message}${cause}`;
+    const extra = errorCode(error);
+    const head = `${error.name}: ${error.message}${extra ? ` [${extra}]` : ""}`;
+
+    if (depth > 0 && error.cause !== undefined && error.cause !== null) {
+      return `${head} <- ${describeError(error.cause, depth - 1)}`;
+    }
+
+    return head;
   }
 
   if (typeof error === "string") return error;
@@ -30,6 +46,16 @@ export function describeError(error: unknown): string {
   } catch {
     return String(error);
   }
+}
+
+/** The machine-readable part of a transport error, when there is one. */
+function errorCode(error: Error): string {
+  const row = error as unknown as Record<string, unknown>;
+
+  return ["code", "errno", "syscall"]
+    .map((key) => (typeof row[key] === "string" || typeof row[key] === "number" ? String(row[key]) : ""))
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**

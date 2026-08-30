@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { generateBuildFiles, readMockupCtx } from "@/lib/agent/build-files-core";
 import { recordUsage } from "@/lib/ai/usage";
 import { refundJobUsage } from "@/lib/billing/credits";
+import { describeError } from "@/lib/debug";
 
 // The response returns immediately with a job id, but the generation itself
 // runs in after() — it needs the full duration budget.
@@ -162,10 +163,8 @@ export async function POST(request: NextRequest) {
         .from("ai_jobs")
         .update({
           status: "error",
-          error:
-            error instanceof Error
-              ? error.message.slice(0, 500)
-              : "The file generator could not be reached.",
+          // The whole cause chain: "fetch failed" on its own names nothing.
+          error: describeError(error).slice(0, 500),
           updated_at: new Date().toISOString(),
         })
         .eq("id", jobId)

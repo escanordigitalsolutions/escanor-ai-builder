@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
+import { describeError } from "@/lib/debug";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
@@ -312,7 +313,7 @@ export async function POST(request: NextRequest) {
         .from("ai_jobs")
         .update({
           status: "error",
-          error: error instanceof Error ? error.message.slice(0, 500) : "The editor could not be reached.",
+          error: describeError(error).slice(0, 500),
           updated_at: new Date().toISOString(),
         })
         .eq("id", jobId)

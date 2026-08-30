@@ -23,6 +23,7 @@ import {
 } from "@/lib/agent/validate-mockup";
 import { recordUsage } from "@/lib/ai/usage";
 import { refundJobUsage } from "@/lib/billing/credits";
+import { describeError } from "@/lib/debug";
 
 // The response returns immediately with a job id; the mockup itself renders in
 // after() and can take a couple of minutes on a strong model.
@@ -508,13 +509,10 @@ export async function POST(request: NextRequest) {
         return;
       }
 
-      await failJob(
-        db,
-        jobId,
-        error instanceof Error
-          ? error.message.slice(0, 500)
-          : "The designer could not be reached."
-      );
+      // describeError, not error.message: Node's fetch reports every transport
+      // failure as "fetch failed" and hides the reason in `cause`, which is
+      // exactly the string that used to land in this column and explain nothing.
+      await failJob(db, jobId, describeError(error).slice(0, 500));
     }
   });
 
