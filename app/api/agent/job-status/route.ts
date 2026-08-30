@@ -2,12 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
+import { refundJobUsage } from "@/lib/billing/credits";
 
 /**
  * WordPress -> SaaS : poll a background job started by build-files-start.
  * Returns { status: "running" | "done" | "error", result?, error? }.
  * Scoped to the authenticated site's project.
+ *
+ * This endpoint is also where dead jobs are buried.
+ *
+ * The work runs inside after(), which Vercel kills the moment maxDuration is
+ * reached — no catch block runs, no final row is written. The job simply stays
+ * "running" forever, and the browser polls it until its own eight-minute
+ * timeout and reports something misleading about the design step.
+ *
+ * A job older than any function is allowed to live cannot still be working, so
+ * it is resolved here, on read, with no cron to maintain: if the row already
+ * holds a finished result it is handed over, and if it does not, the job is
+ * failed and its credits are given back.
  */
+
+/** maxDuration on every generating route is 300s; the margin covers cold starts. */
+const DEAD_AFTER_MS = 330_000;
 
 type Json = Record<string, unknown>;
 
@@ -40,7 +56,7 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceClient();
   const { data: job, error } = await supabase
     .from("ai_jobs")
-    .select("id, status, result, error")
+    .select("id, status, result, error, created_at")
     .eq("id", jobId)
     .eq("project_id", auth.context.projectId)
     .single();
@@ -52,10 +68,101 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const result = (job.result ?? null) as Record<string, unknown> | null;
+
+  if (job.status === "running" && olderThanAnyFunction(job.created_at)) {
+    // The row carries a finished artefact: the run got there and was killed
+    // during a later, optional stage. Deliver what it produced.
+    if (result?.success === true) {
+      await supabase
+        .from("ai_jobs")
+        .update({ status: "done", error: null, updated_at: new Date().toISOString() })
+        .eq("id", jobId)
+        .then(
+          () => {},
+          () => {}
+        );
+
+      return NextResponse.json({ success: true, status: "done", result, error: null });
+    }
+
+    // A design can exist even when the job row never recorded it, and charging
+    // for delivered work is right while refunding it is not. Checked before the
+    // refund rather than after, because the refund cannot be undone.
+    const delivered = await designExistsFor(supabase, jobId);
+
+    // Refund FIRST, then record the failure. Flipping the status first would
+    // close the only branch that can reach this code, so a refund that failed
+    // on a transient error could never be retried on a later poll.
+    let refunded = 0;
+
+    if (!delivered) {
+      try {
+        refunded = await refundJobUsage(jobId, "Refund: generation exceeded its time limit");
+      } catch (refundError) {
+        console.error("refund for stalled job failed:", refundError);
+      }
+    }
+
+    const message =
+      "The generation ran past its time limit and was stopped. " +
+      (delivered
+        ? "Its output was saved to your design archive."
+        : refunded > 0
+          ? `The ${round(refunded)} credits it used have been refunded — try again.`
+          : "Try again.");
+
+    await supabase
+      .from("ai_jobs")
+      .update({ status: "error", error: message, result: null, updated_at: new Date().toISOString() })
+      .eq("id", jobId)
+      .then(
+        () => {},
+        () => {}
+      );
+
+    return NextResponse.json({ success: true, status: "error", result: null, error: message });
+  }
+
   return NextResponse.json({
     success: true,
     status: job.status,
-    result: job.result ?? null,
+    result,
     error: job.error ?? null,
   });
+}
+
+function olderThanAnyFunction(createdAt: unknown): boolean {
+  const started = Date.parse(String(createdAt ?? ""));
+  return Number.isFinite(started) && Date.now() - started > DEAD_AFTER_MS;
+}
+
+/**
+ * Did this job actually produce something before it died?
+ *
+ * The design routes stamp the job id into the archived design, so a run that
+ * was killed after storing its work can be told apart from one that produced
+ * nothing. Only the second kind is owed a refund.
+ */
+async function designExistsFor(
+  supabase: ReturnType<typeof createServiceClient>,
+  jobId: string
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("ai_designs")
+    .select("id")
+    .eq("brief->>jobId", jobId)
+    .limit(1);
+
+  if (error) {
+    // Unknown is treated as "nothing delivered": the person keeps their credits.
+    console.error("design lookup for stalled job failed:", error.message);
+    return false;
+  }
+
+  return Boolean(data && data.length);
+}
+
+function round(credits: number): string {
+  return credits >= 1 ? String(Math.round(credits)) : credits.toFixed(2);
 }

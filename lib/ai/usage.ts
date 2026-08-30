@@ -2,7 +2,7 @@ import { after } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { creditsFor } from "@/lib/billing/cost";
-import { recordUsageDebit } from "@/lib/billing/credits";
+import { recordUsageDebit, usageRef } from "@/lib/billing/credits";
 import type { Usage } from "./provider";
 
 /**
@@ -33,7 +33,16 @@ export function logUsage(
   stage: UsageStage,
   model: string,
   usage: Usage | { inputTokens?: number; outputTokens?: number } | null | undefined,
-  meta?: Record<string, unknown>
+  meta?: Record<string, unknown>,
+  /**
+   * The background job this call belongs to, when there is one.
+   *
+   * It becomes the ledger row's ref, which is what makes a refund possible: a
+   * run that charges four times and then dies can only be made whole if the
+   * four rows can be found again. Without it every row for a project shares one
+   * ref and no single failure can be unwound.
+   */
+  jobId?: string
 ): void {
   const input = Math.max(0, Math.round(usage?.inputTokens ?? 0));
   const output = Math.max(0, Math.round(usage?.outputTokens ?? 0));
@@ -42,12 +51,7 @@ export function logUsage(
     return;
   }
 
-  const work = async () => {
-    await Promise.allSettled([
-      writeUsageRow(projectId, stage, model, input, output, meta),
-      chargeCredits(projectId, model, input, output),
-    ]);
-  };
+  const work = () => recordUsage(projectId, stage, model, usage, meta, jobId);
 
   try {
     after(work);
@@ -55,6 +59,38 @@ export function logUsage(
     // Outside a request context (a script, a test) after() is unavailable.
     void work();
   }
+}
+
+/**
+ * The same accounting, but awaitable.
+ *
+ * logUsage defers this into after(), which is right for a request handler: the
+ * caller must not wait for a ledger write before answering. It is wrong inside
+ * a background job that may later have to REFUND what it charged — the refund
+ * sums the ledger rows for the job, and a debit still sitting in a deferred
+ * callback is a debit the refund cannot see. That produced a refund smaller
+ * than the charge, and because the ledger allows only one refund per job, the
+ * shortfall could never be corrected afterwards.
+ *
+ * So any code path that can end in a refund awaits this instead.
+ */
+export async function recordUsage(
+  projectId: string,
+  stage: UsageStage,
+  model: string,
+  usage: Usage | { inputTokens?: number; outputTokens?: number } | null | undefined,
+  meta?: Record<string, unknown>,
+  jobId?: string
+): Promise<void> {
+  const input = Math.max(0, Math.round(usage?.inputTokens ?? 0));
+  const output = Math.max(0, Math.round(usage?.outputTokens ?? 0));
+
+  if (!projectId || (!input && !output)) return;
+
+  await Promise.allSettled([
+    writeUsageRow(projectId, stage, model, input, output, meta),
+    chargeCredits(projectId, model, input, output, jobId),
+  ]);
 }
 
 async function writeUsageRow(
@@ -107,7 +143,8 @@ async function chargeCredits(
   projectId: string,
   model: string,
   input: number,
-  output: number
+  output: number,
+  jobId?: string
 ): Promise<void> {
   const credits = creditsFor(model, input, output);
 
@@ -128,7 +165,12 @@ async function chargeCredits(
       return;
     }
 
-    await recordUsageDebit(String(project.owner_id), credits, projectId, model);
+    await recordUsageDebit(
+      String(project.owner_id),
+      credits,
+      jobId ? usageRef(jobId) : projectId,
+      model
+    );
   } catch (error) {
     console.error("credit debit failed:", error);
   }

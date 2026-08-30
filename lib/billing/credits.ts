@@ -147,6 +147,73 @@ export async function recordUsageDebit(
   }
 }
 
+/**
+ * Give back everything one job charged, when that job delivered nothing.
+ *
+ * A generation that times out has already been billed: usage is debited stage
+ * by stage, as each model call returns, because that is when the money was
+ * really spent. If the run then dies before producing anything the person can
+ * use, keeping those credits is charging for nothing.
+ *
+ * Idempotent by construction. The ledger's unique index on (reason, ref) for
+ * positive deltas means a second refund for the same job silently does
+ * nothing — which matters here, because both the job itself and the stalled-job
+ * sweep in job-status can reach this for the same failure.
+ */
+export async function refundJobUsage(
+  jobId: string,
+  note = "Refund: generation failed"
+): Promise<number> {
+  if (!jobId) return 0;
+
+  const db = createServiceClient();
+  const ref = usageRef(jobId);
+
+  const { data: rows, error } = await db
+    .from("credit_ledger")
+    .select("user_id, delta")
+    .eq("ref", ref)
+    .eq("reason", "usage");
+
+  if (error) {
+    console.error("refundJobUsage read error:", error);
+    return 0;
+  }
+
+  if (!rows || !rows.length) return 0;
+
+  // Every row for one job belongs to one owner; taking it from the data keeps
+  // this callable from places that never looked the user up.
+  const userId = String(rows[0].user_id);
+  const spent = rows.reduce((sum, row) => sum + Number(row.delta ?? 0), 0);
+  const refund = Math.abs(Number(spent.toFixed(4)));
+
+  if (refund < 0.0001) return 0;
+
+  const { error: insertError } = await db.from("credit_ledger").insert({
+    user_id: userId,
+    delta: refund,
+    reason: "refund",
+    ref,
+    note: note.slice(0, 300),
+  });
+
+  if (insertError) {
+    // 23505 is the unique index doing its job: this refund already happened.
+    if (insertError.code === "23505") return 0;
+    console.error("refundJobUsage insert error:", insertError);
+    return 0;
+  }
+
+  console.log(`refunded ${refund} credits for ${ref}`);
+  return refund;
+}
+
+/** How a usage row names the job that caused it. */
+export function usageRef(jobId: string): string {
+  return `job:${jobId}`;
+}
+
 export type Entitlement = {
   plan: Plan;
   balance: number;

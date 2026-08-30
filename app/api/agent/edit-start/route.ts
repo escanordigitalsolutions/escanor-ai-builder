@@ -5,7 +5,7 @@ import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
 import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
-import { logUsage } from "@/lib/ai/usage";
+import { recordUsage } from "@/lib/ai/usage";
 import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
 
 export const maxDuration = 300;
@@ -261,7 +261,7 @@ export async function POST(request: NextRequest) {
 
       const parsed = parseOutput(result.text);
 
-      void logUsage(projectId, "edit", editModel, result.usage, {
+      await recordUsage(projectId, "edit", editModel, result.usage, {
         instruction: instruction.slice(0, 400),
         planSteps: planSteps.map((st) => st.title),
         inspected: inspected.slice(0, 12),
@@ -271,7 +271,7 @@ export async function POST(request: NextRequest) {
         durationMs: Date.now() - startedAt,
         exhausted: result.exhausted,
         async: true,
-      });
+      }, jobId);
 
       if (result.exhausted || parsed.files.length === 0) {
         const blocker =

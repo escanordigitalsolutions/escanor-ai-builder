@@ -3,7 +3,8 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
 import { generateBuildFiles, readMockupCtx } from "@/lib/agent/build-files-core";
-import { logUsage } from "@/lib/ai/usage";
+import { recordUsage } from "@/lib/ai/usage";
+import { refundJobUsage } from "@/lib/billing/credits";
 
 // The response returns immediately with a job id, but the generation itself
 // runs in after() — it needs the full duration budget.
@@ -101,17 +102,39 @@ export async function POST(request: NextRequest) {
   const jobId = job.id as string;
 
   // Opportunistic cleanup so the table never grows unbounded.
-  supabase
-    .from("ai_jobs")
-    .delete()
-    .lt("created_at", new Date(Date.now() - 86400000).toISOString())
-    .then(() => {});
+  //
+  // Jobs that are still "running" a day later were killed mid-flight, and their
+  // row is the only record that a refund is owed. Deleting it first made the
+  // money unreachable for anyone who closed the browser instead of polling
+  // until the sweep in job-status noticed — so they are settled before the
+  // delete, not by it.
+  after(async () => {
+    const cutoff = new Date(Date.now() - 86400000).toISOString();
+    const db = createServiceClient();
+
+    const { data: stale } = await db
+      .from("ai_jobs")
+      .select("id")
+      .eq("status", "running")
+      .lt("created_at", cutoff)
+      .limit(50);
+
+    for (const row of stale ?? []) {
+      try {
+        await refundJobUsage(String(row.id), "Refund: generation never finished");
+      } catch (refundError) {
+        console.error("refund during job sweep failed:", refundError);
+      }
+    }
+
+    await db.from("ai_jobs").delete().lt("created_at", cutoff);
+  });
 
   after(async () => {
     const db = createServiceClient();
     try {
       const result = await generateBuildFiles(modelConfig, blueprint, paths, mockup);
-      await logUsage(projectId, "build", result.model, result.usage);
+      await recordUsage(projectId, "build", result.model, result.usage, undefined, jobId);
       const ok = result.files.length > 0;
       await db
         .from("ai_jobs")
