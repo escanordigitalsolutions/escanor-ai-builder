@@ -51,12 +51,12 @@ export function MossClubPreview() {
     <figure className="m-0">
       <BrowserChrome>
         <div
-          className="relative px-6 py-7 sm:px-8 sm:py-9"
+          className="relative px-6 py-6 sm:px-7 sm:py-7"
           style={{ background: MOSS.void, color: MOSS.cream }}
         >
           {/* Site header */}
           <div
-            className="mb-8 flex items-center justify-between border-b pb-4"
+            className="mb-6 flex items-center justify-between border-b pb-3.5"
             style={{ borderColor: "rgba(242,236,217,.13)" }}
           >
             <span className="flex items-center gap-1.5">
@@ -96,7 +96,7 @@ export function MossClubPreview() {
             Seasonal moss terrarium subscription
           </p>
           <h3
-            className="font-display max-w-[13ch] text-[1.85rem] font-semibold leading-[1.03] tracking-[-0.01em] sm:text-[2.3rem]"
+            className="font-display max-w-[13ch] text-[1.6rem] font-semibold leading-[1.05] tracking-[-0.01em] sm:text-[1.95rem]"
             style={{ color: MOSS.cream }}
           >
             Bring a living miniature forest home
@@ -111,7 +111,7 @@ export function MossClubPreview() {
           </p>
 
           {/* Specimen strip — stands in for the theme's macro photography. */}
-          <div className="mt-7 grid grid-cols-5 gap-2">
+          <div className="mt-6 grid grid-cols-5 gap-2">
             {[
               "linear-gradient(150deg,#2f4a24,#7d9a5e)",
               "linear-gradient(150deg,#0e2015,#33481f)",
@@ -136,7 +136,7 @@ export function MossClubPreview() {
 
           {/* Membership tiers — the theme's real plan names and prices. */}
           <div
-            className="mt-7 grid grid-cols-3 gap-2.5 border-t pt-6"
+            className="mt-6 grid grid-cols-3 gap-2.5 border-t pt-5"
             style={{ borderColor: "rgba(242,236,217,.13)" }}
           >
             {[

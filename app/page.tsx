@@ -94,7 +94,7 @@ export default function HomePage() {
       {/* Hero — the prompt on one side, what it produced on the other.    */}
       {/* ---------------------------------------------------------------- */}
       <section className="mx-auto max-w-6xl px-6 pb-20 pt-16 sm:pt-24">
-        <div className="grid items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+        <div className="grid items-start gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div>
             <p
               className="mk-rise text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]"

@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { stripe, webhookSecret } from "@/lib/billing/stripe";
 import { grantCredits } from "@/lib/billing/credits";
 import { PLANS, TOPUP_CREDITS, planForPriceId } from "@/lib/billing/plans";
+import { errorDetail } from "@/lib/debug";
 
 // Node, not edge: verifying the signature needs the raw body and Stripe's SDK.
 export const runtime = "nodejs";
@@ -123,7 +124,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     // A bad signature means this did not come from Stripe. Never process it.
     console.error("stripe signature verification failed:", error);
-    return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
+    // Stripe shows this body in its own dashboard, which is the fastest place
+    // to notice a webhook secret that belongs to a different endpoint.
+    return NextResponse.json(
+      { error: "Invalid signature.", code: "bad_signature", ...errorDetail(error) },
+      { status: 400 }
+    );
   }
 
   const db = createServiceClient();
@@ -223,11 +229,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true });
   } catch (error) {
     console.error(`stripe webhook (${event.type}) failed:`, error);
+    const detail = errorDetail(error, { event: event.type, eventId: event.id });
 
     // Let Stripe retry: drop the claim so the retry is not treated as a
     // duplicate of an event we never actually finished handling.
     await db.from("stripe_events").delete().eq("id", event.id);
 
-    return NextResponse.json({ error: "Handler failed." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Handler failed.", code: "handler_failed", ...detail },
+      { status: 500 }
+    );
   }
 }

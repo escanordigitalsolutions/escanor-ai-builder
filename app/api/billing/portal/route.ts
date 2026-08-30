@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { stripe, stripeConfigured } from "@/lib/billing/stripe";
+import { stripe, stripeConfigured, missingStripeConfig } from "@/lib/billing/stripe";
+import { errorDetail } from "@/lib/debug";
 import { SITE_URL } from "@/lib/site";
 
 export const runtime = "nodejs";
@@ -16,8 +17,14 @@ export const runtime = "nodejs";
  */
 export async function POST() {
   if (!stripeConfigured()) {
+    const missing = missingStripeConfig();
     return NextResponse.json(
-      { success: false, error: "Billing is not configured yet." },
+      {
+        success: false,
+        error: `Billing is not configured: missing ${missing.join(", ")}.`,
+        code: "stripe_not_configured",
+        missing,
+      },
       { status: 503 }
     );
   }
@@ -60,7 +67,12 @@ export async function POST() {
   } catch (error) {
     console.error("portal error:", error);
     return NextResponse.json(
-      { success: false, error: "Could not open the billing portal." },
+      {
+        success: false,
+        error: "Could not open the billing portal.",
+        code: "portal_failed",
+        ...errorDetail(error),
+      },
       { status: 502 }
     );
   }

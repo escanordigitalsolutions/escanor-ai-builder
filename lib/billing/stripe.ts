@@ -42,3 +42,21 @@ export function webhookSecret(): string {
 export function stripeConfigured(): boolean {
   return Boolean(process.env.STRIPE_SECRET_KEY);
 }
+
+/**
+ * Which billing environment variables are absent.
+ *
+ * "Billing is not configured" is a useless thing to read when four different
+ * variables could be the one missing — this names them so the fix is obvious
+ * without opening the Vercel dashboard to guess.
+ */
+export function missingStripeConfig(): string[] {
+  return [
+    "STRIPE_SECRET_KEY",
+    "STRIPE_WEBHOOK_SECRET",
+    "STRIPE_PRICE_STARTER",
+    "STRIPE_PRICE_PRO",
+    "STRIPE_PRICE_AGENCY",
+    "STRIPE_PRICE_TOPUP",
+  ].filter((name) => !process.env[name]);
+}

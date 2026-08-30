@@ -47,10 +47,14 @@ export default function BillingPanel({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // Shown verbatim while DEBUG_ERRORS is on, so a misconfiguration names
+  // itself instead of hiding behind "something went wrong".
+  const [detail, setDetail] = useState("");
 
   async function go(endpoint: string, body?: Record<string, unknown>) {
     setBusy(endpoint + (body?.plan ?? body?.mode ?? ""));
     setError("");
+    setDetail("");
 
     try {
       const response = await fetch(endpoint, {
@@ -59,7 +63,13 @@ export default function BillingPanel({
         body: JSON.stringify(body ?? {}),
       });
 
-      const data = (await response.json()) as { url?: string; error?: string };
+      const data = (await response.json()) as {
+        url?: string;
+        error?: string;
+        code?: string;
+        detail?: string;
+        missing?: string[];
+      };
 
       if (data.url) {
         window.location.href = data.url;
@@ -67,8 +77,18 @@ export default function BillingPanel({
       }
 
       setError(data.error ?? "Something went wrong. Try again.");
-    } catch {
+      setDetail(
+        [
+          `HTTP ${response.status}${data.code ? ` · ${data.code}` : ""}`,
+          data.missing?.length ? `missing: ${data.missing.join(", ")}` : "",
+          data.detail ?? "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      );
+    } catch (e) {
       setError("Could not reach the billing service.");
+      setDetail(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
     }
 
     setBusy(null);
@@ -106,9 +126,19 @@ export default function BillingPanel({
           <p className="mt-1.5 text-[1.1rem] font-semibold tracking-tight text-neutral-900">
             {planName}
           </p>
-          <p className="mt-1 text-sm text-neutral-500">
-            {siteCount} of {siteLimit === null ? "unlimited" : siteLimit}{" "}
-            {siteLimit === 1 ? "site" : "sites"} used
+          <p
+            className={
+              "mt-1 text-sm " +
+              (siteLimit !== null && siteCount > siteLimit
+                ? "text-amber-700"
+                : "text-neutral-500")
+            }
+          >
+            {siteLimit === null
+              ? `${siteCount} ${siteCount === 1 ? "site" : "sites"}`
+              : siteCount > siteLimit
+                ? `${siteCount} sites · plan covers ${siteLimit}`
+                : `${siteCount} of ${siteLimit} ${siteLimit === 1 ? "site" : "sites"} used`}
           </p>
           {paid && renewsAt ? (
             <p className="mt-1 text-xs text-neutral-500">
@@ -121,9 +151,14 @@ export default function BillingPanel({
       </div>
 
       {error ? (
-        <p className="mt-5 rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
-          {error}
-        </p>
+        <div className="mt-5 rounded-lg bg-red-50 px-3.5 py-2.5">
+          <p className="text-sm text-red-700">{error}</p>
+          {detail ? (
+            <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-red-900/70">
+              {detail}
+            </pre>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="mt-6 border-t border-neutral-900/[0.08] pt-5">

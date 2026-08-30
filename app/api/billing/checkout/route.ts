@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { stripe, stripeConfigured } from "@/lib/billing/stripe";
+import { stripe, stripeConfigured, missingStripeConfig } from "@/lib/billing/stripe";
+import { errorDetail } from "@/lib/debug";
 import { isPlanKey, priceIdFor, topupPriceId } from "@/lib/billing/plans";
 import { SITE_URL } from "@/lib/site";
 
@@ -44,9 +45,16 @@ async function stripeCustomerFor(userId: string, email: string): Promise<string>
 }
 
 export async function POST(request: NextRequest) {
+  const missing = missingStripeConfig();
+
   if (!stripeConfigured()) {
     return NextResponse.json(
-      { success: false, error: "Billing is not configured yet." },
+      {
+        success: false,
+        error: `Billing is not configured: missing ${missing.join(", ")}.`,
+        code: "stripe_not_configured",
+        missing,
+      },
       { status: 503 }
     );
   }
@@ -83,8 +91,15 @@ export async function POST(request: NextRequest) {
           : null;
 
     if (!priceId) {
+      const wanted =
+        mode === "topup" ? "STRIPE_PRICE_TOPUP" : `the price id for "${String(body.plan)}"`;
       return NextResponse.json(
-        { success: false, error: "That plan is not available." },
+        {
+          success: false,
+          error: `That plan is not available — ${wanted} is not set.`,
+          code: "price_not_configured",
+          missing,
+        },
         { status: 400 }
       );
     }
@@ -121,7 +136,12 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("checkout error:", error);
     return NextResponse.json(
-      { success: false, error: "Could not start checkout." },
+      {
+        success: false,
+        error: "Could not start checkout.",
+        code: "checkout_failed",
+        ...errorDetail(error),
+      },
       { status: 502 }
     );
   }
