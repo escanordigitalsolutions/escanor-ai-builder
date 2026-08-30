@@ -83,7 +83,7 @@ export default async function AdminLayout({
     <div className="app-shell flex min-h-screen flex-col">
       <header className="border-b border-neutral-900/[0.07] bg-[#141312]">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-6 px-6">
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-7">
             <Link href="/admin" className="flex items-center gap-2.5" aria-label="Meikero admin">
               <Image
                 src="/brand/wordmark-light.png"
@@ -97,6 +97,21 @@ export default async function AdminLayout({
                 Admin
               </span>
             </Link>
+
+            <nav className="hidden items-center gap-5 sm:flex">
+              <Link
+                href="/admin"
+                className="text-sm text-neutral-400 transition-colors hover:text-white"
+              >
+                Projects
+              </Link>
+              <Link
+                href="/admin/users"
+                className="text-sm text-neutral-400 transition-colors hover:text-white"
+              >
+                Accounts
+              </Link>
+            </nav>
           </div>
 
           <Link
