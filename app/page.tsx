@@ -97,7 +97,7 @@ export default function HomePage() {
         <div className="grid items-start gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <div>
             <p
-              className="mk-rise text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]"
+              className="mk-rise text-[11px] font-semibold uppercase tracking-[0.14em] text-brand"
               style={delay(0)}
             >
               AI website builder for WordPress
@@ -156,7 +156,7 @@ export default function HomePage() {
                     {i === PROMPT_LINES.length - 1 ? (
                       <span
                         aria-hidden
-                        className="mk-caret ml-0.5 bg-[#4c6eea] align-middle"
+                        className="mk-caret ml-0.5 bg-brand align-middle"
                         style={{
                           ...delay(PROMPT_START + PROMPT_LINES.length * PROMPT_STEP),
                           height: "1em",
@@ -199,7 +199,7 @@ export default function HomePage() {
               ["1", "prompt, plus a mockup you approve before the build"],
             ].map(([figure, label], i) => (
               <div key={label} className="mk-rise" style={delay(PREVIEW_AT + 0.2 + i * 0.08)}>
-                <p className="font-mono text-[2rem] font-medium leading-none tabular-nums text-[#4c6eea]">
+                <p className="font-mono text-[2rem] font-medium leading-none tabular-nums text-brand">
                   {figure}
                 </p>
                 <p className="mt-2 text-sm leading-snug text-neutral-600">{label}</p>
@@ -224,7 +224,7 @@ export default function HomePage() {
         <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-neutral-900/[0.08] bg-neutral-900/[0.07] md:grid-cols-3">
           {STEPS.map((step) => (
             <li key={step.n} className="flex flex-col bg-[#faf9f7] p-7">
-              <span className="font-mono text-[11px] font-medium tracking-[0.1em] text-[#4c6eea]">
+              <span className="font-mono text-[11px] font-medium tracking-[0.1em] text-brand">
                 {step.n}
               </span>
               <h3 className="mt-4 text-[1.05rem] font-semibold tracking-tight text-neutral-900">
@@ -236,7 +236,7 @@ export default function HomePage() {
               {step.link ? (
                 <Link
                   href={step.link.href}
-                  className="mt-4 text-[0.87rem] font-medium text-[#4c6eea] underline-offset-4 hover:underline"
+                  className="mt-4 text-[0.87rem] font-medium text-brand underline-offset-4 hover:underline"
                 >
                   {step.link.label} →
                 </Link>

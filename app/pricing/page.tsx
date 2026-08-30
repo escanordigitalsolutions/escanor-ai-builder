@@ -85,11 +85,13 @@ const PLANS: Plan[] = [
   },
 ];
 
+// Measured, not estimated — these are what real generations cost.
 const CREDIT_COSTS = [
-  ["Homepage design concept", "~8 credits"],
-  ["Full theme build", "~45 credits"],
-  ["Page content for 4 inner pages", "~6 credits"],
-  ["A single AI edit", "1–4 credits"],
+  ["A complete site, design to finished theme", "~43 credits"],
+  ["The homepage design step alone", "~34 credits"],
+  ["Writing the theme files", "~4 credits"],
+  ["A single AI edit", "1–3 credits"],
+  ["Page content for the inner pages", "under 1 credit"],
   ["Chat question about your site", "under 1 credit"],
 ];
 
@@ -112,7 +114,7 @@ export default async function PricingPage() {
   return (
     <MarketingShell>
       <section className="mx-auto max-w-6xl px-6 pb-16 pt-16 sm:pt-20">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brand">
           Pricing
         </p>
         <h1 className="mt-4 max-w-2xl text-balance text-[2.6rem] font-semibold leading-[1.06] tracking-[-0.03em] text-neutral-900">
@@ -205,7 +207,7 @@ export default async function PricingPage() {
                   <li key={f} className="flex gap-2">
                     <span
                       aria-hidden
-                      className={plan.featured ? "text-[#a9a9f7]" : "text-[#4c6eea]"}
+                      className={plan.featured ? "text-[#a9a9f7]" : "text-brand"}
                     >
                       ·
                     </span>
@@ -276,9 +278,9 @@ export default async function PricingPage() {
               ))}
             </dl>
             <p className="mt-4 text-xs leading-relaxed text-neutral-500">
-              Figures are typical, not fixed — a long, detailed prompt costs
-              more than a short one. Your dashboard shows exactly what each
-              action spent.
+              Measured from real generations. They are typical, not fixed — a
+              long, detailed prompt costs more than a short one, and your
+              dashboard shows exactly what each action spent.
             </p>
           </div>
         </div>

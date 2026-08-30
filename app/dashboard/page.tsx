@@ -210,7 +210,7 @@ function Onboarding() {
       <ol className="mt-7 grid gap-6 sm:grid-cols-3">
         {steps.map((step) => (
           <li key={step.n}>
-            <span className="font-mono text-[11px] font-medium tracking-[0.1em] text-[#4c6eea]">
+            <span className="font-mono text-[11px] font-medium tracking-[0.1em] text-brand">
               {step.n}
             </span>
             <h3 className="mt-2.5 text-[0.95rem] font-semibold text-neutral-900">
@@ -225,7 +225,7 @@ function Onboarding() {
 
       <Link
         href="/docs/install"
-        className="mt-7 inline-block text-sm font-medium text-[#4c6eea] underline-offset-4 hover:underline"
+        className="mt-7 inline-block text-sm font-medium text-brand underline-offset-4 hover:underline"
       >
         Read the full install guide →
       </Link>

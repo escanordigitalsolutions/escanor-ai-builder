@@ -9,8 +9,16 @@ import { parsePricing, priceFor } from "@/lib/ai/pricing";
  * operations report can never drift apart.
  */
 
-/** What one credit is worth in model spend, before margin. */
-const CREDIT_USD = positiveEnv("CREDIT_USD_VALUE", 0.02);
+/**
+ * What one credit is worth in model spend, before margin.
+ *
+ * Calibrated against real usage on 30 Aug 2026: a full site generation cost
+ * $0.427 of model spend end to end, one edit cycle $0.017, one chat message
+ * $0.004. At $0.04 per credit with a 4x margin that lands on ~43 credits for
+ * a build, 2 for an edit and 0 for a chat message — which is what the pricing
+ * page promises. Recalibrate here if the model mix changes.
+ */
+const CREDIT_USD = positiveEnv("CREDIT_USD_VALUE", 0.04);
 
 /**
  * Multiplier applied on top of raw model cost. This is the margin that pays

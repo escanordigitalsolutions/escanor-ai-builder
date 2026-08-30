@@ -33,7 +33,7 @@ export default function PrivacyPage() {
             question about this policy or about your data, write to{" "}
             <a
               href="mailto:privacy@meikero.com"
-              className="font-medium text-[#4c6eea] underline-offset-4 hover:underline"
+              className="font-medium text-brand underline-offset-4 hover:underline"
             >
               privacy@meikero.com
             </a>
@@ -178,7 +178,7 @@ export default function PrivacyPage() {
             a portable format. Write to{" "}
             <a
               href="mailto:privacy@meikero.com"
-              className="font-medium text-[#4c6eea] underline-offset-4 hover:underline"
+              className="font-medium text-brand underline-offset-4 hover:underline"
             >
               privacy@meikero.com
             </a>{" "}

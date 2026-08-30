@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 /**
@@ -25,10 +26,15 @@ export function AuthShell({
       <div className="w-full max-w-md">
         <div className="glass-card p-8">
           <div className="mb-7">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
-              Meikero
-            </p>
-            <h1 className="mt-1.5 text-[1.55rem] font-semibold tracking-tight text-neutral-900">
+            <Image
+              src="/brand/wordmark-dark.png"
+              alt="Meikero"
+              width={2835}
+              height={1000}
+              priority
+              className="h-[22px] w-auto"
+            />
+            <h1 className="mt-4 text-[1.55rem] font-semibold tracking-tight text-neutral-900">
               {title}
             </h1>
             <p className="mt-2 text-sm text-neutral-500">{subtitle}</p>

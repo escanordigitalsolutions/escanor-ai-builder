@@ -41,18 +41,15 @@ export default async function DashboardShell({
       <header className="border-b border-neutral-900/[0.07] bg-white/50 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-6">
           <div className="flex items-center gap-7">
-            <Link href="/dashboard" className="flex items-center gap-2.5">
-<Image
-                src="/brand/mark.png"
-                alt=""
-                width={28}
-                height={28}
+            <Link href="/dashboard" className="flex items-center" aria-label="Meikero">
+              <Image
+                src="/brand/wordmark-dark.png"
+                alt="Meikero"
+                width={2835}
+                height={1000}
                 priority
-                className="h-7 w-7 rounded-[9px]"
+                className="h-6 w-auto"
               />
-              <span className="text-[15px] font-semibold tracking-tight text-neutral-900">
-                Meikero
-              </span>
             </Link>
 
             <nav className="hidden items-center gap-6 sm:flex">
@@ -71,7 +68,7 @@ export default async function DashboardShell({
               {isAdmin ? (
                 <Link
                   href="/admin"
-                  className="text-sm font-medium text-[#4c6eea] transition-opacity hover:opacity-75"
+                  className="text-sm font-medium text-brand transition-opacity hover:opacity-75"
                 >
                   Admin
                 </Link>

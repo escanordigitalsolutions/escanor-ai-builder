@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -83,11 +84,15 @@ export default async function AdminLayout({
       <header className="border-b border-neutral-900/[0.07] bg-[#141312]">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-6 px-6">
           <div className="flex items-center gap-6">
-            <Link
-              href="/admin"
-              className="flex items-center gap-2 text-[14px] font-semibold tracking-tight text-white"
-            >
-              Meikero
+            <Link href="/admin" className="flex items-center gap-2.5" aria-label="Meikero admin">
+              <Image
+                src="/brand/wordmark-light.png"
+                alt="Meikero"
+                width={2545}
+                height={1000}
+                priority
+                className="h-5 w-auto"
+              />
               <span className="rounded-[5px] bg-white/15 px-1.5 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-white">
                 Admin
               </span>

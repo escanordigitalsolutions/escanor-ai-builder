@@ -11,7 +11,10 @@
 :root {
   --background: #f6f5f3;
   --foreground: #1b1a18;
-  --accent: #4c6eea;
+  /* The brand blue. Every accent in the app resolves to this one line, so a
+     rebrand is a one-value change rather than a search across 15 files. */
+  --brand: #3d64f2;
+  --accent: var(--brand);
   --accent-2: #8b5cf6;
   --card-border: rgba(20, 18, 16, 0.08);
   --card-border-strong: rgba(20, 18, 16, 0.12);
@@ -19,6 +22,8 @@
 }
 
 @theme inline {
+  /* Exposes the token to Tailwind as text-brand / bg-brand / border-brand. */
+  --color-brand: var(--brand);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
@@ -63,7 +68,7 @@ select {
   position: relative;
   min-height: 100vh;
   background:
-    radial-gradient(1100px 560px at 50% -12%, rgba(76, 110, 234, 0.12), transparent 60%),
+    radial-gradient(1100px 560px at 50% -12%, color-mix(in srgb, var(--brand) 14%, transparent), transparent 60%),
     var(--background);
 }
 
@@ -138,7 +143,7 @@ a.glass-card:hover,
 .field:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(76, 110, 234, 0.12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
 }
 
 .pill-on {

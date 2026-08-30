@@ -115,7 +115,7 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
   return (
     <div className="glass-card p-5">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brand">
           Design archive
         </p>
         <button

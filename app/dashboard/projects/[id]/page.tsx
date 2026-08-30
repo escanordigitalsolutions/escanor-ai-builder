@@ -60,7 +60,7 @@ export default async function ProjectPage({ params }: Props) {
 
         <div className="mt-7 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brand">
               WordPress site
             </p>
             <h1 className="mt-2 text-[1.7rem] font-semibold tracking-tight text-neutral-900">

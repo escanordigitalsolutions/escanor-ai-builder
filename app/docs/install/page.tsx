@@ -26,7 +26,7 @@ const STEPS: Step[] = [
           sites connected yet — that is expected.
         </p>
         <p>
-          <Link href="/signup" className="font-medium text-[#4c6eea] underline-offset-4 hover:underline">
+          <Link href="/signup" className="font-medium text-brand underline-offset-4 hover:underline">
             Create an account →
           </Link>
         </p>
@@ -133,7 +133,7 @@ export default function InstallDocsPage() {
   return (
     <MarketingShell>
       <section className="mx-auto max-w-3xl px-6 pb-12 pt-16 sm:pt-20">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#4c6eea]">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-brand">
           Docs
         </p>
         <h1 className="mt-4 text-balance text-[2.4rem] font-semibold leading-[1.06] tracking-[-0.03em] text-neutral-900">
@@ -166,7 +166,7 @@ export default function InstallDocsPage() {
               key={step.n}
               className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 border-t border-neutral-900/10 py-8"
             >
-              <span className="font-mono text-[13px] font-medium text-[#4c6eea]">
+              <span className="font-mono text-[13px] font-medium text-brand">
                 {step.n}
               </span>
               <div>
@@ -209,7 +209,7 @@ export default function InstallDocsPage() {
             Still stuck? Email{" "}
             <a
               href="mailto:hello@meikero.com"
-              className="font-medium text-[#4c6eea] underline-offset-4 hover:underline"
+              className="font-medium text-brand underline-offset-4 hover:underline"
             >
               hello@meikero.com
             </a>{" "}
