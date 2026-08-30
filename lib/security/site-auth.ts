@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
 import { parseApiKey, verifyKeySecret } from "@/lib/security/api-key";
+import { creditBalance } from "@/lib/billing/credits";
 
 /**
  * Authenticates a request coming *from* a WordPress site.
@@ -46,6 +47,19 @@ type SiteRecord = {
   plugin_name: string | null;
   plugin_slug: string | null;
   last_connected_at: string | null;
+};
+
+export type SiteAuthOptions = {
+  /**
+   * Whether this endpoint must be paid for.
+   *
+   * Defaults to TRUE so the gate fails safe: a new agent route added later is
+   * protected without anyone remembering to protect it. Pass false only for
+   * endpoints that spend no model tokens — a customer who has run out still
+   * needs to read their usage, poll a job they already paid for, and see why
+   * they are blocked.
+   */
+  credits?: boolean;
 };
 
 export type SiteAuthResult =
@@ -97,7 +111,8 @@ function readClientIp(request: NextRequest) {
 }
 
 export async function authenticateSiteRequest(
-  request: NextRequest
+  request: NextRequest,
+  options: SiteAuthOptions = {}
 ): Promise<SiteAuthResult> {
   const presented = readBearerToken(request);
 
@@ -196,6 +211,26 @@ export async function authenticateSiteRequest(
   const sites = project.wordpress_sites as SiteRecord[] | SiteRecord | null;
 
   const site = Array.isArray(sites) ? sites[0] ?? null : sites;
+
+  // The paywall. It sits here rather than in each route so that protection is
+  // the default: forgetting to add it to a new endpoint is impossible.
+  //
+  // The test is "any credits at all", not "enough for this job", because the
+  // cost of a generation is not knowable until the model has run. That caps
+  // the worst case at a single overrun operation — the ledger records the true
+  // spend, the balance goes negative, and the next request is refused.
+  if (options.credits !== false) {
+    const balance = await creditBalance(project.owner_id);
+
+    if (balance <= 0) {
+      return {
+        ok: false,
+        status: 402,
+        error:
+          "You are out of Meikero credits. Top up at https://meikero.com/dashboard to keep building.",
+      };
+    }
+  }
 
   const actor = readActor(request);
   const clientIp = readClientIp(request);

@@ -5,6 +5,8 @@ import {
   assertSafeBridgeOrigin,
   UnsafeOriginError,
 } from "@/lib/security/url-guard";
+import { createServiceClient } from "@/lib/supabase/service";
+import { entitlementFor } from "@/lib/billing/credits";
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -19,6 +21,35 @@ export async function POST(request: NextRequest) {
       { success: false, error: "Unauthorized." },
       { status: 401 }
     );
+  }
+
+  // How many sites a plan allows is checked before anything is created, so a
+  // customer never gets a half-connected project they are not entitled to.
+  try {
+    const { plan } = await entitlementFor(user.id);
+
+    if (plan.siteLimit !== null) {
+      const { count } = await createServiceClient()
+        .from("projects")
+        .select("id", { count: "exact", head: true })
+        .eq("owner_id", user.id);
+
+      if ((count ?? 0) >= plan.siteLimit) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              plan.siteLimit === 1
+                ? `The ${plan.name} plan covers one site. Upgrade to connect another.`
+                : `The ${plan.name} plan covers ${plan.siteLimit} sites. Upgrade to connect another.`,
+          },
+          { status: 402 }
+        );
+      }
+    }
+  } catch (error) {
+    // A billing lookup failure must not block a paying customer from working.
+    console.error("site limit check failed:", error);
   }
 
   try {

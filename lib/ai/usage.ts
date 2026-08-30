@@ -1,4 +1,8 @@
+import { after } from "next/server";
+
 import { createServiceClient } from "@/lib/supabase/service";
+import { creditsFor } from "@/lib/billing/cost";
+import { recordUsageDebit } from "@/lib/billing/credits";
 import type { Usage } from "./provider";
 
 /**
@@ -53,5 +57,56 @@ export async function logUsage(
     await db.from("ai_usage").insert(row);
   } catch (error) {
     console.error("usage log error:", error);
+  }
+
+  // Charging happens after the model has run, because what a generation costs
+  // is only knowable once it has. The gate in authenticateSiteRequest is what
+  // stops an empty account from starting the next one.
+  void chargeCredits(projectId, model, usage);
+}
+
+/**
+ * Debit the project owner for one model call.
+ *
+ * Wrapped in after() so it survives the response being sent — a fire-and-forget
+ * promise can be cut short when the function suspends, and a dropped debit is
+ * free AI work.
+ */
+function chargeCredits(
+  projectId: string,
+  model: string,
+  usage: Usage | { inputTokens?: number; outputTokens?: number } | null | undefined
+): void {
+  const input = Math.max(0, Math.round(usage?.inputTokens ?? 0));
+  const output = Math.max(0, Math.round(usage?.outputTokens ?? 0));
+  const credits = creditsFor(model, input, output);
+
+  if (!projectId || credits <= 0) {
+    return;
+  }
+
+  const debit = async () => {
+    try {
+      const db = createServiceClient();
+
+      const { data: project } = await db
+        .from("projects")
+        .select("owner_id")
+        .eq("id", projectId)
+        .maybeSingle();
+
+      if (!project?.owner_id) return;
+
+      await recordUsageDebit(String(project.owner_id), credits, projectId, model);
+    } catch (error) {
+      console.error("credit debit failed:", error);
+    }
+  };
+
+  try {
+    after(debit);
+  } catch {
+    // Outside a request context (a script, a test) after() is unavailable.
+    void debit();
   }
 }

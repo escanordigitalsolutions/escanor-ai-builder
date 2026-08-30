@@ -12,7 +12,7 @@ import { authenticateSiteRequest } from "@/lib/security/site-auth";
  * Server-to-server only: PHP calls it, so there is no CORS surface.
  */
 export async function POST(request: NextRequest) {
-  const auth = await authenticateSiteRequest(request);
+  const auth = await authenticateSiteRequest(request, { credits: false });
 
   if (!auth.ok) {
     return NextResponse.json(

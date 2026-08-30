@@ -5,7 +5,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 /** WordPress -> SaaS : list the project's archived designs (metadata only). */
 
 export async function POST(request: NextRequest) {
-  const auth = await authenticateSiteRequest(request);
+  const auth = await authenticateSiteRequest(request, { credits: false });
 
   if (!auth.ok) {
     return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });

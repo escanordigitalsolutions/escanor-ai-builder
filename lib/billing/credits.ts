@@ -69,11 +69,15 @@ export async function grantCredits(
 }
 
 /**
- * Spend credits, atomically.
+ * Spend credits atomically, refusing if the balance will not cover it.
  *
  * The check and the debit happen inside one Postgres function holding a
- * per-user advisory lock, so two AI calls arriving at the same moment cannot
- * both pass a balance check that only one of them could afford.
+ * per-user advisory lock, so two callers cannot both pass a balance check that
+ * only one of them could afford.
+ *
+ * Metered AI usage does NOT go through here — see recordUsageDebit for why.
+ * This is for charging a known price up front, which is what reserving credits
+ * before an expensive build would need.
  *
  * Throws InsufficientCredits when the balance will not cover the amount.
  */
@@ -104,6 +108,41 @@ export async function spendCredits(
   }
 
   return typeof data === "number" ? data : 0;
+}
+
+/**
+ * Record what a model call actually cost, unconditionally.
+ *
+ * This is NOT spendCredits. Usage is billed after the work is done, so there
+ * is nothing left to authorise — refusing the debit here would not un-run the
+ * model, it would only lose the money. The account is allowed to go negative
+ * by at most one operation; the gate in authenticateSiteRequest refuses the
+ * next request.
+ *
+ * There is no race to guard against either: the ledger is append-only and the
+ * balance is a sum, so concurrent debits simply both land.
+ */
+export async function recordUsageDebit(
+  userId: string,
+  credits: number,
+  ref?: string,
+  note?: string
+): Promise<void> {
+  if (credits <= 0) return;
+
+  const db = createServiceClient();
+
+  const { error } = await db.from("credit_ledger").insert({
+    user_id: userId,
+    delta: -credits,
+    reason: "usage",
+    ref: ref ?? null,
+    note: note ?? null,
+  });
+
+  if (error) {
+    console.error("recordUsageDebit error:", error);
+  }
 }
 
 export type Entitlement = {

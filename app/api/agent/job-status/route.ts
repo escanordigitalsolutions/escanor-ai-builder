@@ -12,7 +12,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 type Json = Record<string, unknown>;
 
 export async function POST(request: NextRequest) {
-  const auth = await authenticateSiteRequest(request);
+  const auth = await authenticateSiteRequest(request, { credits: false });
 
   if (!auth.ok) {
     return NextResponse.json(
