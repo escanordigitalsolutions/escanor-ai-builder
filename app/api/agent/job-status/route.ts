@@ -22,8 +22,20 @@ import { refundJobUsage } from "@/lib/billing/credits";
  * failed and its credits are given back.
  */
 
-/** maxDuration on every generating route is 300s; the margin covers cold starts. */
-const DEAD_AFTER_MS = 330_000;
+/**
+ * How long each kind of job is allowed to live before it is certainly dead.
+ *
+ * Per kind rather than one number, because the design route runs at
+ * maxDuration 800 while every other generating route runs at 300. A single
+ * ceiling would either declare a live design job dead at five minutes, or
+ * leave a failed build spinning for fourteen. Raising any route's maxDuration
+ * above its entry here makes live jobs look dead, so these must move together.
+ */
+const DEAD_AFTER_MS: Record<string, number> = {
+  mockup: 840_000,
+};
+
+const DEAD_AFTER_DEFAULT_MS = 330_000;
 
 type Json = Record<string, unknown>;
 
@@ -56,7 +68,7 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceClient();
   const { data: job, error } = await supabase
     .from("ai_jobs")
-    .select("id, status, result, error, created_at")
+    .select("id, kind, status, result, error, created_at")
     .eq("id", jobId)
     .eq("project_id", auth.context.projectId)
     .single();
@@ -70,7 +82,7 @@ export async function POST(request: NextRequest) {
 
   const result = (job.result ?? null) as Record<string, unknown> | null;
 
-  if (job.status === "running" && olderThanAnyFunction(job.created_at)) {
+  if (job.status === "running" && certainlyDead(job.kind, job.created_at)) {
     // The row carries a finished artefact: the run got there and was killed
     // during a later, optional stage. Deliver what it produced.
     if (result?.success === true) {
@@ -132,9 +144,14 @@ export async function POST(request: NextRequest) {
   });
 }
 
-function olderThanAnyFunction(createdAt: unknown): boolean {
+function certainlyDead(kind: unknown, createdAt: unknown): boolean {
   const started = Date.parse(String(createdAt ?? ""));
-  return Number.isFinite(started) && Date.now() - started > DEAD_AFTER_MS;
+
+  if (!Number.isFinite(started)) return false;
+
+  const limit = DEAD_AFTER_MS[String(kind ?? "")] ?? DEAD_AFTER_DEFAULT_MS;
+
+  return Date.now() - started > limit;
 }
 
 /**

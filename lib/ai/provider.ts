@@ -45,11 +45,13 @@ async function anthropicGenerate(
   model: string,
   system: string,
   input: string,
-  maxTokens: number
+  maxTokens: number,
+  signal?: AbortSignal
 ): Promise<GenResult> {
   const res = await fetch(ANTHROPIC_API, {
     method: "POST",
     headers: anthropicHeaders(),
+    signal,
     body: JSON.stringify({
       model,
       max_tokens: maxTokens,
@@ -87,14 +89,18 @@ async function openaiGenerate(
   model: string,
   system: string,
   input: string,
-  maxTokens: number
+  maxTokens: number,
+  signal?: AbortSignal
 ): Promise<GenResult> {
-  const r = await openai.responses.create({
-    model,
-    instructions: system,
-    input,
-    max_output_tokens: maxTokens,
-  });
+  const r = await openai.responses.create(
+    {
+      model,
+      instructions: system,
+      input,
+      max_output_tokens: maxTokens,
+    },
+    { signal }
+  );
 
   const truncated =
     r.status === "incomplete" &&
@@ -119,13 +125,62 @@ export async function generateText(opts: {
   system: string;
   input: string;
   maxTokens?: number;
+  /**
+   * Give up after this long.
+   *
+   * Without it a model call cannot be interrupted at all: it holds the process
+   * until it answers, and if that is longer than the platform allows, the
+   * function is killed mid-call — no error, no catch block, no row written, and
+   * a job left running forever. A deadline turns that silent death into an
+   * ordinary thrown error the caller can handle and refund.
+   */
+  timeoutMs?: number;
 }): Promise<GenResult> {
   const maxTokens = opts.maxTokens ?? 16000;
-  const result = isAnthropic(opts.model)
-    ? await anthropicGenerate(opts.model, opts.system, opts.input, maxTokens)
-    : await openaiGenerate(opts.model, opts.system, opts.input, maxTokens);
-  console.log(
-    `[ai] generate model=${opts.model} in=${result.usage.inputTokens} out=${result.usage.outputTokens} truncated=${result.truncated}`
-  );
-  return result;
+  const started = Date.now();
+
+  const controller = opts.timeoutMs ? new AbortController() : null;
+  const timer =
+    controller && opts.timeoutMs
+      ? setTimeout(() => controller.abort(), opts.timeoutMs)
+      : null;
+
+  try {
+    const result = isAnthropic(opts.model)
+      ? await anthropicGenerate(
+          opts.model,
+          opts.system,
+          opts.input,
+          maxTokens,
+          controller?.signal
+        )
+      : await openaiGenerate(
+          opts.model,
+          opts.system,
+          opts.input,
+          maxTokens,
+          controller?.signal
+        );
+
+    console.log(
+      `[ai] generate model=${opts.model} in=${result.usage.inputTokens} ` +
+        `out=${result.usage.outputTokens} ms=${Date.now() - started} truncated=${result.truncated}`
+    );
+
+    return result;
+  } catch (error) {
+    const aborted =
+      error instanceof Error && (error.name === "AbortError" || /abort/i.test(error.message));
+
+    if (aborted) {
+      console.error(`[ai] generate model=${opts.model} ABORTED after ${Date.now() - started}ms`);
+      throw new Error(
+        `The model did not answer within ${Math.round((opts.timeoutMs ?? 0) / 1000)}s.`
+      );
+    }
+
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

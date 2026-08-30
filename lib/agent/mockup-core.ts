@@ -187,7 +187,8 @@ export async function generateMockup(
   variation?: string,
   shape?: unknown,
   direction?: ArtDirection | null,
-  retry?: string
+  retry?: string,
+  timeoutMs?: number
 ): Promise<MockupResult> {
   const model = pickModel(modelConfig, "plan");
   const shapeKey = resolveShape(shape);
@@ -222,6 +223,7 @@ export async function generateMockup(
     model,
     system: DESIGNER,
     maxTokens: 32000,
+    timeoutMs,
     input:
       `BRIEF — for content and voice\n${JSON.stringify(brief, null, 2)}` +
       `\n\nREQUESTED SHAPE: ${shapeKey} — ${SHAPES[shapeKey]}` +

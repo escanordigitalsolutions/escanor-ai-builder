@@ -23,12 +23,18 @@ import { refundJobUsage } from "@/lib/billing/credits";
 // The response returns immediately with a job id; the mockup itself renders in
 // after() and can take a couple of minutes on a strong model.
 //
-// Raising this is the one lever that buys the pipeline more room: on Vercel Pro
-// with Fluid Compute it can go to 800. Every stage below budgets itself against
-// this number — and DEAD_AFTER_MS in app/api/agent/job-status/route.ts MUST be
-// raised with it, or a job that is still working will be declared dead,
-// refunded, and then finish anyway.
-export const maxDuration = 300;
+// 800 is the maximum generally available on Vercel Pro, and the design step
+// genuinely needs it: one call that writes a whole homepage produces twenty-odd
+// thousand tokens, which no strong model finishes inside five minutes. At 300
+// the run was killed mid-call every time — no error, no artefact, just a job
+// left running.
+//
+// Two other numbers must move with this one, or raising it makes things worse:
+//   - DEAD_AFTER_MS in app/api/agent/job-status/route.ts, or a job that is
+//     still working is declared dead, refunded, and then finishes anyway;
+//   - the poll ceiling in the WordPress plugin, or the browser gives up while
+//     the server is still working and the person sees a timeout regardless.
+export const maxDuration = 800;
 
 const BUDGET_MS = maxDuration * 1000;
 
@@ -180,7 +186,20 @@ export async function POST(request: NextRequest) {
       );
 
       const designStart = Date.now();
-      let mock = await generateMockup(modelConfig, brief, variation, shape, direction);
+
+      // The call is given the time that actually remains, less enough to store
+      // what comes back. Reaching the deadline throws, which fails the job and
+      // refunds it — rather than the platform killing the process silently.
+      let mock = await generateMockup(
+        modelConfig,
+        brief,
+        variation,
+        shape,
+        direction,
+        undefined,
+        Math.max(60_000, msLeft() - 60_000)
+      );
+
       const designMs = Date.now() - designStart;
 
       await recordUsage(projectId, "design", mock.model, mock.usage, {
@@ -251,7 +270,8 @@ export async function POST(request: NextRequest) {
             variation,
             shape,
             direction,
-            retryNote(check.failures)
+            retryNote(check.failures),
+            Math.max(60_000, msLeft() - 45_000)
           );
 
           await recordUsage(projectId, "design", second.model, second.usage, {

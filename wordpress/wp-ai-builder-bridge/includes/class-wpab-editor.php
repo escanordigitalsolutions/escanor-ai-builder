@@ -3572,7 +3572,10 @@ final class WPAB_Editor {
 					if (!jobId) { throw new Error(errText(sOut, 'Could not start the design step.')); }
 					function poll() {
 						if (!alive(myRun)) { throw new Error('Stopped.'); }
-						if (Date.now() - started > 480000) { throw new Error('The design step timed out.'); }
+						// Must stay above the SaaS design function's own limit (800s) plus
+						// its margin. Giving up first would show a timeout for a run that
+						// is still working and about to succeed.
+						if (Date.now() - started > 900000) { throw new Error('The design step timed out.'); }
 						return delay(3500).then(function () {
 							if (!alive(myRun)) { throw new Error('Stopped.'); }
 							return wpost(cfg.restBuildJob, { jobId: jobId }, sig);
