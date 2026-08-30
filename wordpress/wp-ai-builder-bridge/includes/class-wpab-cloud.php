@@ -99,6 +99,76 @@ final class WPAB_Cloud {
 	}
 
 	/**
+	 * Turn a failed response into a message that actually says what happened.
+	 *
+	 * "Meikero request failed." told nobody anything: the same four words
+	 * covered a misconfigured domain, an expired key and a crashed function.
+	 * The status code alone separates most of those, and when the body carries
+	 * no `error` field (a platform-level failure rather than one of ours) a
+	 * short snippet of it usually names the real cause.
+	 */
+	private static function response_error( int $code, $data, string $raw, string $location = '' ): WP_Error {
+		// A redirect is never followed here on purpose: replaying an
+		// authenticated POST at whatever host the redirect names would hand
+		// the site key to that host. Name the target instead so a domain
+		// misconfiguration is obvious rather than mysterious.
+		if ( $code >= 300 && $code < 400 ) {
+			return new WP_Error(
+				'wpab_cloud_redirect',
+				sprintf(
+					'Meikero redirected (HTTP %d) from %s%s. Point the plugin at the domain that answers directly.',
+					$code,
+					self::builder_url(),
+					'' !== $location ? ' to ' . $location : ''
+				),
+				array( 'status' => $code )
+			);
+		}
+
+		if ( is_array( $data ) && isset( $data['error'] ) && is_string( $data['error'] ) && '' !== $data['error'] ) {
+			return new WP_Error( 'wpab_cloud_error', $data['error'], array( 'status' => $code ) );
+		}
+
+		// Vercel and Next report platform failures as {"error":{"code":...}};
+		// a bare (string) cast on that would render the useless word "Array".
+		if ( is_array( $data ) && isset( $data['error'] ) && is_array( $data['error'] ) ) {
+			$inner = $data['error'];
+			$detail = isset( $inner['code'] ) ? (string) $inner['code'] : '';
+			if ( isset( $inner['message'] ) && is_string( $inner['message'] ) ) {
+				$detail = '' !== $detail ? $detail . ': ' . $inner['message'] : $inner['message'];
+			}
+			if ( '' !== $detail ) {
+				return new WP_Error(
+					'wpab_cloud_error',
+					sprintf( 'Meikero returned HTTP %d — %s', $code, $detail ),
+					array( 'status' => $code )
+				);
+			}
+		}
+
+		$snippet = trim( wp_strip_all_tags( $raw ) );
+		$snippet = (string) preg_replace( '/\s+/', ' ', $snippet );
+
+		if ( '' !== $snippet ) {
+			return new WP_Error(
+				'wpab_cloud_error',
+				sprintf( 'Meikero returned HTTP %d at %s — %s', $code, self::builder_url(), substr( $snippet, 0, 180 ) ),
+				array( 'status' => $code )
+			);
+		}
+
+		return new WP_Error(
+			'wpab_cloud_error',
+			sprintf(
+				'Meikero returned HTTP %d at %s with an empty body. Check that this domain is assigned to the Meikero project.',
+				$code,
+				self::builder_url()
+			),
+			array( 'status' => $code )
+		);
+	}
+
+	/**
 	 * Strips anything that could smuggle a second header.
 	 */
 	private static function header_value( string $value ): string {
@@ -170,22 +240,18 @@ final class WPAB_Cloud {
 
 		$code = (int) wp_remote_retrieve_response_code( $response );
 		$raw  = (string) wp_remote_retrieve_body( $response );
+		$loc  = (string) wp_remote_retrieve_header( $response, 'location' );
 		$data = json_decode( $raw, true );
 
 		if ( ! is_array( $data ) ) {
-			return new WP_Error(
-				'wpab_cloud_bad_response',
-				'Meikero did not return JSON.',
-				array( 'status' => 502 )
-			);
+			// An HTML body here almost always means the request never reached
+			// the app: a domain not bound to the project, or a redirect that
+			// was not followed. Say so, with the code, instead of shrugging.
+			return self::response_error( $code, null, $raw, $loc );
 		}
 
 		if ( $code < 200 || $code >= 300 ) {
-			return new WP_Error(
-				'wpab_cloud_error',
-				isset( $data['error'] ) ? (string) $data['error'] : 'Meikero request failed.',
-				array( 'status' => $code )
-			);
+			return self::response_error( $code, $data, $raw, $loc );
 		}
 
 		return $data;
@@ -248,22 +314,18 @@ final class WPAB_Cloud {
 
 		$code = (int) wp_remote_retrieve_response_code( $response );
 		$raw  = (string) wp_remote_retrieve_body( $response );
+		$loc  = (string) wp_remote_retrieve_header( $response, 'location' );
 		$data = json_decode( $raw, true );
 
 		if ( ! is_array( $data ) ) {
-			return new WP_Error(
-				'wpab_cloud_bad_response',
-				'Meikero did not return JSON.',
-				array( 'status' => 502 )
-			);
+			// An HTML body here almost always means the request never reached
+			// the app: a domain not bound to the project, or a redirect that
+			// was not followed. Say so, with the code, instead of shrugging.
+			return self::response_error( $code, null, $raw, $loc );
 		}
 
 		if ( $code < 200 || $code >= 300 ) {
-			return new WP_Error(
-				'wpab_cloud_error',
-				isset( $data['error'] ) ? (string) $data['error'] : 'Meikero request failed.',
-				array( 'status' => $code )
-			);
+			return self::response_error( $code, $data, $raw, $loc );
 		}
 
 		return $data;
