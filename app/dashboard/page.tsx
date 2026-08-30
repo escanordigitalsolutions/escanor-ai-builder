@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
+
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { entitlementFor } from "@/lib/billing/credits";
+import DashboardShell from "@/components/dashboard-shell";
+import BillingPanel from "@/components/billing-panel";
 import NewSiteForm from "@/components/new-site-form";
 import DashboardCardActions from "@/components/dashboard-card-actions";
 
@@ -8,7 +13,6 @@ type SiteRow = {
   site_url: string | null;
   bridge_version: string | null;
   wp_version: string | null;
-  php_version: string | null;
   theme_name: string | null;
   last_connected_at: string | null;
 };
@@ -50,59 +54,64 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const { data: projectsData } = await supabase
-    .from("projects")
-    .select(
-      `
-      id,
-      name,
-      created_at,
-      wordpress_sites (
-        site_url,
-        bridge_version,
-        wp_version,
-        php_version,
-        theme_name,
-        last_connected_at
-      )
-    `
-    )
-    .order("created_at", { ascending: false });
+  const [{ data: projectsData }, entitlement, { data: profile }] =
+    await Promise.all([
+      supabase
+        .from("projects")
+        .select(
+          `id, name, created_at,
+           wordpress_sites ( site_url, bridge_version, wp_version, theme_name, last_connected_at )`
+        )
+        .order("created_at", { ascending: false }),
+      entitlementFor(user.id),
+      createServiceClient()
+        .from("profiles")
+        .select("stripe_customer_id")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ]);
 
   const projects = (projectsData ?? []) as unknown as ProjectRow[];
 
   return (
-    <main className="app-shell p-8 text-neutral-900">
-      <div className="mx-auto max-w-6xl">
-        <div className="flex items-center justify-between">
+    <DashboardShell>
+      <div className="mx-auto max-w-6xl px-6 py-10">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
-              MEIKERO
-            </p>
-            <h1 className="mt-1.5 text-[1.7rem] font-semibold tracking-tight text-neutral-900">
+            <h1 className="text-[1.7rem] font-semibold tracking-tight text-neutral-900">
               Your sites
             </h1>
+            <p className="mt-1.5 text-sm text-neutral-500">
+              Every WordPress site connected to Meikero.
+            </p>
           </div>
           <NewSiteForm />
         </div>
 
-        <p className="mt-2 text-sm text-neutral-500">
-          {user.email}
-        </p>
+        <div className="mt-7">
+          <BillingPanel
+            balance={entitlement.balance}
+            planKey={entitlement.plan.key}
+            planName={entitlement.plan.name}
+            siteLimit={entitlement.plan.siteLimit}
+            siteCount={projects.length}
+            status={entitlement.subscription?.status ?? null}
+            renewsAt={entitlement.subscription?.current_period_end ?? null}
+            cancelAtPeriodEnd={
+              entitlement.subscription?.cancel_at_period_end ?? false
+            }
+            canManage={Boolean(profile?.stripe_customer_id)}
+          />
+        </div>
 
-        <div className="mt-8 grid gap-3 sm:grid-cols-2">
-          {projects.length === 0 ? (
-            <div className="glass-card p-12 text-center">
-              <p className="text-sm text-neutral-600">
-                No sites yet. Use “New site” above to connect your first
-                WordPress site.
-              </p>
-            </div>
-          ) : (
-            projects.map((project) => {
+        {projects.length === 0 ? (
+          <Onboarding />
+        ) : (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {projects.map((project) => {
               const site = siteOf(project);
-              // "Connected" only when the bridge checked in within 24h — an old
-              // timestamp is shown as unverified instead of pretending.
+              // "Connected" means the bridge checked in within a day — an old
+              // timestamp is reported as unverified rather than pretended over.
               const fresh = Boolean(
                 site?.last_connected_at &&
                   Date.now() - new Date(site.last_connected_at).getTime() <
@@ -113,6 +122,7 @@ export default async function DashboardPage() {
                 : site?.site_url
                   ? "Not verified"
                   : "Not connected";
+
               return (
                 <Link
                   key={project.id}
@@ -147,17 +157,78 @@ export default async function DashboardPage() {
                   <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-neutral-500">
                     <span>Theme: {site?.theme_name ?? "—"}</span>
                     <span>WordPress: {site?.wp_version ?? "—"}</span>
-                    <span>PHP: {site?.php_version ?? "—"}</span>
                     <span>Bridge: {site?.bridge_version ?? "—"}</span>
-                    <span>Created {fmtDate(project.created_at)}</span>
                     <span>Last seen {fmtDate(site?.last_connected_at)}</span>
                   </div>
                 </Link>
               );
-            })
-          )}
-        </div>
+            })}
+          </div>
+        )}
       </div>
-    </main>
+    </DashboardShell>
+  );
+}
+
+/**
+ * What a brand-new account sees.
+ *
+ * This is the moment most signups are lost: the person has an account and
+ * nothing to look at, and the next step happens somewhere else entirely — in
+ * their own WordPress admin. Spelling it out here is worth more than any
+ * feature on this page.
+ */
+function Onboarding() {
+  const steps = [
+    {
+      n: "01",
+      title: "Add your site",
+      body: "Use “New site” above. You will get a site key that starts with esk_live_ — copy it, it is shown only once.",
+    },
+    {
+      n: "02",
+      title: "Install the bridge plugin",
+      body: "In your WordPress admin: Plugins → Add New → Upload Plugin. Activate it, then paste the key under Meikero → Cloud connection.",
+    },
+    {
+      n: "03",
+      title: "Describe the site you want",
+      body: "Open Meikero → AI Editor in wp-admin. Say what the site is for and approve the homepage design — then it builds the theme.",
+    },
+  ];
+
+  return (
+    <div className="glass-card mt-4 p-8">
+      <h2 className="text-[1.15rem] font-semibold tracking-tight text-neutral-900">
+        Connect your first WordPress site
+      </h2>
+      <p className="mt-2 max-w-xl text-sm leading-relaxed text-neutral-600">
+        Meikero builds into a WordPress site you already run. Three steps, about
+        three minutes.
+      </p>
+
+      <ol className="mt-7 grid gap-6 sm:grid-cols-3">
+        {steps.map((step) => (
+          <li key={step.n}>
+            <span className="font-mono text-[11px] font-medium tracking-[0.1em] text-[#6366f1]">
+              {step.n}
+            </span>
+            <h3 className="mt-2.5 text-[0.95rem] font-semibold text-neutral-900">
+              {step.title}
+            </h3>
+            <p className="mt-1.5 text-[0.88rem] leading-relaxed text-neutral-600">
+              {step.body}
+            </p>
+          </li>
+        ))}
+      </ol>
+
+      <Link
+        href="/docs/install"
+        className="mt-7 inline-block text-sm font-medium text-[#6366f1] underline-offset-4 hover:underline"
+      >
+        Read the full install guide →
+      </Link>
+    </div>
   );
 }

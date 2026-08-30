@@ -1,20 +1,23 @@
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/server";
+import DashboardShell from "@/components/dashboard-shell";
 import ProjectConnectionPanel from "@/components/project-connection-panel";
 import ProjectSiteKeys from "@/components/project-site-keys";
-import ProjectModelPanel from "@/components/project-model-panel";
-import ProjectUsagePanel from "@/components/project-usage-panel";
-import ProjectDanger from "@/components/project-danger";
 import ProjectDesignsPanel from "@/components/project-designs-panel";
-import ProjectOpsPanel from "@/components/project-ops-panel";
-import { TIER_DEFAULTS } from "@/lib/ai/resolve";
+import ProjectDanger from "@/components/project-danger";
 
-type Props = {
-  params: Promise<{
-    id: string;
-  }>;
-};
+/**
+ * A customer's view of one connected site.
+ *
+ * Deliberately narrower than the internal workspace: no model tiers, no ops
+ * log, no raw token counts. Those are instruments for running the service, and
+ * putting them in front of a customer makes the product look like a machine
+ * they have to operate. They live under /admin instead.
+ */
+
+type Props = { params: Promise<{ id: string }> };
 
 export default async function ProjectPage({ params }: Props) {
   const { id } = await params;
@@ -32,20 +35,8 @@ export default async function ProjectPage({ params }: Props) {
   const { data: project } = await supabase
     .from("projects")
     .select(
-      `
-      id,
-      name,
-      created_at,
-      model_config,
-      wordpress_sites (
-        site_url,
-        bridge_version,
-        wp_version,
-        php_version,
-        theme_name,
-        last_connected_at
-      )
-    `
+      `id, name, created_at,
+       wordpress_sites ( site_url, bridge_version, wp_version, php_version, theme_name, last_connected_at )`
     )
     .eq("id", id)
     .single();
@@ -54,34 +45,60 @@ export default async function ProjectPage({ params }: Props) {
     notFound();
   }
 
-  const wordpressSites = project.wordpress_sites;
-  const site = Array.isArray(wordpressSites) ? wordpressSites[0] : wordpressSites;
+  const sites = project.wordpress_sites;
+  const site = Array.isArray(sites) ? sites[0] : sites;
 
   return (
-    <main className="app-shell p-8 text-neutral-900">
-      <div className="mx-auto max-w-6xl">
-        <a
+    <DashboardShell>
+      <div className="mx-auto max-w-6xl px-6 py-10">
+        <Link
           href="/dashboard"
-          className="text-neutral-500 transition hover:text-neutral-900"
+          className="text-sm text-neutral-500 transition-colors hover:text-neutral-900"
         >
           ← Your sites
-        </a>
+        </Link>
 
-        <div className="mt-8">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
-            WordPress site
-          </p>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-neutral-900">
-            {project.name}
-          </h1>
-          <p className="mt-2 text-neutral-500">{site?.site_url}</p>
+        <div className="mt-7 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6366f1]">
+              WordPress site
+            </p>
+            <h1 className="mt-2 text-[1.7rem] font-semibold tracking-tight text-neutral-900">
+              {project.name}
+            </h1>
+            {site?.site_url ? (
+              <a
+                href={site.site_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1.5 inline-block text-sm text-neutral-500 underline-offset-4 hover:text-neutral-800 hover:underline"
+              >
+                {site.site_url}
+              </a>
+            ) : (
+              <p className="mt-1.5 text-sm text-neutral-500">
+                No WordPress site connected yet
+              </p>
+            )}
+          </div>
+
+          {site?.site_url ? (
+            <a
+              href={`${site.site_url.replace(/\/$/, "")}/wp-admin/admin.php?page=wp-ai-builder-editor`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-accent px-4 py-2.5 text-sm font-medium"
+            >
+              Open AI Editor →
+            </a>
+          ) : null}
         </div>
 
-        <div className="mt-10 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+        <div className="mt-8 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
           <Info label="WordPress" value={site?.wp_version} />
           <Info label="PHP" value={site?.php_version} />
-          <Info label="Theme" value={site?.theme_name} />
-          <Info label="Bridge" value={site?.bridge_version} />
+          <Info label="Active theme" value={site?.theme_name} />
+          <Info label="Plugin" value={site?.bridge_version} />
         </div>
 
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -94,27 +111,13 @@ export default async function ProjectPage({ params }: Props) {
           <ProjectSiteKeys projectId={project.id} />
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-2">
-          <ProjectModelPanel
-            projectId={project.id}
-            initial={(project as { model_config?: Record<string, string> }).model_config ?? {}}
-            defaults={TIER_DEFAULTS}
-          />
-
-          <ProjectUsagePanel projectId={project.id} />
-        </div>
-
-        <div className="mt-4">
-          <ProjectOpsPanel projectId={project.id} />
-        </div>
-
         <div className="mt-4">
           <ProjectDesignsPanel projectId={project.id} />
         </div>
 
         <ProjectDanger projectId={project.id} projectName={project.name} />
       </div>
-    </main>
+    </DashboardShell>
   );
 }
 

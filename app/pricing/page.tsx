@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import MarketingShell from "@/components/marketing-shell";
+import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "Pricing — Meikero",
@@ -92,7 +93,22 @@ const CREDIT_COSTS = [
   ["Chat question about your site", "under 1 credit"],
 ];
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  // Someone already signed in should land on the panel that can actually take
+  // their money, not on a signup form they have no use for.
+  let signedIn = false;
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    signedIn = Boolean(user);
+  } catch {
+    signedIn = false;
+  }
+
+  const ctaHref = signedIn ? "/dashboard#billing" : "/signup";
+
   return (
     <MarketingShell>
       <section className="mx-auto max-w-6xl px-6 pb-16 pt-16 sm:pt-20">
@@ -199,7 +215,7 @@ export default function PricingPage() {
               </ul>
 
               <Link
-                href="/signup"
+                href={ctaHref}
                 className={
                   "mt-6 rounded-[10px] px-4 py-2.5 text-center text-sm font-medium transition-colors " +
                   (plan.featured
@@ -279,7 +295,7 @@ export default function PricingPage() {
             theme build on a site you already run.
           </p>
           <Link
-            href="/signup"
+            href={ctaHref}
             className="mt-7 inline-block rounded-[11px] bg-[#141312] px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-black"
           >
             Start free
