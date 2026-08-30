@@ -171,7 +171,7 @@ function Row({
             (user.credits <= 0 ? "text-red-600" : "text-neutral-700")
           }
         >
-          {user.credits.toLocaleString()}
+          {Math.round(user.credits).toLocaleString()}
         </td>
 
         <td className="border-b border-neutral-900/[0.07] py-2.5 pr-5 text-neutral-700">
@@ -252,7 +252,7 @@ function Row({
                   </button>
                 </div>
                 <p className="mt-2 text-[12px] text-neutral-500">
-                  Balance is now {user.credits.toLocaleString()}. Negative
+                  Balance is now {Math.round(user.credits).toLocaleString()}. Negative
                   numbers take credits away; both land in the account&rsquo;s
                   ledger.
                 </p>

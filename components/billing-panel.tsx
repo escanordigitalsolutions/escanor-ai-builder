@@ -110,7 +110,7 @@ export default function BillingPanel({
               (low ? "text-red-600" : "text-neutral-900")
             }
           >
-            {balance.toLocaleString()}
+            {Math.round(balance).toLocaleString()}
           </p>
           <p className="mt-2 text-sm text-neutral-500">
             {low

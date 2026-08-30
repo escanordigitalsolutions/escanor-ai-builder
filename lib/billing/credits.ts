@@ -128,13 +128,15 @@ export async function recordUsageDebit(
   ref?: string,
   note?: string
 ): Promise<void> {
-  if (credits <= 0) return;
+  // Below this a charge is rounding noise, and the row costs more to store
+  // than the credit it records.
+  if (!Number.isFinite(credits) || credits < 0.0001) return;
 
   const db = createServiceClient();
 
   const { error } = await db.from("credit_ledger").insert({
     user_id: userId,
-    delta: -credits,
+    delta: -Number(credits.toFixed(4)),
     reason: "usage",
     ref: ref ?? null,
     note: note ?? null,

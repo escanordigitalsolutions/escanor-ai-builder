@@ -11,13 +11,16 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.17.0",
+  version: "1.18.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-30",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.18.0</h4><ul>" +
+    "<li>The credit figure in the AI Editor now refreshes on its own after the AI works, instead of only on page load.</li>" +
+    "</ul>" +
     "<h4>1.17.0</h4><ul>" +
     "<li>Your credit balance now shows in the Meikero dashboard and in the AI Editor, so you can see what is left without leaving WordPress.</li>" +
     "</ul>" +

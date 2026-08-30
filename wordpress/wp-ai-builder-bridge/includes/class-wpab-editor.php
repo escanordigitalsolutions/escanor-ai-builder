@@ -2509,7 +2509,7 @@ final class WPAB_Editor {
 				function paint(credits, accountUrl) {
 					if (!credits || typeof credits.balance !== 'number') { return; }
 					var n = credits.balance;
-					pill.textContent = n.toLocaleString() + ' credits';
+					pill.textContent = Math.round(n).toLocaleString() + ' credits';
 					pill.title = (credits.planName || 'Free') + ' plan · ' +
 						(n > 0 ? 'click to manage your account' : 'top up to keep building');
 					pill.classList.toggle('is-empty', n <= 0);
@@ -2531,7 +2531,35 @@ final class WPAB_Editor {
 					// A missing balance is not worth an error state in the chrome.
 				});
 
-				// Generating spends credits, so refresh the figure once work settles.
+				// Generating spends credits, and the charge lands a moment after the
+				// request returns. Rather than hooking every generation path, the
+				// figure refreshes when the editor is likely to be stale: after a
+				// quiet interval, and whenever the tab regains focus.
+				var refreshTimer = null;
+
+				function scheduleRefresh(delay) {
+					if (refreshTimer) { clearTimeout(refreshTimer); }
+					refreshTimer = setTimeout(function () {
+						refreshTimer = null;
+						window.wpabRefreshCredits();
+					}, delay || 4000);
+				}
+
+				document.addEventListener('visibilitychange', function () {
+					if (!document.hidden) { scheduleRefresh(300); }
+				});
+
+				// Any call to the editor's own REST surface may have spent credits.
+				var originalFetch = window.fetch;
+				window.fetch = function (input, init) {
+					var url = typeof input === 'string' ? input : (input && input.url) || '';
+					var ours = url && cfg.restSession && url.indexOf('/wp-ai-builder/v1/editor/') !== -1;
+					return originalFetch.apply(this, arguments).then(function (response) {
+						if (ours) { scheduleRefresh(4000); }
+						return response;
+					});
+				};
+
 				window.wpabRefreshCredits = function () {
 					fetch(cfg.restSession, {
 						method: 'POST',

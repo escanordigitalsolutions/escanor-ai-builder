@@ -54,12 +54,13 @@ export function usdFor(
 }
 
 /**
- * Credits to charge for one model call.
+ * Credits to charge for one model call — fractional.
  *
- * Rounded to the nearest whole credit rather than always up: a single cheap
- * chat message genuinely costs a fraction of a credit, and charging a full one
- * for it would contradict what the pricing page promises. Rounding is fair in
- * both directions and averages out across a session.
+ * Deliberately not rounded. Most single calls are worth well under a credit
+ * (a chat message about 0.37, one file write about 0.23), so rounding each to
+ * the nearest whole number charged nothing for either: conversation came out
+ * free and a full build lost about an eighth of its price. The ledger stores
+ * the fraction; only the interface rounds.
  */
 export function creditsFor(
   model: string,
@@ -71,5 +72,6 @@ export function creditsFor(
 
   const billable = usdFor(model, inputTokens, outputTokens) * MARGIN;
 
-  return Math.max(0, Math.round(billable / CREDIT_USD));
+  // Four decimals matches the ledger column; anything finer is noise.
+  return Math.max(0, Math.round((billable / CREDIT_USD) * 10_000) / 10_000);
 }
