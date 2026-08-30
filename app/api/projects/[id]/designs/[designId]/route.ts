@@ -21,10 +21,15 @@ async function authorize(id: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string; designId: string }> }
 ) {
   const { id, designId } = await params;
+
+  // A design has two screens: the homepage and the representative inner page.
+  // Until the archive kept the second one there was nothing to choose between.
+  const which =
+    new URL(request.url).searchParams.get("which") === "inner" ? "inner" : "home";
 
   if (!(await authorize(id))) {
     return NextResponse.json({ success: false, error: "Not found." }, { status: 404 });
@@ -32,7 +37,7 @@ export async function GET(
 
   const { data: design, error } = await createServiceClient()
     .from("ai_designs")
-    .select("id, html, model, status, created_at")
+    .select("id, html, inner_html, concept, critique, model, status, created_at")
     .eq("id", designId)
     .eq("project_id", id)
     .single();
@@ -41,7 +46,33 @@ export async function GET(
     return NextResponse.json({ success: false, error: "Design not found." }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true, design });
+  const inner = (design.inner_html as string | null) ?? "";
+
+  if (which === "inner" && !inner) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "No inner page was kept for this design — it predates the archive keeping them, or that stage was skipped.",
+      },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    which,
+    hasInner: Boolean(inner),
+    design: {
+      id: design.id,
+      html: which === "inner" ? inner : design.html,
+      concept: design.concept,
+      critique: design.critique,
+      model: design.model,
+      status: design.status,
+      created_at: design.created_at,
+    },
+  });
 }
 
 export async function DELETE(

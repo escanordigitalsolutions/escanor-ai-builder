@@ -13,7 +13,9 @@ export async function POST(request: NextRequest) {
 
   const { data: designs, error } = await createServiceClient()
     .from("ai_designs")
-    .select("id, brief, model, status, input_tokens, output_tokens, created_at")
+    .select(
+      "id, brief, model, status, concept, shape, retried, critique, inner_html, input_tokens, output_tokens, created_at"
+    )
     .eq("project_id", auth.context.projectId)
     .order("created_at", { ascending: false })
     .limit(30);
@@ -25,5 +27,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json({ success: true, designs: designs ?? [] });
+  // inner_html is a large column and the list only needs to know whether one
+  // exists, so it is reduced to a flag before the response is built.
+  const rows = (designs ?? []).map((row) => {
+    const { inner_html, ...rest } = row as Record<string, unknown>;
+    return { ...rest, hasInner: Boolean(inner_html) };
+  });
+
+  return NextResponse.json({ success: true, designs: rows });
 }

@@ -414,6 +414,11 @@ final class WPAB_Admin {
 						<?php endforeach; ?>
 					</div>
 					<div id="wpabd-prevwrap" style="display:none;margin-top:14px;">
+						<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+							<button type="button" class="button button-primary wpabd-which" data-which="home">Homepage</button>
+							<button type="button" class="button wpabd-which" data-which="inner">Inner page</button>
+							<span id="wpabd-whichnote" style="color:#6f6b64;font-size:12px;"></span>
+						</div>
 						<iframe id="wpabd-prevframe" sandbox="allow-scripts" style="width:100%;height:680px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
 					</div>
 					<script>
@@ -422,17 +427,23 @@ final class WPAB_Admin {
 						var NONCE = <?php echo wp_json_encode( $dnonce ); ?>;
 						var cache = {};
 						var open = null;
+						var openWhich = 'home';
 
-						function fetchHtml(id) {
-							if (cache[id]) { return Promise.resolve(cache[id]); }
+						// A design has two screens now — the homepage and the inner page —
+						// so the cache is keyed on both. Keying on the id alone would show
+						// whichever was fetched first for the rest of the session.
+						function fetchHtml(id, which) {
+							which = which === 'inner' ? 'inner' : 'home';
+							var key = id + ':' + which;
+							if (cache[key]) { return Promise.resolve(cache[key]); }
 							return fetch(URL_HTML, {
 								method: 'POST',
 								headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': NONCE },
 								credentials: 'same-origin',
-								body: JSON.stringify({ designId: id })
+								body: JSON.stringify({ designId: id, which: which })
 							}).then(function (r) { return r.json(); }).then(function (j) {
 								if (!j || !j.html) { throw new Error((j && (j.error || j.message)) || 'Could not load the design.'); }
-								cache[id] = j.html;
+								cache[key] = j.html;
 								return j.html;
 							});
 						}
@@ -451,7 +462,7 @@ final class WPAB_Admin {
 						return String(t || 'design').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'design';
 					}
 					function saveHtml(id, title) {
-						return fetchHtml(id).then(function (html) {
+						return fetchHtml(id, 'home').then(function (html) {
 							var blob = new Blob([html], { type: 'text/html' });
 							var a = document.createElement('a');
 							a.href = URL.createObjectURL(blob);
@@ -472,7 +483,7 @@ final class WPAB_Admin {
 							var frame = thumb.querySelector('iframe');
 							var load = thumb.querySelector('.wpabd-dload');
 							fitThumb(card);
-							fetchHtml(id).then(function (html) {
+							fetchHtml(id, 'home').then(function (html) {
 								frame.srcdoc = html;
 								if (load) { load.style.display = 'none'; }
 							}).catch(function () {
@@ -523,15 +534,52 @@ final class WPAB_Admin {
 							for (var i = 0; i < cards.length; i++) { cards[i].classList.remove('is-open'); }
 							if (open === id) { wrap.style.display = 'none'; open = null; return; }
 							card.classList.add('is-open');
-							fetchHtml(id).then(function (html) {
+							showPage(id, 'home', wrap, frame, card);
+						});
+
+						function markWhich(which) {
+							var buttons = document.querySelectorAll('.wpabd-which');
+							for (var i = 0; i < buttons.length; i++) {
+								var on = buttons[i].getAttribute('data-which') === which;
+								buttons[i].classList.toggle('button-primary', on);
+							}
+						}
+
+						function showPage(id, which, wrap, frame, card) {
+							var note = document.getElementById('wpabd-whichnote');
+							if (note) { note.textContent = ''; }
+							markWhich(which);
+							fetchHtml(id, which).then(function (html) {
 								frame.srcdoc = html;
 								wrap.style.display = 'block';
 								open = id;
+								openWhich = which;
 								wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 							}).catch(function (err) {
-								card.classList.remove('is-open');
+								// A design generated before inner pages were archived simply
+								// has no second screen; that is worth saying rather than
+								// closing the preview the person already had open.
+								if (which === 'inner') {
+									markWhich(openWhich);
+									if (note) { note.textContent = (err && err.message) || 'No inner page was kept for this design.'; }
+									return;
+								}
+								if (card) { card.classList.remove('is-open'); }
 								alert(err && err.message ? err.message : 'Could not load the design.');
 							});
+						}
+
+						document.addEventListener('click', function (e) {
+							var sw = e.target && e.target.closest ? e.target.closest('.wpabd-which') : null;
+							if (!sw || !open) { return; }
+							e.preventDefault();
+							showPage(
+								open,
+								sw.getAttribute('data-which'),
+								document.getElementById('wpabd-prevwrap'),
+								document.getElementById('wpabd-prevframe'),
+								null
+							);
 						});
 					})();
 					</script>

@@ -111,6 +111,12 @@ export default async function AdminLayout({
               >
                 Accounts
               </Link>
+              <Link
+                href="/admin/designs"
+                className="text-sm text-neutral-400 transition-colors hover:text-white"
+              >
+                Designs
+              </Link>
             </nav>
           </div>
 

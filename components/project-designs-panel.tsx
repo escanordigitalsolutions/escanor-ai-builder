@@ -43,6 +43,8 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
   const [loading, setLoading] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openHtml, setOpenHtml] = useState("");
+  const [openWhich, setOpenWhich] = useState<"home" | "inner">("home");
+  const [openNote, setOpenNote] = useState("");
   const [openLoading, setOpenLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -67,23 +69,35 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
     void load();
   }, [load]);
 
-  async function openPreview(designId: string) {
-    if (openId === designId) {
+  async function openPreview(designId: string, which: "home" | "inner" = "home") {
+    if (openId === designId && which === openWhich) {
       setOpenId(null);
       setOpenHtml("");
+      setOpenNote("");
       return;
     }
+
     setOpenId(designId);
-    setOpenHtml("");
+    setOpenWhich(which);
     setOpenLoading(true);
+    setOpenNote("");
+
     try {
-      const res = await fetch(`/api/projects/${projectId}/designs/${designId}`);
+      const res = await fetch(
+        `/api/projects/${projectId}/designs/${designId}?which=${which}`
+      );
       const json = await res.json();
-      if (res.ok && json.success) {
+
+      if (json.success) {
         setOpenHtml(json.design?.html ?? "");
+      } else {
+        // A design from before inner pages were archived has only one screen.
+        // Saying so beats an empty frame that looks like a bug.
+        setOpenNote(json.error ?? "Could not load the preview.");
+        if (which === "inner") setOpenWhich("home");
       }
     } catch {
-      /* preview stays empty */
+      setOpenNote("Could not load the preview.");
     } finally {
       setOpenLoading(false);
     }
@@ -155,7 +169,7 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
                 {d.model} · {fmtDate(d.created_at)}
               </span>
               <button
-                onClick={() => void openPreview(d.id)}
+                onClick={() => void openPreview(d.id, "home")}
                 className="btn-ghost px-2.5 py-1 text-[11px]"
               >
                 {openId === d.id ? "Close" : "Preview"}
@@ -173,6 +187,32 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
 
             {openId === d.id && (
               <div className="mt-3">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => void openPreview(d.id, "home")}
+                    className={
+                      openWhich === "home"
+                        ? "btn-accent px-2.5 py-1 text-[11px] font-medium"
+                        : "btn-ghost px-2.5 py-1 text-[11px]"
+                    }
+                  >
+                    Homepage
+                  </button>
+                  <button
+                    onClick={() => void openPreview(d.id, "inner")}
+                    className={
+                      openWhich === "inner"
+                        ? "btn-accent px-2.5 py-1 text-[11px] font-medium"
+                        : "btn-ghost px-2.5 py-1 text-[11px]"
+                    }
+                  >
+                    Inner page
+                  </button>
+                  {openNote ? (
+                    <span className="text-[11px] text-neutral-500">{openNote}</span>
+                  ) : null}
+                </div>
+
                 {openLoading ? (
                   <p className="text-xs text-neutral-400">Loading preview…</p>
                 ) : (

@@ -244,7 +244,7 @@ export async function POST(request: NextRequest) {
       // finished, already-paid-for homepage — which is exactly what happened in
       // production. Everything after this point improves something that is
       // already safe on disk.
-      let designId = await archive(db, projectId, jobId, mock, direction, check, false);
+      let designId = await archive(db, projectId, jobId, shape, mock, direction, check, false);
 
       let done = payload(designId, mock, direction);
       ready = done;
@@ -296,7 +296,7 @@ export async function POST(request: NextRequest) {
           if (better) {
             mock = fixed;
             check = secondCheck;
-            designId = await archive(db, projectId, jobId, mock, direction, check, true, designId);
+            designId = await archive(db, projectId, jobId, shape, mock, direction, check, true, designId);
             done = payload(designId, mock, direction);
             ready = done;
             await writeResult(db, jobId, done);
@@ -356,6 +356,26 @@ export async function POST(request: NextRequest) {
         console.log(`inner page skipped: only ${Math.round(msLeft() / 1000)}s left`);
       }
 
+      await enrich(
+        db,
+        designId,
+        String(done.critique ?? ""),
+        done.innerHtml
+          ? {
+              html: String(done.innerHtml),
+              css: String(done.innerCss ?? ""),
+              pageHero: String(done.pageHero ?? ""),
+            }
+          : null,
+        {
+          css: mock.css,
+          header: mock.header,
+          footer: mock.footer,
+          fonts: mock.fonts,
+          sections: mock.sections,
+        }
+      );
+
       await db
         .from("ai_jobs")
         .update({
@@ -410,6 +430,7 @@ async function archive(
   db: Db,
   projectId: string,
   jobId: string,
+  shape: string,
   mock: MockupResult,
   direction: ArtDirection | null,
   check: ValidationResult,
@@ -418,15 +439,32 @@ async function archive(
 ): Promise<string | null> {
   const row = {
     project_id: projectId,
+    job_id: jobId,
+    shape,
+    concept: direction?.concept.name ?? null,
     brief: {
       jobId,
       concept: direction?.concept.name ?? null,
-      direction,
-      validation: check.failures,
-      retried,
     },
     model: mock.model,
     html: mock.html,
+
+    // The pieces the splitter cut out. Storing them means a design can be
+    // rebuilt, re-previewed or ported to PHP later without generating anything
+    // again — previously they existed only in a job row that is swept away
+    // after a day, so an archived design could never be used for anything but
+    // looking at.
+    assets: {
+      css: mock.css,
+      header: mock.header,
+      footer: mock.footer,
+      fonts: mock.fonts,
+      sections: mock.sections,
+    },
+
+    direction,
+    validation: check.failures,
+    retried,
     status: "pending",
     input_tokens: mock.usage.inputTokens,
     output_tokens: mock.usage.outputTokens,
@@ -452,6 +490,40 @@ async function archive(
   }
 
   return (data?.id as string) ?? null;
+}
+
+/**
+ * Add what the later stages produced to a design already on disk.
+ *
+ * Called after the critique and the inner page, both of which are optional and
+ * either of which may be skipped when the clock runs short. Failing here costs
+ * the extras, never the homepage.
+ */
+async function enrich(
+  db: Db,
+  designId: string | null,
+  critique: string,
+  inner: { html: string; css: string; pageHero: string } | null,
+  assets: Record<string, unknown>
+): Promise<void> {
+  if (!designId) return;
+
+  const patch: Record<string, unknown> = {};
+
+  if (critique) patch.critique = critique;
+
+  if (inner) {
+    patch.inner_html = inner.html;
+    patch.assets = { ...assets, innerCss: inner.css, pageHero: inner.pageHero };
+  }
+
+  if (!Object.keys(patch).length) return;
+
+  const { error } = await db.from("ai_designs").update(patch).eq("id", designId);
+
+  if (error) {
+    console.error("design enrich failed:", error.message);
+  }
 }
 
 /** The result shape the wizard reads. Names are kept from the old pipeline. */

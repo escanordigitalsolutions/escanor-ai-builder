@@ -405,7 +405,16 @@ final class WPAB_Editor {
 			return new WP_Error( 'wpab_dhtml_bad', 'A designId is required.', array( 'status' => 400 ) );
 		}
 
-		$result = WPAB_Cloud::request( 'agent/design-html', array( 'designId' => $design_id ), 20 );
+		$which = isset( $params['which'] ) && 'inner' === $params['which'] ? 'inner' : 'home';
+
+		$result = WPAB_Cloud::request(
+			'agent/design-html',
+			array(
+				'designId' => $design_id,
+				'which'    => $which,
+			),
+			20
+		);
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
