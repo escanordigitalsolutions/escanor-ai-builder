@@ -27,10 +27,10 @@ final class WPAB_Editor {
 		// register a separate submenu of its own.
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
 
-		// Meikero-managed pages render through the generated theme, not through
-		// hand edits — send anyone opening one in the classic Pages editor
-		// straight to the AI Editor instead, with that page preloaded.
-		add_action( 'load-post.php', array( __CLASS__, 'guard_manual_page_edit' ) );
+		// Meikero-managed pages still open normally in the block editor — SEO
+		// plugins, the featured image and other page settings live there and
+		// must stay reachable. This just adds a fast way to jump to the AI
+		// Editor with the same page preloaded, alongside the normal Edit link.
 		add_filter( 'page_row_actions', array( __CLASS__, 'filter_page_row_actions' ), 10, 2 );
 	}
 
@@ -1420,9 +1420,11 @@ final class WPAB_Editor {
 	}
 
 	/**
-	 * Defensive fallback only — a Meikero-managed page's edit screen normally
-	 * never reaches this point, because guard_manual_page_edit() redirects to
-	 * the AI Editor before WordPress renders it.
+	 * "Made with Meikero" panel in the page editor's side column. The block
+	 * editor itself stays fully open — SEO plugin panels, the featured
+	 * image, the permalink and every other page setting live there and must
+	 * stay reachable. This is a nudge toward the AI Editor for content/design
+	 * changes, not a lock.
 	 */
 	public static function render_meta_box( $post ): void {
 		$is_front = (int) get_option( 'page_on_front', 0 ) === (int) $post->ID;
@@ -1430,49 +1432,14 @@ final class WPAB_Editor {
 		echo '<div style="display:flex;flex-direction:column;gap:8px;">';
 		echo '<p style="margin:0;color:#50575e;">' . esc_html(
 			$is_front
-				? 'This page mirrors the designed homepage — every Meikero AI edit refreshes it automatically. It is not meant to be edited by hand; use the AI Editor instead.'
-				: 'Made with Meikero. This page renders through the generated theme and is managed by the AI Editor, not the block editor.'
+				? 'This page mirrors the designed homepage — every Meikero AI edit refreshes it automatically, so hand edits to the content here are replaced on the next AI edit. SEO, the featured image and other settings below are safe to edit directly.'
+				: 'Made with Meikero. For content or design changes, the AI Editor keeps this page consistent with the rest of the site. SEO, the featured image and other settings below can be edited directly here as usual.'
 		) . '</p>';
 		echo '<a class="button button-primary" style="text-align:center;background:#141312;border-color:#141312;" href="' . esc_url( $url ) . '">Open AI Editor</a>';
 		echo '</div>';
 	}
 
-	/**
-	 * A Meikero-managed page opened via post.php (the classic Pages editor)
-	 * never shows the block editor — it goes straight to the AI Editor with
-	 * that page preloaded in the live preview. Manual edits to generated
-	 * pages get lost on the next AI edit anyway; this stops that surprise
-	 * before it happens instead of just warning about it after the fact.
-	 */
-	public static function guard_manual_page_edit(): void {
-		if ( ! isset( $_GET['action'], $_GET['post'] ) || 'edit' !== sanitize_key( wp_unslash( $_GET['action'] ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return;
-		}
-		// Match the AI Editor page's own capability requirement — never send
-		// someone to a screen they are not allowed to open.
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
-		}
-		$post_id = absint( $_GET['post'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		if ( $post_id <= 0 || 'page' !== get_post_type( $post_id ) ) {
-			return;
-		}
-		if ( ! self::is_generated_theme_active() ) {
-			return;
-		}
-		// Sites generated before this guard existed have no meta yet — tag
-		// them now instead of waiting for the next AI edit.
-		if ( ! get_post_meta( $post_id, '_wpab_generated_page', true ) ) {
-			self::backfill_managed_pages();
-		}
-		if ( ! get_post_meta( $post_id, '_wpab_generated_page', true ) ) {
-			return;
-		}
-		wp_safe_redirect( admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&edit_page=' . $post_id ) );
-		exit;
-	}
-
-	/** Pages list: point the Edit link at the AI Editor for managed pages, and drop Quick Edit (it bypasses the guard above). */
+	/** Pages list: add a quick "Edit in Meikero" link next to the normal Edit action for managed pages — Edit still opens the block editor as usual. */
 	public static function filter_page_row_actions( array $actions, WP_Post $post ): array {
 		if ( ! self::is_generated_theme_active() ) {
 			return $actions;
@@ -1486,11 +1453,8 @@ final class WPAB_Editor {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return $actions;
 		}
-		if ( isset( $actions['edit'] ) ) {
-			$url             = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&edit_page=' . (int) $post->ID );
-			$actions['edit'] = '<a href="' . esc_url( $url ) . '">Edit in Meikero</a>';
-		}
-		unset( $actions['inline hide-if-no-js'] );
+		$url                    = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&edit_page=' . (int) $post->ID );
+		$actions['wpab-meikero'] = '<a href="' . esc_url( $url ) . '">Edit in Meikero</a>';
 		return $actions;
 	}
 
