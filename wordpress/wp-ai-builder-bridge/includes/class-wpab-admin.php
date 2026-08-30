@@ -36,6 +36,16 @@ final class WPAB_Admin {
 	public static function action_links( $links ) {
 		$url = admin_url( 'admin.php?page=' . self::BRIDGE_SLUG );
 
+		// "Check for updates" sits here rather than on a Meikero screen because
+		// this is where someone already is when they wonder whether they are on
+		// the current version.
+		if ( class_exists( 'WPAB_Notices' ) && current_user_can( 'update_plugins' ) ) {
+			array_unshift(
+				$links,
+				'<a href="' . esc_url( WPAB_Notices::check_update_url() ) . '">Check for updates</a>'
+			);
+		}
+
 		array_unshift( $links, '<a href="' . esc_url( $url ) . '">Settings</a>' );
 
 		return $links;

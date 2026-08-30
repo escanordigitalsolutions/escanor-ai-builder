@@ -3,7 +3,7 @@
  * Plugin Name:       Meikero Bridge
  * Plugin URI:        https://builder.escanor.lt
  * Description:       Read-only bridge between this WordPress site and Meikero, the AI website builder. Lets the AI Editor inspect the active theme and the site's content.
- * Version:           1.20.0
+ * Version:           1.21.0
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            ESCANOR Digital Solutions
@@ -32,7 +32,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAB_VERSION', '1.20.0' );
+define( 'WPAB_VERSION', '1.21.0' );
 define( 'WPAB_FILE', __FILE__ );
 define( 'WPAB_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPAB_URL', plugin_dir_url( __FILE__ ) );
@@ -50,6 +50,7 @@ require_once WPAB_DIR . 'includes/class-wpab-admin.php';
 require_once WPAB_DIR . 'includes/class-wpab-cloud.php';
 require_once WPAB_DIR . 'includes/class-wpab-editor.php';
 require_once WPAB_DIR . 'includes/class-wpab-updater.php';
+require_once WPAB_DIR . 'includes/class-wpab-notices.php';
 
 /**
  * Everything registers on plugins_loaded so the theme and companion plugin are
@@ -61,6 +62,7 @@ function wpab_bootstrap() {
 	WPAB_Cloud::init();
 	WPAB_Editor::init();
 	WPAB_Updater::init();
+	WPAB_Notices::init();
 }
 add_action( 'plugins_loaded', 'wpab_bootstrap' );
 

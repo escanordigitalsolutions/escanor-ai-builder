@@ -26,7 +26,9 @@ final class WPAB_Updater {
 
 	/** Cache the manifest so a Plugins-screen visit is not a network call. */
 	private const CACHE_KEY = 'wpab_update_manifest';
-	private const CACHE_TTL = 6 * HOUR_IN_SECONDS;
+	// One hour, not six. A published fix that takes most of a working day to
+	// become visible is a fix nobody has.
+	private const CACHE_TTL = HOUR_IN_SECONDS;
 
 	public static function init(): void {
 		add_filter( 'pre_set_site_transient_update_plugins', array( __CLASS__, 'offer_update' ) );
@@ -38,6 +40,25 @@ final class WPAB_Updater {
 
 	public static function flush(): void {
 		delete_transient( self::CACHE_KEY );
+	}
+
+	/**
+	 * The published version, when it is newer than this one. Null otherwise.
+	 *
+	 * Public so the admin notice can ask the same question the Plugins screen
+	 * asks, without a second copy of the comparison.
+	 */
+	public static function newer_version(): ?string {
+		$manifest = self::manifest();
+
+		if ( ! $manifest || empty( $manifest['version'] ) ) {
+			return null;
+		}
+
+		$current = defined( 'WPAB_VERSION' ) ? (string) WPAB_VERSION : '0.0.0';
+		$latest  = (string) $manifest['version'];
+
+		return version_compare( $latest, $current, '>' ) ? $latest : null;
 	}
 
 	/** Our own directory name, e.g. wp-ai-builder-bridge/wp-ai-builder-bridge.php */
