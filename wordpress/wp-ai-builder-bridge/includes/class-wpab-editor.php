@@ -185,6 +185,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/design/pack',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_design_pack' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/design/status',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -420,6 +429,25 @@ final class WPAB_Editor {
 	}
 
 	/** Design archive: mark a design used/rejected on the SaaS. Best-effort. */
+	/**
+	 * Everything needed to build a theme from a design already generated.
+	 *
+	 * Designing is the expensive half of a run, and every design is archived —
+	 * so rebuilding from one is the cheapest theme this product can make.
+	 */
+	public static function rest_design_pack( WP_REST_Request $request ) {
+		$params    = self::json_params( $request );
+		$design_id = isset( $params['designId'] ) ? trim( (string) $params['designId'] ) : '';
+
+		if ( '' === $design_id ) {
+			return new WP_Error( 'wpab_dpack_bad', 'A designId is required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/design-pack', array( 'designId' => $design_id ), 30 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
 	public static function rest_design_status( WP_REST_Request $request ) {
 		$params    = self::json_params( $request );
 		$design_id = isset( $params['designId'] ) ? trim( (string) $params['designId'] ) : '';
@@ -1691,6 +1719,7 @@ final class WPAB_Editor {
 			'restMockupStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/mockup-start' ) ),
 			'restDesignStatus' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/status' ) ),
 			'restDesignHtml'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/html' ) ),
+			'restDesignPack'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/pack' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
@@ -3562,6 +3591,41 @@ final class WPAB_Editor {
 				runPlan(myRun, sig, brief, [], null);
 			}
 
+			/**
+			 * Build a theme from a design that was already generated and paid for.
+			 *
+			 * Designing is the expensive half of a run — around fifty credits of
+			 * ninety — and every design is archived. Rebuilding from one skips
+			 * straight to the build, so a second theme from an approved design
+			 * costs roughly half. The pack comes back in the same shape a fresh
+			 * generation produces, which is why nothing below this point has to
+			 * know where the design came from.
+			 */
+			function startFromDesign(designId) {
+				if (!designId || busy || !cfg.restDesignPack || !cfg.restBuildPlan) { return; }
+
+				genToken++;
+				var myRun = genToken;
+				genAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+				var sig = genAbort ? genAbort.signal : undefined;
+				tokIn = 0; tokOut = 0;
+				clearGenState();
+				beginBusyUI();
+				stepState('design', 'done', 'from archive');
+				setBuildDetail('Loading the approved design…');
+
+				wpost(cfg.restDesignPack, { designId: designId }, sig).then(function (out) {
+					if (!alive(myRun)) { return; }
+					var pack = (out && out.data) || {};
+					if (!pack.success) { throw new Error(errText(out, 'That design could not be loaded.')); }
+
+					var brief = (pack.brief && typeof pack.brief === 'object') ? pack.brief : {};
+					if (!brief.prompt) { brief.prompt = pack.conceptName ? ('Rebuild the ' + pack.conceptName + ' design.') : 'Rebuild the approved design.'; }
+
+					proceedFromMockup(myRun, sig, brief, pack);
+				}).catch(genFail(myRun));
+			}
+
 			function runPlan(myRun, sig, brief, mockupSections, mockCtx) {
 				phaseProgress('plan');
 				setBuildDetail('Planning the pages…');
@@ -3822,6 +3886,26 @@ final class WPAB_Editor {
 			}
 
 			if (wGo) { wGo.addEventListener('click', generateTheme); }
+
+			// Nothing here can be edited until a theme has been generated, so an
+			// editor that opens onto an empty chat is a dead end: the AI can only
+			// touch a theme this plugin made. When the active theme is not one,
+			// the wizard is what the editor opens on.
+			(function () {
+				var t = (cfg && cfg.theme) || {};
+				if (!t.generated && wizard) {
+					setTimeout(function () { if (!busy && wizard.hidden) { openWizard(); } }, 120);
+				}
+			})();
+
+			// Arriving from the design archive with a design chosen.
+			(function () {
+				var picked = '';
+				try {
+					picked = new URLSearchParams(window.location.search).get('design') || '';
+				} catch (e) { picked = ''; }
+				if (picked) { setTimeout(function () { startFromDesign(picked); }, 60); }
+			})();
 		})();
 		</script>
 		<?php

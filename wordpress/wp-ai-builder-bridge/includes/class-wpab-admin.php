@@ -281,6 +281,14 @@ final class WPAB_Admin {
 				.wpabd-credits .hint { margin:6px 0 0; font-size:12px; color:#6f6b64; }
 				.wpabd-credits.is-empty { border-color:rgba(190,40,40,.35); background:#fff7f7; }
 				.wpabd-credits.is-empty .bal { color:#b42318; }
+				.wpabd-bars { display:flex; flex-direction:column; gap:10px; }
+				.wpabd-bar { display:grid; grid-template-columns:150px 1fr 64px; gap:12px; align-items:center; }
+				.wpabd-bar__l { font-size:13px; color:#141312; }
+				.wpabd-bar__t { height:10px; background:rgba(20,19,18,.07); border-radius:5px; overflow:hidden; }
+				.wpabd-bar__t span { display:block; height:100%; background:#3d64f2; border-radius:5px; }
+				.wpabd-bar__v { font-size:13px; text-align:right; font-variant-numeric:tabular-nums; color:#6f6b64; }
+				.wpabd-hint { margin:12px 0 0; font-size:12px; color:#6f6b64; }
+				@media (max-width:600px) { .wpabd-bar { grid-template-columns:110px 1fr 52px; } }
 			</style>
 
 			<h1 style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -321,50 +329,51 @@ final class WPAB_Admin {
 			<?php elseif ( is_wp_error( $report ) ) : ?>
 				<div class="wpabd-panel"><p>Could not load usage: <?php echo esc_html( $report->get_error_message() ); ?></p></div>
 			<?php else :
-				$totals = isset( $report['totals'] ) && is_array( $report['totals'] ) ? $report['totals'] : array();
+				// Credits only. This panel used to print model names, the rate per
+				// million tokens and the dollar cost of every call — to the person
+				// being billed in credits, who could read the margin straight off
+				// their own dashboard. The endpoint no longer sends any of it.
+				$activities = isset( $report['activities'] ) && is_array( $report['activities'] ) ? $report['activities'] : array();
+				$spent      = isset( $report['totalCredits'] ) ? (float) $report['totalCredits'] : 0.0;
+				$designs_n  = isset( $report['designs'] ) ? (int) $report['designs'] : 0;
+				$credits_fmt = static function ( $value ) {
+					$value = (float) $value;
+					return $value >= 10 ? number_format_i18n( round( $value ) ) : number_format_i18n( $value, 1 );
+				};
+				$widest = 0.0;
+				foreach ( $activities as $a ) {
+					$widest = max( $widest, (float) ( $a['credits'] ?? 0 ) );
+				}
 				?>
 				<div class="wpabd-cards">
-					<div class="wpabd-card"><div class="l">Calls</div><div class="v"><?php echo esc_html( $fmt( $totals['calls'] ?? 0 ) ); ?></div></div>
-					<div class="wpabd-card"><div class="l">Input tokens</div><div class="v"><?php echo esc_html( $fmt( $totals['inputTokens'] ?? 0 ) ); ?></div></div>
-					<div class="wpabd-card"><div class="l">Output tokens</div><div class="v"><?php echo esc_html( $fmt( $totals['outputTokens'] ?? 0 ) ); ?></div></div>
-					<div class="wpabd-card"><div class="l"><?php echo empty( $totals['costComplete'] ) ? 'Cost (partial)' : 'Cost'; ?></div><div class="v"><?php echo esc_html( $money( $totals['costUsd'] ?? null ) ); ?></div></div>
+					<div class="wpabd-card"><div class="l">Credits used here</div><div class="v"><?php echo esc_html( $credits_fmt( $spent ) ); ?></div></div>
+					<div class="wpabd-card"><div class="l">Designs generated</div><div class="v"><?php echo esc_html( number_format_i18n( $designs_n ) ); ?></div></div>
+					<div class="wpabd-card">
+						<div class="l">Last activity</div>
+						<div class="v" style="font-size:18px;">
+							<?php echo esc_html( ! empty( $report['lastAt'] ) ? mysql2date( 'M j, H:i', (string) $report['lastAt'] ) : '—' ); ?>
+						</div>
+					</div>
 				</div>
 
-				<div class="wpabd-panel">
-					<h2>By model — rates are USD per 1M tokens</h2>
-					<table class="wpabd-table">
-						<tr><th>Model</th><th>Calls</th><th>In</th><th>Out</th><th>$/1M in</th><th>$/1M out</th><th>Cost</th></tr>
-						<?php foreach ( (array) ( $report['byModel'] ?? array() ) as $m ) : ?>
-							<tr>
-								<td><?php echo esc_html( $m['model'] ?? '' ); ?></td>
-								<td><?php echo esc_html( $fmt( $m['calls'] ?? 0 ) ); ?></td>
-								<td><?php echo esc_html( $fmt( $m['inputTokens'] ?? 0 ) ); ?></td>
-								<td><?php echo esc_html( $fmt( $m['outputTokens'] ?? 0 ) ); ?></td>
-								<td><?php echo isset( $m['rateIn'] ) && null !== $m['rateIn'] ? '$' . esc_html( $m['rateIn'] ) : '—'; ?></td>
-								<td><?php echo isset( $m['rateOut'] ) && null !== $m['rateOut'] ? '$' . esc_html( $m['rateOut'] ) : '—'; ?></td>
-								<td><strong><?php echo esc_html( $money( $m['costUsd'] ?? null ) ); ?></strong></td>
-							</tr>
-						<?php endforeach; ?>
-					</table>
-				</div>
-
-				<div class="wpabd-panel">
-					<h2>By stage</h2>
-					<table class="wpabd-table">
-						<tr><th>Stage</th><th>Calls</th><th>In</th><th>Out</th><th>Cost</th></tr>
-						<?php foreach ( (array) ( $report['byStage'] ?? array() ) as $st ) :
-							$slug = (string) ( $st['stage'] ?? '' );
-							?>
-							<tr>
-								<td><?php echo esc_html( $stage_labels[ $slug ] ?? $slug ); ?></td>
-								<td><?php echo esc_html( $fmt( $st['calls'] ?? 0 ) ); ?></td>
-								<td><?php echo esc_html( $fmt( $st['inputTokens'] ?? 0 ) ); ?></td>
-								<td><?php echo esc_html( $fmt( $st['outputTokens'] ?? 0 ) ); ?></td>
-								<td><strong><?php echo esc_html( $money( $st['costUsd'] ?? null ) ); ?></strong></td>
-							</tr>
-						<?php endforeach; ?>
-					</table>
-				</div>
+				<?php if ( $activities ) : ?>
+					<div class="wpabd-panel">
+						<h2>Where your credits went</h2>
+						<div class="wpabd-bars">
+							<?php foreach ( $activities as $a ) :
+								$c   = (float) ( $a['credits'] ?? 0 );
+								$pct = $widest > 0 ? max( 2, round( ( $c / $widest ) * 100 ) ) : 0;
+								?>
+								<div class="wpabd-bar">
+									<div class="wpabd-bar__l"><?php echo esc_html( (string) ( $a['label'] ?? '' ) ); ?></div>
+									<div class="wpabd-bar__t"><span style="width:<?php echo esc_attr( (string) $pct ); ?>%"></span></div>
+									<div class="wpabd-bar__v"><?php echo esc_html( $credits_fmt( $c ) ); ?></div>
+								</div>
+							<?php endforeach; ?>
+						</div>
+						<p class="wpabd-hint">Credits are spent as the AI works. A full site generation is about 90 — roughly half of that is the design.</p>
+					</div>
+				<?php endif; ?>
 			<?php endif; ?>
 
 			<?php
@@ -407,7 +416,12 @@ final class WPAB_Admin {
 							$stat  = isset( $d['status'] ) ? (string) $d['status'] : 'pending';
 							$when  = isset( $d['created_at'] ) ? mysql2date( 'M j, H:i', (string) $d['created_at'] ) : '';
 							?>
-							<div class="wpabd-dcard" data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>" data-title="<?php echo esc_attr( $title ); ?>" title="Open full preview">
+							<div class="wpabd-dcard"
+								data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>"
+								data-title="<?php echo esc_attr( $title ); ?>"
+								data-pages="<?php echo esc_attr( implode( ',', array_map( 'strval', (array) ( $d['available'] ?? array( 'home' ) ) ) ) ); ?>"
+								data-rebuildable="<?php echo empty( $d['rebuildable'] ) ? '0' : '1'; ?>"
+								title="Open full preview">
 								<div class="wpabd-dshell">
 									<div class="wpabd-dbar"><i></i><i></i><i></i></div>
 									<div class="wpabd-dthumb">
@@ -424,10 +438,10 @@ final class WPAB_Admin {
 						<?php endforeach; ?>
 					</div>
 					<div id="wpabd-prevwrap" style="display:none;margin-top:14px;">
-						<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-							<button type="button" class="button button-primary wpabd-which" data-which="home">Homepage</button>
-							<button type="button" class="button wpabd-which" data-which="inner">Inner page</button>
+						<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+							<span id="wpabd-whichtabs" style="display:flex;gap:6px;flex-wrap:wrap;"></span>
 							<span id="wpabd-whichnote" style="color:#6f6b64;font-size:12px;"></span>
+							<a id="wpabd-usebtn" class="button button-primary" style="margin-left:auto;display:none;" href="#">Build a theme from this design →</a>
 						</div>
 						<iframe id="wpabd-prevframe" sandbox="allow-scripts" style="width:100%;height:680px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
 					</div>
@@ -437,7 +451,9 @@ final class WPAB_Admin {
 						var NONCE = <?php echo wp_json_encode( $dnonce ); ?>;
 						var cache = {};
 						var open = null;
+						var openCard = null;
 						var openWhich = 'home';
+						var EDITOR_URL = <?php echo wp_json_encode( admin_url( 'admin.php?page=' . self::EDITOR_SLUG ) ); ?>;
 
 						// A design has two screens now — the homepage and the inner page —
 						// so the cache is keyed on both. Keying on the id alone would show
@@ -544,8 +560,44 @@ final class WPAB_Admin {
 							for (var i = 0; i < cards.length; i++) { cards[i].classList.remove('is-open'); }
 							if (open === id) { wrap.style.display = 'none'; open = null; return; }
 							card.classList.add('is-open');
+							openCard = card;
+							buildTabs(card, 'home');
 							showPage(id, 'home', wrap, frame, card);
 						});
+
+						var PAGE_LABEL = {
+							home: 'Homepage', inner: 'Inner page', components: 'Components',
+							archive: 'Blog archive', notfound: '404', brand: 'Brand sheet'
+						};
+
+						// Built per design: any stage after the homepage may have been
+						// skipped when a run was short of time, so the tabs come from
+						// the card rather than being assumed.
+						function buildTabs(card, which) {
+							var host = document.getElementById('wpabd-whichtabs');
+							if (!host) { return; }
+							var list = String(card.getAttribute('data-pages') || 'home').split(',');
+							host.innerHTML = '';
+							for (var i = 0; i < list.length; i++) {
+								var key = list[i];
+								if (!key) { continue; }
+								var b = document.createElement('button');
+								b.type = 'button';
+								b.className = 'button wpabd-which' + (key === which ? ' button-primary' : '');
+								b.setAttribute('data-which', key);
+								b.textContent = PAGE_LABEL[key] || key;
+								host.appendChild(b);
+							}
+							var use = document.getElementById('wpabd-usebtn');
+							if (use) {
+								if (card.getAttribute('data-rebuildable') === '1') {
+									use.href = EDITOR_URL + '&design=' + encodeURIComponent(card.getAttribute('data-design') || '');
+									use.style.display = '';
+								} else {
+									use.style.display = 'none';
+								}
+							}
+						}
 
 						function markWhich(which) {
 							var buttons = document.querySelectorAll('.wpabd-which');

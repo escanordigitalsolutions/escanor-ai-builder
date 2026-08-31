@@ -11,13 +11,19 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.22.0",
+  version: "1.23.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-30",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.23.0</h4><ul>" +
+    "<li>The dashboard now reports your usage in credits, grouped by what the work was for, instead of model names and token prices.</li>" +
+    "<li>Build a theme straight from any design in your archive — it skips the design step, which is about half the cost of a generation.</li>" +
+    "<li>The design archive previews every screen a design produced, not just the homepage.</li>" +
+    "<li>The AI Editor opens on theme generation when the active theme is not one it can edit.</li>" +
+    "</ul>" +
     "<h4>1.22.0</h4><ul>" +
     "<li>The design preview now shows every screen the generation produced — inner page, components, blog archive, 404 and the brand sheet — and lets you switch between the alternative colourways.</li>" +
     "<li>The theme build uses them: your blog listing, 404 page and component styles now come from the design you approved instead of being invented during the build.</li>" +
