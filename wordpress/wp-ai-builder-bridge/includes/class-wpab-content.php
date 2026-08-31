@@ -23,6 +23,20 @@ if ( ! defined( 'ABSPATH' ) ) {
 final class WPAB_Content {
 
 	/** Hard caps so a huge site or a huge page can never blow up a response. */
+	/**
+	 * Snapshot limits.
+	 *
+	 * A content snapshot rides along with every chat message, so it is bounded
+	 * hard. These mirror CONTENT_SNAPSHOT_LIMITS on the SaaS side; the ceiling
+	 * over both is Vercel's 4.5 MB request body, which this shares with the
+	 * theme snapshot and an optional screenshot.
+	 */
+	public const SNAPSHOT_MAX_TYPES       = 12;
+	public const SNAPSHOT_ITEMS_PER_TYPE  = 30;
+	public const SNAPSHOT_MAX_BODIES      = 40;
+	public const SNAPSHOT_MAX_BODY_BYTES  = 20000;
+	public const SNAPSHOT_MAX_TOTAL_BYTES = 300000;
+
 	private const MAX_ITEMS       = 100;
 	private const MAX_CONTENT     = 40000;
 	private const MAX_MENU_ITEMS  = 200;
@@ -122,6 +136,158 @@ final class WPAB_Content {
 			'woocommerce' => self::woocommerce_active(),
 			'types'       => $types,
 		);
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Snapshot — the site's content, sent WITH the request
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * What the chat can answer about this site's content without calling back.
+	 *
+	 * Same reasoning as WPAB_Files::snapshot(): the SaaS can only reach a site
+	 * that is publicly reachable from the internet inside ten seconds, and a
+	 * great many WordPress installs are not. Reading this locally costs a few
+	 * database queries; being asked for it over HTTP costs a failed request.
+	 *
+	 * Three layers, cheapest first, each bounded:
+	 *   types    — every content type with a count. A few hundred bytes.
+	 *   listings — the most recently modified items per type, titles only.
+	 *   bodies   — the actual content of a few of those items. Pages first:
+	 *              they are few, and they are what people ask about.
+	 *
+	 * Never returns a WP_Error. What does not fit is simply absent, and the
+	 * snapshot says so, which is what lets the SaaS decide whether a missing
+	 * item is worth one attempt at the old HTTP pull.
+	 */
+	public static function snapshot(): array {
+		$out = array(
+			'types'     => array(),
+			'listings'  => array(),
+			'bodies'    => array(),
+			'truncated' => false,
+		);
+
+		$types = self::types();
+		$list  = isset( $types['types'] ) && is_array( $types['types'] ) ? $types['types'] : array();
+
+		$out['types']       = $types;
+		$out['woocommerce'] = ! empty( $types['woocommerce'] );
+
+		if ( count( $list ) > self::SNAPSHOT_MAX_TYPES ) {
+			$list             = array_slice( $list, 0, self::SNAPSHOT_MAX_TYPES );
+			$out['truncated'] = true;
+		}
+
+		$budget = self::SNAPSHOT_MAX_TOTAL_BYTES;
+
+		// Layer two: what exists, by type.
+		foreach ( $list as $type ) {
+			$key = isset( $type['key'] ) ? (string) $type['key'] : '';
+
+			if ( '' === $key || empty( $type['count'] ) ) {
+				continue;
+			}
+
+			$listing = self::listing( $key, self::SNAPSHOT_ITEMS_PER_TYPE );
+
+			if ( is_wp_error( $listing ) || empty( $listing['items'] ) ) {
+				continue;
+			}
+
+			$cost = strlen( (string) wp_json_encode( $listing['items'] ) );
+
+			if ( $cost > $budget ) {
+				$out['truncated'] = true;
+				break;
+			}
+
+			$budget                  -= $cost;
+			$out['listings'][ $key ]  = $listing['items'];
+		}
+
+		// Layer three: the text itself, for as many items as the budget allows.
+		foreach ( self::body_candidates( $out['listings'] ) as $candidate ) {
+			if ( count( $out['bodies'] ) >= self::SNAPSHOT_MAX_BODIES ) {
+				$out['truncated'] = true;
+				break;
+			}
+
+			$item = self::get_item( $candidate['type'], $candidate['id'] );
+
+			if ( is_wp_error( $item ) ) {
+				continue;
+			}
+
+			$cost = strlen( (string) wp_json_encode( $item ) );
+
+			if ( $cost > self::SNAPSHOT_MAX_BODY_BYTES || $cost > $budget ) {
+				// One long page must not crowd out every short one after it,
+				// so this skips rather than stopping — unless nothing fits.
+				$out['truncated'] = true;
+
+				if ( $cost > $budget ) {
+					break;
+				}
+
+				continue;
+			}
+
+			$budget                                                        -= $cost;
+			$out['bodies'][ $candidate['type'] . ':' . $candidate['id'] ]  = $item;
+		}
+
+		return $out;
+	}
+
+	/**
+	 * Which items are worth sending the text of, most useful first.
+	 *
+	 * Pages before posts before anything else: a site has a handful of pages
+	 * and people ask about them by name, while posts are many and are usually
+	 * discussed as a list. Media and menus carry no body worth sending.
+	 */
+	private static function body_candidates( array $listings ): array {
+		$order      = array( 'page' => 0, 'post' => 1, 'product' => 2 );
+		$candidates = array();
+
+		$keys = array_keys( $listings );
+
+		usort(
+			$keys,
+			static function ( $a, $b ) use ( $order ) {
+				$ra = isset( $order[ $a ] ) ? $order[ $a ] : 50;
+				$rb = isset( $order[ $b ] ) ? $order[ $b ] : 50;
+
+				return $ra === $rb ? strcmp( $a, $b ) : $ra - $rb;
+			}
+		);
+
+		foreach ( $keys as $type ) {
+			if ( 'media' === $type || 'menu' === $type ) {
+				continue;
+			}
+
+			foreach ( $listings[ $type ] as $item ) {
+				if ( empty( $item['id'] ) ) {
+					continue;
+				}
+
+				$candidates[] = array(
+					'type' => $type,
+					'id'   => (int) $item['id'],
+				);
+			}
+		}
+
+		return $candidates;
+	}
+
+	/** Add the content snapshot to an outbound SaaS payload. */
+	public static function attach_snapshot( array $payload ): array {
+		$payload['content'] = self::snapshot();
+
+		return $payload;
 	}
 
 	/**

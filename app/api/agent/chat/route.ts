@@ -11,16 +11,15 @@ import { logUsage } from "@/lib/ai/usage";
 // function mid-generation.
 export const maxDuration = 300;
 
-import {
-  listSiteContentTypes,
-  listSiteContent,
-  getSiteContentItem,
-  type ProjectScope,
-} from "@/lib/wordpress/bridge";
+import type { ProjectScope } from "@/lib/wordpress/bridge";
 import {
   createProjectFileReader,
   parseProjectSnapshot,
 } from "@/lib/wordpress/project-files";
+import {
+  createContentReader,
+  parseContentSnapshot,
+} from "@/lib/wordpress/content-snapshot";
 
 /**
  * WordPress -> SaaS chat (v3A).
@@ -376,6 +375,12 @@ export async function POST(request: NextRequest) {
       token: bridgeToken,
     });
 
+    const siteContent = createContentReader({
+      snapshot: parseContentSnapshot((body as { content?: unknown }).content),
+      siteUrl: site.site_url,
+      token: bridgeToken,
+    });
+
     // The site reports its ACTIVE theme with every message — the stored
     // theme_name is only a connection-time snapshot and goes stale the moment
     // a new theme is generated. Trust the live value and refresh the record.
@@ -469,20 +474,20 @@ Never guess project details. Read relevant files before making code-specific cla
         if (name === "list_content_types") {
           activity.push({ tool: name });
           await writeStep("Looking at the site's content types…");
-          return listSiteContentTypes(site.site_url, bridgeToken);
+          return siteContent.types();
         }
         if (name === "list_content") {
           const type = validateContentType(args.type);
           activity.push({ tool: name, scope: type });
           await writeStep(`Listing ${type} content…`);
-          return listSiteContent(site.site_url, bridgeToken, type);
+          return siteContent.list(type);
         }
         if (name === "get_content") {
           const type = validateContentType(args.type);
           const id = validateContentId(args.id);
           activity.push({ tool: name, scope: type, paths: [String(id)] });
           await writeStep(`Reading ${type} #${id}…`);
-          return getSiteContentItem(site.site_url, bridgeToken, type, id);
+          return siteContent.item(type, id);
         }
         if (name === "edit_theme") {
           const instruction =

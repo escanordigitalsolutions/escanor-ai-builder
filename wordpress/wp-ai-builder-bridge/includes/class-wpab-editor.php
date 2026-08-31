@@ -1570,7 +1570,11 @@ final class WPAB_Editor {
 		// Optional attached image: a data URL the editor already downscaled.
 		if ( isset( $params['image'] ) && is_string( $params['image'] ) ) {
 			$img = $params['image'];
-			if ( strlen( $img ) <= 3000000 && 0 === strpos( $img, 'data:image/' ) ) {
+			// 1.5 MB of base64, not 3: the request now also carries the theme
+			// and the site's content, and Vercel rejects a body over 4.5 MB.
+			// The editor downscales before sending, so this is still a
+			// generous screenshot.
+			if ( strlen( $img ) <= 1500000 && 0 === strpos( $img, 'data:image/' ) ) {
 				$body['image'] = $img;
 			}
 		}
@@ -1580,8 +1584,10 @@ final class WPAB_Editor {
 			$body['conversationId'] = $conversation_id;
 		}
 
-		// The chat reads the theme from what we send, not by being called back.
+		// The chat reads the theme AND the site's content from what we send,
+		// not by being called back.
 		$body = WPAB_Files::attach_snapshot( $body );
+		$body = WPAB_Content::attach_snapshot( $body );
 
 		$result = WPAB_Cloud::request( 'agent/chat', $body, 60 );
 
@@ -2410,9 +2416,22 @@ final class WPAB_Editor {
 							if (!ctx) { cb(null); return; }
 							ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
 							ctx.drawImage(im, 0, 0, cw, ch);
+							// The cap must match WPAB_Editor's server-side check
+							// (1.5 MB): anything larger is dropped there, and the
+							// model would then answer as if it had seen an image
+							// it never received. Step the quality down instead of
+							// throwing the screenshot away.
+							var LIMIT = 1500000;
 							var url = '';
-							try { url = cv.toDataURL('image/jpeg', 0.85); } catch (e) { url = ''; }
-							cb(url && url.length <= 2800000 ? url : null);
+							var qualities = [0.85, 0.7, 0.55, 0.4];
+							for (var qi = 0; qi < qualities.length; qi++) {
+								var attempt = '';
+								try { attempt = cv.toDataURL('image/jpeg', qualities[qi]); } catch (e) { attempt = ''; }
+								if (!attempt) { break; }
+								url = attempt;
+								if (url.length <= LIMIT) { break; }
+							}
+							cb(url && url.length <= LIMIT ? url : null);
 						};
 						im.onerror = function () { cb(null); };
 						im.src = String(rd.result || '');
