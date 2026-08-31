@@ -231,6 +231,29 @@ function readFromSnapshot(scope: ProjectScope, path: string, content: string) {
   };
 }
 
+/**
+ * The theme map as compact text for a prompt.
+ *
+ * JSON would cost two to three times the tokens for the same facts, on every
+ * turn, to say something a model reads better as a list. Roles are dropped —
+ * they exist to explain WordPress to a person, and the model already knows
+ * what header.php is.
+ */
+export function renderStructureForPrompt(structure: ThemeStructure): string {
+  const groups = structure.groups.map((group) => {
+    const files = group.files
+      .map((file) => `  ${file.path} (${Math.round(file.bytes / 100) / 10}KB)`)
+      .join("\n");
+
+    return `${group.label}:\n${files}`;
+  });
+
+  return [
+    `Active theme: ${structure.theme || "unknown"} — ${structure.count} files.`,
+    ...groups,
+  ].join("\n");
+}
+
 export type ProjectFileReader = {
   /** Where the files came from — surfaced in the ops log, not to the model. */
   source: "site" | "bridge";

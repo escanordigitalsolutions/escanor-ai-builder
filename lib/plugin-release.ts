@@ -11,13 +11,18 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.26.0",
+  version: "1.27.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-31",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.27.0</h4><ul>" +
+    "<li>An edit that the AI could not finish writing is no longer applied. Half-written stylesheets used to be saved silently and break the design; now the edit fails and says so.</li>" +
+    "<li>Chat no longer gives up after a minute on questions that need a proper look at your theme.</li>" +
+    "<li>Answers and edits arrive faster: the AI is given your theme's file map up front instead of asking for it first.</li>" +
+    "</ul>" +
     "<h4>1.26.0</h4><ul>" +
     "<li>A new folder button in the AI Editor shows your theme as a browsable map — every file grouped by what it does, with a line explaining each one. Click a file to read it.</li>" +
     "<li>Ask the chat what your theme contains and it draws the same map instead of describing a file list.</li>" +

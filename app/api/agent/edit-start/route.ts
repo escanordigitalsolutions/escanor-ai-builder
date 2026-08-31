@@ -10,6 +10,7 @@ import { recordUsage } from "@/lib/ai/usage";
 import {
   createProjectFileReader,
   parseProjectSnapshot,
+  renderStructureForPrompt,
 } from "@/lib/wordpress/project-files";
 
 export const maxDuration = 300;
@@ -41,6 +42,16 @@ SUMMARY: <what changed and where>
 ===WPAB_FILE:<relative-path>===
 <complete contents>
 ===WPAB_END===`;
+
+/**
+ * How much of the plan's files we hand over up front.
+ *
+ * Generous, because the site already sent them and the alternative is a round
+ * trip; bounded, because the reply still has to fit in the model's context
+ * alongside whatever else it reads.
+ */
+const PRIME_MAX_FILES = 6;
+const PRIME_MAX_CHARS = 60_000;
 
 const tools: ToolDef[] = [
   {
@@ -169,8 +180,10 @@ export async function POST(request: NextRequest) {
   // The theme the plugin sent with this request. When it is there the agent
   // never calls back into the site, which is the whole point: most WordPress
   // installs are not reachable from Vercel.
+  const projectSnapshot = parseProjectSnapshot((body as { project?: unknown }).project);
+
   const projectFiles = createProjectFileReader({
-    snapshot: parseProjectSnapshot((body as { project?: unknown }).project),
+    snapshot: projectSnapshot,
     siteUrl,
     token: bridgeToken,
   });
@@ -208,17 +221,61 @@ export async function POST(request: NextRequest) {
     };
 
     try {
+      const inspected: string[] = [];
+
       await setProgress("Reading the theme structure…");
+
+      // The map, compact. JSON here cost two to three times the tokens to say
+      // the same thing.
       let structureBlock = "";
       try {
-        const structure = await projectFiles.list("theme");
-        structureBlock = `\n\nTheme structure (current, read-only):\n${JSON.stringify(structure)}`;
+        structureBlock = projectSnapshot?.structure
+          ? `\n\nTHEME FILES:\n${renderStructureForPrompt(projectSnapshot.structure)}`
+          : `\n\nTHEME FILES:\n${JSON.stringify(await projectFiles.list("theme"))}`;
       } catch {
         structureBlock = "";
       }
 
+      // The plan already named the files this edit touches, and the site
+      // already sent their contents. Handing them over now removes the
+      // read_project_files round trip that every edit used to start with —
+      // and a model that has the file in front of it edits it more faithfully
+      // than one working from a path.
+      let primedBlock = "";
+      const primedPaths = [
+        ...new Set(planSteps.flatMap((step) => step.files)),
+      ].slice(0, PRIME_MAX_FILES);
+
+      if (primedPaths.length > 0) {
+        try {
+          const primed = (await projectFiles.read("theme", primedPaths)) as {
+            files?: { path?: unknown; content?: unknown }[];
+          };
+
+          const blocks: string[] = [];
+          let budget = PRIME_MAX_CHARS;
+
+          for (const file of primed.files ?? []) {
+            if (typeof file.path !== "string" || typeof file.content !== "string") continue;
+            if (file.content.length > budget) continue;
+
+            budget -= file.content.length;
+            blocks.push(`--- ${file.path} ---\n${file.content}`);
+            inspected.push(file.path);
+          }
+
+          if (blocks.length > 0) {
+            primedBlock =
+              `\n\nCURRENT CONTENTS OF THE FILES IN THE PLAN ` +
+              `(read them here, do not call read_project_files for these):\n\n` +
+              blocks.join("\n\n");
+          }
+        } catch {
+          primedBlock = "";
+        }
+      }
+
       const editModel = pickModel(modelConfig, "edit");
-      const inspected: string[] = [];
       const startedAt = Date.now();
       await setProgress(
         planSteps.length
@@ -247,7 +304,8 @@ export async function POST(request: NextRequest) {
                     )
                     .join("\n")
                 : "") +
-              structureBlock.replace("Theme structure (current, read-only):", "THEME FILES:"),
+              structureBlock +
+              primedBlock,
           },
         ],
         tools,
@@ -284,21 +342,28 @@ export async function POST(request: NextRequest) {
         toolCalls: result.toolCalls,
         durationMs: Date.now() - startedAt,
         exhausted: result.exhausted,
+        truncated: result.truncated,
         async: true,
       }, jobId);
 
-      if (result.exhausted || parsed.files.length === 0) {
+      if (result.truncated || result.exhausted || parsed.files.length === 0) {
         const blocker =
           parsed.summary && parsed.summary !== "Updated the theme."
             ? parsed.summary.slice(0, 400)
             : "The editor could not produce a change for that. Try rephrasing.";
+        // Truncation is checked first and on its own: the reply ended mid-file,
+        // so parsed.files may look perfectly plausible while the last one is
+        // half a stylesheet. Nothing here is written.
+        const reason = result.truncated
+          ? "The edit was cut short before the file was finished, so nothing was written. Ask for a smaller change — one section or one file at a time."
+          : result.exhausted
+            ? "The edit took too many steps. Try a more specific instruction."
+            : blocker;
         await db
           .from("ai_jobs")
           .update({
             status: "error",
-            error: result.exhausted
-              ? "The edit took too many steps. Try a more specific instruction."
-              : blocker,
+            error: reason,
             updated_at: new Date().toISOString(),
           })
           .eq("id", jobId);

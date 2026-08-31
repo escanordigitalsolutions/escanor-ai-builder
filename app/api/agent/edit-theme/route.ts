@@ -260,6 +260,27 @@ export async function POST(request: NextRequest) {
     });
 
 
+    // A reply that stopped at the output ceiling ends mid-file. Writing it
+    // would put half a stylesheet over a working one — and CSS, unlike PHP,
+    // has no parse check downstream to catch it.
+    if (result.truncated) {
+      void logUsage(context.projectId, "edit", editModel, result.usage, {
+        instruction: instruction.slice(0, 400),
+        inspected: inspected.slice(0, 12),
+        toolCalls: result.toolCalls,
+        durationMs: Date.now() - startedAt,
+        truncated: true,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          usage: result.usage,
+          error: "The edit was cut short before the file was finished, so nothing was written. Ask for a smaller change — one section or one file at a time.",
+        },
+        { status: 502 }
+      );
+    }
+
     if (result.exhausted) {
       void logUsage(context.projectId, "edit", editModel, result.usage, {
         instruction: instruction.slice(0, 400),

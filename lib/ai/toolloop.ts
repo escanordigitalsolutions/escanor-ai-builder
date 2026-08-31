@@ -49,6 +49,16 @@ export type ToolLoopResult = {
   usage: Usage & { totalTokens: number };
   /** true when the round budget ran out before the model gave a final answer */
   exhausted: boolean;
+  /**
+   * true when the model stopped because it hit the output-token ceiling.
+   *
+   * This is not a detail. A theme edit answers with whole file contents, so a
+   * reply cut off at the ceiling ends mid-file — and without this flag that
+   * looks exactly like a finished answer. The edit routes then write half a
+   * stylesheet over a working one. Both providers report it; neither did so
+   * through this function until now.
+   */
+  truncated: boolean;
 };
 
 export type ToolLoopOpts = {
@@ -67,7 +77,7 @@ export async function runToolLoop(opts: ToolLoopOpts): Promise<ToolLoopResult> {
     ? await anthropicLoop(opts)
     : await openaiLoop(opts);
   console.log(
-    `[ai] toolloop model=${opts.model} calls=${result.toolCalls} in=${result.usage.inputTokens} out=${result.usage.outputTokens} exhausted=${result.exhausted}`
+    `[ai] toolloop model=${opts.model} calls=${result.toolCalls} in=${result.usage.inputTokens} out=${result.usage.outputTokens} exhausted=${result.exhausted} truncated=${result.truncated}`
   );
   return result;
 }
@@ -126,7 +136,13 @@ async function openaiLoop(opts: ToolLoopOpts): Promise<ToolLoopResult> {
     const calls = response.output.filter((item) => item.type === "function_call");
 
     if (calls.length === 0) {
-      return { text: response.output_text || "", toolCalls, usage, exhausted: false };
+      return {
+        text: response.output_text || "",
+        toolCalls,
+        usage,
+        exhausted: false,
+        truncated: hitOutputCeiling(response),
+      };
     }
 
     toolCalls += calls.length;
@@ -164,7 +180,31 @@ async function openaiLoop(opts: ToolLoopOpts): Promise<ToolLoopResult> {
     addUsage(response.usage);
   }
 
-  return { text: response.output_text || "", toolCalls, usage, exhausted: true };
+  return {
+    text: response.output_text || "",
+    toolCalls,
+    usage,
+    exhausted: true,
+    truncated: hitOutputCeiling(response),
+  };
+}
+
+/**
+ * Did this Responses call stop at max_output_tokens?
+ *
+ * The SDK reports it as status "incomplete" with a reason; the field is read
+ * defensively because a provider that stops naming it must not silently start
+ * reporting every reply as complete.
+ */
+export function hitOutputCeiling(response: {
+  status?: string | null;
+  incomplete_details?: { reason?: string | null } | null;
+}): boolean {
+  if (response.status !== "incomplete") return false;
+
+  const reason = response.incomplete_details?.reason;
+
+  return !reason || reason === "max_output_tokens";
 }
 
 /* ------------------------------ Anthropic --------------------------------- */
@@ -249,7 +289,13 @@ async function anthropicLoop(opts: ToolLoopOpts): Promise<ToolLoopResult> {
     const toolUses = content.filter((b) => b.type === "tool_use" && b.id && b.name);
 
     if (data.stop_reason !== "tool_use" || toolUses.length === 0) {
-      return { text: lastText, toolCalls, usage, exhausted: false };
+      return {
+        text: lastText,
+        toolCalls,
+        usage,
+        exhausted: false,
+        truncated: data.stop_reason === "max_tokens",
+      };
     }
 
     toolCalls += toolUses.length;
@@ -277,5 +323,5 @@ async function anthropicLoop(opts: ToolLoopOpts): Promise<ToolLoopResult> {
     messages.push({ role: "user", content: results });
   }
 
-  return { text: lastText, toolCalls, usage, exhausted: true };
+  return { text: lastText, toolCalls, usage, exhausted: true, truncated: false };
 }

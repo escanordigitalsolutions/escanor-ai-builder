@@ -126,6 +126,12 @@ final class WPAB_Theme_Writer {
 				}
 			}
 
+			$shape = self::validate_asset( $contents, $rel );
+
+			if ( is_wp_error( $shape ) ) {
+				return $shape;
+			}
+
 			if ( isset( $clean[ $rel ] ) ) {
 				return new WP_Error( 'wpab_tw_dupe', sprintf( 'Duplicate file path: %s', $rel ), array( 'status' => 400 ) );
 			}
@@ -264,6 +270,11 @@ final class WPAB_Theme_Writer {
 				if ( is_wp_error( $lint ) ) {
 					return $lint;
 				}
+			}
+
+			$shape = self::validate_asset( $contents, $rel );
+			if ( is_wp_error( $shape ) ) {
+				return $shape;
 			}
 
 			$clean[ $rel ] = $contents;
@@ -418,6 +429,146 @@ final class WPAB_Theme_Writer {
 		}
 
 		return implode( '/', $clean );
+	}
+
+	/**
+	 * Shape-check a stylesheet or script before it replaces a working one.
+	 *
+	 * PHP gets a real parse check above, so a truncated PHP file is rejected on
+	 * its way in. CSS and JS had nothing: a stylesheet cut off halfway through
+	 * writes perfectly happily and silently breaks the design, which is exactly
+	 * what an edit reply that hit the model's output ceiling produces.
+	 *
+	 * These are deliberately narrow. Every rule here fires only on something no
+	 * hand-written file would ever contain, because a false positive blocks a
+	 * legitimate edit and that is worse than the occasional miss:
+	 *
+	 *   - a markdown code fence, which is only ever a model artefact;
+	 *   - an unterminated block comment, which means the text stops mid-comment;
+	 *   - for CSS, unbalanced braces, counted by a scanner that skips comments
+	 *     and quoted strings so `content: "{"` does not trip it.
+	 *
+	 * JS gets no brace count on purpose: a division sign and a regular
+	 * expression literal are ambiguous without a real parser, so counting
+	 * braces there would reject working code. Better an honest gap than a
+	 * check that cries wolf.
+	 *
+	 * @return true|WP_Error
+	 */
+	public static function validate_asset( string $code, string $rel ) {
+		$extension = self::extension( $rel );
+
+		if ( 'css' !== $extension && 'js' !== $extension ) {
+			return true;
+		}
+
+		if ( preg_match( '/^\s*```|```\s*$/', $code ) ) {
+			return new WP_Error(
+				'wpab_tw_asset_fence',
+				sprintf( '%s still contains a markdown code fence.', $rel ),
+				array( 'status' => 422 )
+			);
+		}
+
+		$scan = self::scan_braces( $code, $extension );
+
+		if ( $scan['unterminated_comment'] ) {
+			return new WP_Error(
+				'wpab_tw_asset_cut',
+				sprintf( '%s ends inside an unclosed comment, so it is incomplete.', $rel ),
+				array( 'status' => 422 )
+			);
+		}
+
+		if ( 'css' === $extension && 0 !== $scan['depth'] ) {
+			return new WP_Error(
+				'wpab_tw_asset_braces',
+				sprintf(
+					'%s has %d unclosed %s, so it is incomplete.',
+					$rel,
+					abs( $scan['depth'] ),
+					abs( $scan['depth'] ) === 1 ? 'rule' : 'rules'
+				),
+				array( 'status' => 422 )
+			);
+		}
+
+		return true;
+	}
+
+	/**
+	 * Walk the text once, counting braces outside comments and strings.
+	 *
+	 * $extension matters for one rule: CSS has no line comments. Treating `//`
+	 * as one there swallows the rest of any line containing a URL — which is
+	 * most background rules — and the closing brace with it. Only JS gets them.
+	 *
+	 * @return array{depth:int,unterminated_comment:bool}
+	 */
+	private static function scan_braces( string $code, string $extension ): array {
+		$length     = strlen( $code );
+		$depth      = 0;
+		$in_comment = false;
+		$in_line    = false;
+		$quote      = '';
+
+		for ( $i = 0; $i < $length; $i++ ) {
+			$char = $code[ $i ];
+			$next = $i + 1 < $length ? $code[ $i + 1 ] : '';
+
+			if ( $in_comment ) {
+				if ( '*' === $char && '/' === $next ) {
+					$in_comment = false;
+					++$i;
+				}
+				continue;
+			}
+
+			if ( $in_line ) {
+				if ( "\n" === $char ) {
+					$in_line = false;
+				}
+				continue;
+			}
+
+			if ( '' !== $quote ) {
+				// A backslash escapes whatever follows, including the quote.
+				if ( '\\' === $char ) {
+					++$i;
+				} elseif ( $char === $quote ) {
+					$quote = '';
+				}
+				continue;
+			}
+
+			if ( '/' === $char && '*' === $next ) {
+				$in_comment = true;
+				++$i;
+				continue;
+			}
+
+			if ( 'js' === $extension && '/' === $char && '/' === $next ) {
+				$in_line = true;
+				++$i;
+				continue;
+			}
+
+			if ( '"' === $char || "'" === $char ) {
+				$quote = $char;
+				continue;
+			}
+
+			if ( '{' === $char ) {
+				++$depth;
+			} elseif ( '}' === $char ) {
+				--$depth;
+			}
+		}
+
+		return array(
+			'depth'                => $depth,
+			'unterminated_comment' => $in_comment,
+		);
 	}
 
 	/**

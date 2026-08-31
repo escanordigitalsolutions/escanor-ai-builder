@@ -1648,7 +1648,11 @@ final class WPAB_Editor {
 		$body = WPAB_Files::attach_snapshot( $body );
 		$body = WPAB_Content::attach_snapshot( $body );
 
-		$result = WPAB_Cloud::request( 'agent/chat', $body, 60 );
+		// 180, not 60: the route is allowed 300 seconds and a question that needs
+		// real inspection takes more than a minute. At 60 WordPress hung up while
+		// Vercel was still working, so the user saw a network error and the answer
+		// they had already paid for was thrown away.
+		$result = WPAB_Cloud::request( 'agent/chat', $body, 180 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}

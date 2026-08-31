@@ -225,6 +225,16 @@ final class WPAB_Cloud {
 	 * @return array|WP_Error Decoded JSON body on success.
 	 */
 	public static function request( string $endpoint, array $body = array(), int $timeout = 20, bool $blocking = true ) {
+		// A long cloud call is only as long as PHP allows. Plenty of hosts cap
+		// max_execution_time at 30 seconds, which would kill the script while
+		// wp_remote_post was still politely waiting out its own timeout — so
+		// ask for room first. Suppressed and unchecked on purpose: where the
+		// function is disabled there is nothing to do about it, and the request
+		// should still be attempted.
+		if ( $timeout > 30 && function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( $timeout + 30 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		}
+
 		$key = self::get_key();
 
 		if ( '' === $key ) {
