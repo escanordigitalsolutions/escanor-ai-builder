@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Fraunces } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 import { SITE_URL } from "@/lib/site";
+import { GA_ID } from "@/lib/analytics";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -58,6 +60,23 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-[#f6f5f3] text-neutral-900">
         {children}
+
+        {/* Loaded after the page is interactive, so the tag never delays a
+            first paint. Absent an id, nothing is rendered at all. */}
+        {GA_ID ? (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+              strategy="afterInteractive"
+            />
+            <Script id="ga-init" strategy="afterInteractive">
+              {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', '${GA_ID}');`}
+            </Script>
+          </>
+        ) : null}
       </body>
     </html>
   );

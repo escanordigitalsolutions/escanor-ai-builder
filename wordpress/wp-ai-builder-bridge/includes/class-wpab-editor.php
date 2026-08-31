@@ -2048,6 +2048,7 @@ final class WPAB_Editor {
 						<p>Ask anything about this site — or tell me what to change.</p>
 					</div>
 				</div>
+				<div id="wpab-ed-memory" class="wpab-ed__memory" hidden aria-label="What this conversation has established"></div>
 				<form id="wpab-ed-form" class="wpab-ed__form" autocomplete="off">
 					<div id="wpab-ed-selrow" class="wpab-ed__selrow" hidden>
 						<span class="wpab-ed__seltag"><span class="tgt" id="wpab-ed-seltgt"></span><span class="sec" id="wpab-ed-selsec"></span><button type="button" class="x" id="wpab-ed-selclear" title="Remove selection">&times;</button></span>
@@ -2284,6 +2285,17 @@ final class WPAB_Editor {
 			.wpab-ed__chatback { position: absolute; inset: 0; z-index: 14; background: rgba(20,19,18,.3); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .32s ease; border: 0; padding: 0; cursor: default; }
 			.wpab-ed__chatback.is-on { opacity: 1; pointer-events: auto; }
 			.wpab-ed__chat.is-large .wpab-ed__thread > * { max-width: 980px; width: 100%; margin-left: auto; margin-right: auto; }
+			/* Conversation memory: what the chat is carrying, visible rather than
+			   implied. It clears when a new chat starts, because that is what
+			   starting a new chat means. */
+			.wpab-ed__steps { margin-top: 8px; font-size: 11.5px; color: var(--ed-faint); }
+			.wpab-ed__steps summary { cursor: pointer; letter-spacing: .04em; text-transform: uppercase; font-size: 10.5px; }
+			.wpab-ed__steps ol { margin: 6px 0 0; padding-left: 18px; }
+			.wpab-ed__steps li { margin-bottom: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-word; }
+			.wpab-ed__memory { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 0 2px 7px; }
+			.wpab-ed__memlead { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--ed-faint); margin-right: 2px; }
+			.wpab-ed__memchip { font-size: 11.5px; line-height: 1.3; padding: 3px 9px; border-radius: 999px; background: rgba(61,100,242,.09); border: 1px solid rgba(61,100,242,.22); color: #2f52d8; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			.wpab-ed__chat.is-large .wpab-ed__memchip { max-width: 420px; }
 			/* Changes: one recorded edit, its files and the lines that moved. */
 			.wpab-change__top { display: flex; align-items: baseline; gap: 9px; padding: 9px 12px 5px; }
 			.wpab-change__when { flex: 0 0 auto; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--ed-faint); }
@@ -2949,6 +2961,75 @@ final class WPAB_Editor {
 				thread.scrollTop = thread.scrollHeight;
 			}
 
+			/* ---- What the AI actually did ------------------------------------
+			   The answer says what it concluded; this says what it looked at to get
+			   there. Without it a wrong answer is impossible to argue with, because
+			   you cannot tell whether it read the file or guessed. Folded away by
+			   default — it is evidence, not conversation. */
+			var TOOL_LABEL = {
+				theme_structure: 'mapped the theme',
+				list_project_files: 'listed the theme files',
+				read_project_files: 'read',
+				list_content_types: 'looked at your content types',
+				list_content: 'listed',
+				get_content: 'opened',
+				edit_theme: 'queued a theme edit'
+			};
+			function addActivity(wrap, activity) {
+				if (!wrap || !Array.isArray(activity) || !activity.length) { return; }
+				var body = wrap.querySelector('.wpab-msg__body');
+				if (!body) { return; }
+				var steps = [];
+				activity.forEach(function (a) {
+					if (!a || !a.tool) { return; }
+					var label = TOOL_LABEL[a.tool] || a.tool;
+					if (a.paths && a.paths.length) { label += ' ' + a.paths.join(', '); }
+					else if (a.scope && a.tool !== 'theme_structure' && a.tool !== 'list_project_files') { label += ' ' + a.scope; }
+					steps.push(label);
+				});
+				if (!steps.length) { return; }
+				var det = document.createElement('details');
+				det.className = 'wpab-ed__steps';
+				var sum = document.createElement('summary');
+				sum.textContent = steps.length + (steps.length === 1 ? ' step' : ' steps');
+				det.appendChild(sum);
+				var ol = document.createElement('ol');
+				steps.forEach(function (t) {
+					var li = document.createElement('li');
+					li.textContent = t;
+					ol.appendChild(li);
+				});
+				det.appendChild(ol);
+				body.appendChild(det);
+			}
+
+			/* ---- Conversation memory ----------------------------------------
+			   The chat replays recent messages, which stops working the moment a
+			   conversation outgrows the window. The SaaS keeps a short list of what
+			   this conversation established and sends it back with every answer;
+			   showing it means the AI's memory is never a thing you have to guess
+			   at. Full text on hover, because a chip is a reminder, not a record. */
+			var memoryRow = $('wpab-ed-memory');
+			function renderMemory(items) {
+				if (!memoryRow) { return; }
+				var list = Array.isArray(items) ? items : [];
+				memoryRow.innerHTML = '';
+				if (!list.length) { memoryRow.hidden = true; return; }
+				var lead = document.createElement('span');
+				lead.className = 'wpab-ed__memlead';
+				lead.textContent = 'Remembering';
+				memoryRow.appendChild(lead);
+				list.forEach(function (item) {
+					if (!item) { return; }
+					var chip = document.createElement('span');
+					chip.className = 'wpab-ed__memchip';
+					chip.textContent = item;
+					chip.title = item;
+					memoryRow.appendChild(chip);
+				});
+				memoryRow.hidden = false;
+			}
+
 			function addTyping() {
 				var wrap = document.createElement('div'); wrap.className = 'wpab-msg wpab-msg--assistant';
 				wrap.innerHTML = '<div class="wpab-msg__role">AI</div><div class="wpab-typing">Thinking…</div>';
@@ -3207,8 +3288,9 @@ final class WPAB_Editor {
 						return;
 					}
 					if (out.data.conversationId) { rememberConv(out.data.conversationId); }
+					if (out.data.memory) { renderMemory(out.data.memory); }
 					var answer = out.data.answer || out.data.reply;
-					if (answer) { addMessage('assistant', answer); }
+					if (answer) { addActivity(addMessage('assistant', answer), out.data.activity); }
 					// The AI mapped the theme: show the tree, not its description.
 					if (out.data.structure) { addStructure(out.data.structure); }
 					if (out.data.editRequest && out.data.editRequest.instruction) {
@@ -3340,6 +3422,7 @@ final class WPAB_Editor {
 				newBtn.addEventListener('click', function () {
 					conversationId = null;
 					clearWide();
+					renderMemory([]);
 					thread.innerHTML = '<p class="wpab-ed__empty">Ask anything about this site — its theme, templates, pages or content.</p>';
 				});
 			}
@@ -3362,6 +3445,7 @@ final class WPAB_Editor {
 				api('POST', cfg.restChatHistory, { conversationId: id }).then(function (out) {
 					if (out.ok && out.data && out.data.success && out.data.messages && out.data.messages.length) {
 						rememberConv(id);
+						renderMemory(out.data.memory);
 						renderHistoryMessages(out.data.messages);
 					}
 				}).catch(function () {});

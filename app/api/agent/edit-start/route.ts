@@ -304,8 +304,10 @@ export async function POST(request: NextRequest) {
           },
         ],
         tools,
-        maxTokens: 16000,
-        maxRounds: 10,
+        // Doubled: 16k truncated a two-file change often enough to matter, and
+        // ten rounds ran out on anything that had to read before it wrote.
+        maxTokens: 32000,
+        maxRounds: 20,
         handler: async (name, args) => {
           try {
             if (name === "list_project_files") {
@@ -316,7 +318,10 @@ export async function POST(request: NextRequest) {
               for (const pth of paths) {
                 if (!inspected.includes(pth)) inspected.push(pth);
               }
-              void setProgress(`Reading ${paths.length} file${paths.length === 1 ? "" : "s"}…`);
+              // Name them. "Reading 3 files" tells the person the AI is busy;
+              // naming the files tells them whether it is looking in the right
+              // place, which is the only part they can act on.
+              void setProgress(`Reading ${paths.slice(0, 3).join(", ")}${paths.length > 3 ? ` +${paths.length - 3}` : ""}…`);
               return await projectFiles.read("theme", paths);
             }
             return { error: `Unknown tool: ${name}` };

@@ -230,8 +230,9 @@ export async function POST(request: NextRequest) {
         },
       ],
       tools,
-      maxTokens: 16000,
-      maxRounds: 10,
+      // Doubled, to match the job path.
+      maxTokens: 32000,
+      maxRounds: 20,
       handler: async (name, args) => {
         try {
           if (name === "list_project_files") {

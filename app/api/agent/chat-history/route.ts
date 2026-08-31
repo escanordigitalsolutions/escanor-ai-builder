@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { parseMemory } from "@/lib/agent/chat-memory";
+
 import { createServiceClient } from "@/lib/supabase/service";
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
 
   const { data: conversation, error: convError } = await supabase
     .from("ai_conversations")
-    .select("id, title")
+    .select("id, title, memory")
     .eq("id", conversationId)
     .eq("project_id", projectId)
     .single();
@@ -86,6 +88,10 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     success: true,
     conversation,
+    // Reopening a conversation restores what it was holding, not just what was
+    // said — otherwise the chips come back empty and the AI looks forgetful
+    // while it is in fact remembering.
+    memory: parseMemory((conversation as { memory?: unknown }).memory),
     messages: (messages ?? []).map((m: { role: string; content: string }) => ({
       role: m.role === "user" ? "user" : "assistant",
       content: m.content,

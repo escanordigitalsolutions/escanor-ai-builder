@@ -50,6 +50,17 @@ function parseFiles(text: string): { path: string; contents: string }[] {
 
 const PORT_INSTRUCTIONS = `Port the approved homepage mockup into classic PHP WordPress theme files. Do not redesign — reproduce the mockup. The theme is COMPONENTIZED: every file is small and single-purpose.
 
+THE SHAPE YOU ARE BUILDING — read this before the rules
+
+One theme, assembled from parts, where every part has exactly one home:
+
+- The LOOK lives in CSS, split by scope. Global things (tokens, resets, typography, .container, buttons) in base.css. The header and footer each own their file. Each designed section owns assets/css/sections/<slug>.css and contains only what that section's markup uses. Nothing is duplicated: a rule two sections share moves up to base.css.
+- The STRUCTURE lives in PHP. header.php opens every page, footer.php closes it, and between them a template decides what appears. front-page.php is a list of get_template_part calls in blueprint order — it holds no markup of its own. Each designed section is one template part.
+- The CONTENT lives in WordPress, not in the templates. page.php, page-<slug>.php, single.php and archive.php render whatever the owner has written through the_content(), the_title() and the loop. They must work with a page nobody has written yet and with one that runs to three thousand words. The only copy hardcoded anywhere is the homepage sections, which ARE the design.
+- The BEHAVIOUR lives in assets/js/main.js. Nothing else has a script tag.
+
+Two consequences worth stating, because both have been got wrong before: a content template that hardcodes a heading makes that page uneditable in WordPress forever, and a section whose CSS sits in base.css instead of its own file makes every later edit touch a file it did not need to.
+
 CSS is split per component:
 1. assets/css/base.css: the mockup's :root tokens, resets, base typography and shared utilities (.container, buttons, generic .section spacing) — everything global. NO section-specific rules. Include .entry typography for WordPress content (headings, paragraphs, lists, links, blockquote, images) styled from the same tokens.
 2. assets/css/header.css / assets/css/footer.css: only header/footer rules from the MOCKUP CSS, plus (in header.css) the mobile nav open/close states (.site-nav.is-open, .site-header.is-scrolled, body.nav-open).

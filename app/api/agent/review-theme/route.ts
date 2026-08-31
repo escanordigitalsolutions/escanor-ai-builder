@@ -175,8 +175,10 @@ export async function POST(request: NextRequest) {
       system: INSTRUCTIONS,
       messages: [{ role: "user", content: input }],
       tools,
+      // A review that runs out of rounds reports on the part of the theme it
+      // managed to read and calls it a verdict.
       maxTokens: 24000,
-      maxRounds: 6,
+      maxRounds: 12,
       handler: async (name, args) => {
         try {
           if (name === "list_project_files") {

@@ -11,13 +11,18 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.32.0",
+  version: "1.33.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-31",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.33.0</h4><ul>" +
+    "<li>The chat now remembers what a conversation has established — decisions, preferences, what you are working on — and shows it above the box, so you can see what it is carrying. Starting a new chat clears it.</li>" +
+    "<li>Every answer can be unfolded to show what the AI actually looked at to reach it.</li>" +
+    "<li>Chat and edits are allowed twice the work before giving up, so a question that needs real reading gets it.</li>" +
+    "</ul>" +
     "<h4>1.32.0</h4><ul>" +
     "<li>The design preview now shows the screen you picked. Components, Blog archive, 404 and Brand sheet were all quietly showing the homepage instead — in the AI Editor and in the dashboard.</li>" +
     "<li>Themes can be planned larger without files being dropped, and if a plan is still too big the editor says which files were left out instead of quietly skipping them.</li>" +
