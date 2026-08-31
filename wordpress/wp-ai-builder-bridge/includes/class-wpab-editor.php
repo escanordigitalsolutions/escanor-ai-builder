@@ -1891,6 +1891,7 @@ final class WPAB_Editor {
 				</div>
 			</div>
 
+			<button type="button" class="wpab-ed__chatback" id="wpab-ed-chatback" tabindex="-1" aria-label="Close the full-screen chat"></button>
 			<aside class="wpab-ed__chat" id="wpab-ed-chatpanel">
 				<div id="wpab-ed-notice" class="wpab-ed__notice" hidden></div>
 				<div id="wpab-ed-thread" class="wpab-ed__thread" aria-live="polite">
@@ -1911,7 +1912,7 @@ final class WPAB_Editor {
 							<button type="button" id="wpab-ed-newtheme" class="wpab-ed__newtheme wpab-ed__newtheme--dock">✨ New theme</button>
 							<button type="button" id="wpab-ed-new" class="wpab-ed__new">New chat</button>
 							<button type="button" id="wpab-ed-history" class="wpab-ed__new" title="Chat history">History</button>
-							<button type="button" id="wpab-ed-expand" class="wpab-ed__expand" title="Expand / shrink chat history">⤢</button>
+							<button type="button" id="wpab-ed-expand" class="wpab-ed__expand" aria-expanded="false" title="Expand the chat to full screen">⤢</button>
 							<button type="button" id="wpab-ed-inspect" class="wpab-ed__dev wpab-ed__inspect" title="Select an element on the page to edit" aria-pressed="false">
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l7.5 18 2.2-7.3L21 12.5z"/><path d="M4 4l8.5 8.5"/></svg>
 							</button>
@@ -1955,6 +1956,11 @@ final class WPAB_Editor {
 			.wpab-ed { position: fixed; inset: 0; z-index: 99990; background: var(--ed-bg); color: var(--ed-text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 				--ed-bg: #f6f5f3; --ed-surface: #ffffff; --ed-surface-2: #faf9f7; --ed-border: #e8e5df; --ed-border-strong: #d9d5cc;
 				--ed-text: #1b1a18; --ed-muted: #6f6b64; --ed-faint: #9b968d; --ed-accent: #141312; --ed-accent-2: #454340; --ed-accent-soft: rgba(20,19,18,.08);
+				/* The conversation's own colour. Deliberately NOT --ed-accent: the
+				   editor sits on top of somebody else's design, so its buttons,
+				   links and focus rings stay near-black and out of the way. Only
+				   the messages and the send button are Meikero blue. */
+				--ed-blue: #3d64f2; --ed-blue-2: #2f52d8; --ed-blue-ink: #ffffff; --ed-bubble: #f2f0ec;
 				--ed-radius: 14px; --ed-shadow: 0 1px 2px rgba(20,18,16,.05), 0 10px 30px rgba(20,18,16,.09); --ed-shadow-lg: 0 24px 70px rgba(20,18,16,.20); }
 			.wpab-ed__float { position: absolute; top: 12px; left: 14px; right: auto; z-index: 20; display: flex; align-items: center; gap: 8px; }
 			.wpab-ed__wpbtn { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; color: var(--ed-muted); border: 1px solid var(--ed-border); border-radius: 10px; background: rgba(255,255,255,.85); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: var(--ed-shadow); cursor: pointer; text-decoration: none; transition: all .15s ease; }
@@ -2043,7 +2049,7 @@ final class WPAB_Editor {
 			.wpab-ed__expand:hover { background: var(--ed-surface-2); color: var(--ed-text); }
 			.wpab-ed__notice { margin: 12px; padding: 11px 13px; border-radius: 10px; background: #fdecec; border: 1px solid #f5c2c2; color: #b42318; font-size: 13px; }
 			.wpab-ed__notice a { color: #b42318; }
-			.wpab-ed__thread { flex: 0 1 auto; overflow-y: auto; max-height: 132px; padding: 20px 2px 12px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 34px); mask-image: linear-gradient(to bottom, transparent 0, #000 34px); }
+			.wpab-ed__thread { flex: 0 1 auto; overflow-y: auto; max-height: 132px; padding: 20px 2px 12px; display: flex; flex-direction: column; gap: 10px; scrollbar-width: none; border: 1px solid transparent; background: transparent; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 34px); mask-image: linear-gradient(to bottom, transparent 0, #000 34px); transition: max-height .3s cubic-bezier(.2,.75,.25,1), background .22s ease, padding .22s ease, box-shadow .22s ease; transition-delay: .26s; }
 			.wpab-ed__thread::-webkit-scrollbar { display: none; }
 			.wpab-ed__chat.is-large .wpab-ed__thread { flex: 1 1 auto; overflow-y: auto; max-height: none; justify-content: flex-start; padding: 14px; -webkit-mask-image: none; mask-image: none; scrollbar-width: thin; }
 			.wpab-ed__chat.is-large .wpab-ed__thread::-webkit-scrollbar { display: block; width: 8px; }
@@ -2052,13 +2058,14 @@ final class WPAB_Editor {
 			.wpab-msg { display: flex; flex-direction: column; gap: 2px; animation: wpabmsgin .85s cubic-bezier(.16,.7,.2,1); transition: opacity 1.4s ease, transform 1.4s ease; }
 			@keyframes wpabmsgin { from { opacity: 0; transform: translateY(22px) scale(.985); filter: blur(2px); } to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
 			.wpab-msg__role { display: none; }
-			.wpab-msg__body { font-size: 13.5px; line-height: 1.55; color: #33312d; word-wrap: break-word; max-width: 82%; padding: 9px 14px; border-radius: 16px; background: #ffffff; border: 1px solid rgba(20,18,16,.09); box-shadow: 0 10px 30px -14px rgba(20,19,18,.3); align-self: flex-start; border-bottom-left-radius: 5px; }
-			.wpab-ed__chat.is-large .wpab-msg__body { background: #ffffff; border-color: rgba(20,18,16,.08); box-shadow: none; }
+			.wpab-msg__body { font-size: 13.5px; line-height: 1.55; color: #33312d; word-wrap: break-word; max-width: 82%; padding: 9px 14px; border-radius: 16px; background: var(--ed-bubble); border: 1px solid rgba(20,18,16,.09); box-shadow: 0 10px 30px -14px rgba(20,19,18,.3); align-self: flex-start; border-bottom-left-radius: 5px; }
+			.wpab-ed__chat.is-large .wpab-msg__body { background: var(--ed-bubble); border-color: rgba(20,18,16,.08); box-shadow: none; }
 			.wpab-msg--user { align-items: flex-end; }
-			.wpab-msg--user .wpab-msg__body { background: #141312; border-color: #141312; color: #fff; align-self: flex-end; border-bottom-left-radius: 16px; border-bottom-right-radius: 5px; }
-			.wpab-ed__chat.is-large .wpab-msg--user .wpab-msg__body { background: #141312; }
-			.wpab-msg--user .wpab-msg__body a { color: #cfc9ff; }
-			.wpab-msg--assistant .wpab-typing { align-self: flex-start; background: #ffffff; border: 1px solid rgba(20,18,16,.09); border-radius: 16px; border-bottom-left-radius: 5px; padding: 9px 14px; font-size: 13px; box-shadow: 0 10px 30px -14px rgba(20,19,18,.3); }
+			.wpab-msg--user .wpab-msg__body { background: var(--ed-blue); border-color: var(--ed-blue); color: var(--ed-blue-ink); align-self: flex-end; border-bottom-left-radius: 16px; border-bottom-right-radius: 5px; }
+			.wpab-ed__chat.is-large .wpab-msg--user .wpab-msg__body { background: var(--ed-blue); }
+			.wpab-msg--user .wpab-msg__body a { color: #d8e1ff; }
+			.wpab-msg--user .wpab-msg__body code { background: rgba(255,255,255,.18); border-color: rgba(255,255,255,.28); color: #fff; }
+			.wpab-msg--assistant .wpab-typing { align-self: flex-start; background: var(--ed-bubble); border: 1px solid rgba(20,18,16,.09); border-radius: 16px; border-bottom-left-radius: 5px; padding: 9px 14px; font-size: 13px; box-shadow: 0 10px 30px -14px rgba(20,19,18,.3); }
 			.wpab-msg__body code { background: var(--ed-surface-2); border: 1px solid var(--ed-border); padding: 1px 5px; border-radius: 5px; font-size: 12.5px; }
 			.wpab-msg__body pre { background: var(--ed-surface-2); border: 1px solid var(--ed-border); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
 			.wpab-msg__body a { color: var(--ed-accent); }
@@ -2071,8 +2078,8 @@ final class WPAB_Editor {
 			.wpab-ed__formrow { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 			.wpab-ed__new { background: none; border: 0; color: var(--ed-muted); font-size: 12px; cursor: pointer; }
 			.wpab-ed__new:hover { color: var(--ed-text); }
-			.wpab-ed__send { appearance: none; border: 0; border-radius: 9px; padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--ed-accent); color: #fff; }
-			.wpab-ed__send:hover:not(:disabled) { background: #000; }
+			.wpab-ed__send { appearance: none; border: 0; border-radius: 9px; padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--ed-blue); color: var(--ed-blue-ink); }
+			.wpab-ed__send:hover:not(:disabled) { background: var(--ed-blue-2); }
 			.wpab-ed__send:disabled { opacity: .55; cursor: default; }
 			.wpab-ed__undo { margin-top: 8px; appearance: none; border: 1px solid var(--ed-border-strong); border-radius: 8px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer; background: var(--ed-surface); color: var(--ed-text); }
 			.wpab-ed__undo:hover:not(:disabled) { border-color: var(--ed-accent); color: var(--ed-accent); }
@@ -2086,6 +2093,44 @@ final class WPAB_Editor {
 			.wpab-ed__seltag .x { border: 0; background: none; cursor: pointer; color: var(--ed-muted); font-size: 13px; line-height: 1; padding: 0 2px; }
 			.wpab-ed__seltag .x:hover { color: #141312; }
 			.wpab-ed__imgthumb { width: 26px; height: 26px; object-fit: cover; border-radius: 6px; display: block; }
+			/* Markdown blocks. The AI writes lists and tables; before 1.28 the
+			   chat showed a table as a wall of pipes. */
+			.wpab-msg__body p { margin: 0 0 8px; }
+			.wpab-msg__body p:last-child { margin-bottom: 0; }
+			.wpab-msg__body h3, .wpab-msg__body h4, .wpab-msg__body h5, .wpab-msg__body h6 { font-size: 12.5px; font-weight: 600; letter-spacing: .02em; margin: 12px 0 5px; }
+			.wpab-msg__body > :first-child { margin-top: 0; }
+			.wpab-msg__body hr { border: 0; border-top: 1px solid rgba(20,18,16,.12); margin: 11px 0; }
+			.wpab-md__list { margin: 6px 0 9px; padding-left: 19px; }
+			.wpab-md__list li { margin-bottom: 3px; }
+			.wpab-md__list li:last-child { margin-bottom: 0; }
+			.wpab-md__tablewrap { overflow-x: auto; margin: 9px 0; border: 1px solid rgba(20,18,16,.13); border-radius: 9px; background: #fff; }
+			.wpab-md__table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+			.wpab-md__table th, .wpab-md__table td { padding: 7px 11px; border-bottom: 1px solid rgba(20,18,16,.07); vertical-align: top; }
+			.wpab-md__table thead th { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; color: var(--ed-muted); background: rgba(20,18,16,.035); white-space: nowrap; }
+			.wpab-md__table tbody tr:last-child td { border-bottom: 0; }
+			.wpab-md__table td { font-variant-numeric: tabular-nums; }
+			/* A message carrying a table, a code block or the theme tree is not
+			   prose and should not be squeezed into a prose measure. */
+			.wpab-msg--wide .wpab-msg__body { max-width: 100%; width: 100%; }
+			.wpab-ed__chat.has-wide:not(.is-large) { left: 14%; width: 72%; }
+			@media (max-width: 1100px) { .wpab-ed__chat.has-wide:not(.is-large) { left: 6%; width: 88%; } }
+			/* Hovering the dock reveals the whole thread. Collapsed it is a
+			   glance over the page; hovered it is something to read, so it needs
+			   a surface of its own to be legible over any design underneath. */
+			.wpab-ed__chat:not(.is-large):hover .wpab-ed__thread,
+			.wpab-ed__chat:not(.is-large):focus-within .wpab-ed__thread {
+				max-height: 58vh; -webkit-mask-image: none; mask-image: none;
+				background: rgba(255,255,255,.93); -webkit-backdrop-filter: blur(20px) saturate(1.3); backdrop-filter: blur(20px) saturate(1.3);
+				border-color: var(--ed-border); border-radius: var(--ed-radius); box-shadow: var(--ed-shadow-lg);
+				padding: 14px 14px 12px; margin-bottom: 8px; scrollbar-width: thin;
+				transition-delay: .12s;
+			}
+			.wpab-ed__chat:not(.is-large):hover .wpab-ed__thread::-webkit-scrollbar,
+			.wpab-ed__chat:not(.is-large):focus-within .wpab-ed__thread::-webkit-scrollbar { display: block; width: 8px; }
+			/* Full screen: one gesture in, three ways out. */
+			.wpab-ed__chatback { position: absolute; inset: 0; z-index: 14; background: rgba(20,19,18,.3); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .32s ease; border: 0; padding: 0; cursor: default; }
+			.wpab-ed__chatback.is-on { opacity: 1; pointer-events: auto; }
+			.wpab-ed__chat.is-large .wpab-ed__thread > * { max-width: 980px; width: 100%; margin-left: auto; margin-right: auto; }
 			/* Theme map: the file tree shown inside a chat message. */
 			.wpab-tree { border: 1px solid rgba(20,19,18,.12); border-radius: 12px; background: #fff; overflow: hidden; margin-top: 2px; }
 			.wpab-tree__head { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; border-bottom: 1px solid rgba(20,19,18,.08); background: rgba(250,249,247,.8); }
@@ -2174,14 +2219,147 @@ final class WPAB_Editor {
 					.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 					.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 			}
+			/* ---- Markdown ---------------------------------------------------
+			   Escape first, then build blocks: nothing below can produce an
+			   element the text did not ask for, because by the time these rules
+			   run every < and & is already an entity. Fenced code is pulled out
+			   before anything else and put back at the end, so a table drawn
+			   inside a code block stays a code block.
+
+			   Lists, headings and tables are here because the AI writes them and
+			   the chat used to show a table as a wall of pipes. ---- */
+			function inlineMd(s) {
+				return s
+					.replace(/`([^`]+)`/g, '<code>$1</code>')
+					.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+					// The content may not start or end with a space, or "2 * 3 * 4"
+					// becomes italics. Written without a lookbehind on purpose: a
+					// regex older Safari cannot parse would take the whole editor
+					// script down with it, not just the emphasis.
+					.replace(/(^|[\s(])\*([^\s*](?:[^*\n]*[^\s*])?)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>')
+					.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+			}
+			function isTableRow(line) { return /^\s*\|.*\|\s*$/.test(line); }
+			function isTableRule(line) { return /^\s*\|[\s:|-]*-[\s:|-]*\|\s*$/.test(line); }
+			function tableCells(line) {
+				return line.trim().replace(/^\||\|$/g, '').split('|').map(function (c) { return c.trim(); });
+			}
+			function columnAligns(rule) {
+				return tableCells(rule).map(function (c) {
+					if (/^:.*:$/.test(c)) { return 'center'; }
+					if (/:$/.test(c)) { return 'right'; }
+					return 'left';
+				});
+			}
+			// U+E000/U+E001 are private-use characters: escapeHtml cannot produce
+			// one and no answer contains one, so they are safe placeholder
+			// markers. Built from their code points rather than written
+			// literally — a literal invisible character in a source file is the
+			// kind of thing an editor or a copy-paste quietly eats.
+			var MD_OPEN = String.fromCharCode(57344);
+			var MD_CLOSE = String.fromCharCode(57345);
+			var MD_FENCE_ONLY = new RegExp('^' + MD_OPEN + '(\\d+)' + MD_CLOSE + '$');
+			var MD_FENCE_REF = new RegExp(MD_OPEN + '(\\d+)' + MD_CLOSE, 'g');
 			function renderMarkdown(s) {
-				var out = escapeHtml(s);
-				out = out.replace(/```([\s\S]*?)```/g, function (m, c) { return '<pre><code>' + c.replace(/^\n/, '') + '</code></pre>'; });
-				out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-				out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-				out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-				out = out.replace(/\n/g, '<br>');
-				return out;
+				var text = escapeHtml(s);
+
+				// Fenced code is lifted out before any other rule sees it, so a
+				// table or a list drawn inside a code block stays code. The
+				// placeholder uses private-use characters: escapeHtml cannot
+				// produce them and no answer contains them.
+				var fences = [];
+				text = text.replace(/```[a-zA-Z0-9_-]*\n?([\s\S]*?)```/g, function (m, code) {
+					fences.push('<pre><code>' + code.replace(/\n$/, '') + '</code></pre>');
+					return MD_OPEN + (fences.length - 1) + MD_CLOSE;
+				});
+
+				var lines = text.split('\n');
+				var out = [];
+				var para = [];
+				var i = 0;
+
+				function flushParagraph() {
+					if (!para.length) { return; }
+					out.push('<p>' + inlineMd(para.join('<br>')) + '</p>');
+					para.length = 0;
+				}
+
+				while (i < lines.length) {
+					var line = lines[i];
+
+					if (MD_FENCE_ONLY.test(line.trim())) {
+						flushParagraph();
+						out.push(line.trim());
+						i++;
+						continue;
+					}
+
+					if (!line.trim()) { flushParagraph(); i++; continue; }
+
+					var heading = line.match(/^(#{1,4})\s+(.*)$/);
+					if (heading) {
+						flushParagraph();
+						var level = Math.min(heading[1].length + 2, 6);
+						out.push('<h' + level + '>' + inlineMd(heading[2].trim()) + '</h' + level + '>');
+						i++;
+						continue;
+					}
+
+					if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) {
+						flushParagraph();
+						out.push('<hr>');
+						i++;
+						continue;
+					}
+
+					// A table is a row followed by a |---|---| rule. Without the
+					// rule it is just a sentence containing pipes.
+					if (isTableRow(line) && i + 1 < lines.length && isTableRule(lines[i + 1])) {
+						flushParagraph();
+						var align = columnAligns(lines[i + 1]);
+						var head = tableCells(line).map(function (c, n) {
+							return '<th style="text-align:' + (align[n] || 'left') + '">' + inlineMd(c) + '</th>';
+						}).join('');
+						var rows = [];
+						i += 2;
+						while (i < lines.length && isTableRow(lines[i])) {
+							rows.push('<tr>' + tableCells(lines[i]).map(function (c, n) {
+								return '<td style="text-align:' + (align[n] || 'left') + '">' + inlineMd(c) + '</td>';
+							}).join('') + '</tr>');
+							i++;
+						}
+						out.push('<div class="wpab-md__tablewrap"><table class="wpab-md__table"><thead><tr>'
+							+ head + '</tr></thead><tbody>' + rows.join('') + '</tbody></table></div>');
+						continue;
+					}
+
+					var bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+					var numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+					if (bullet || numbered) {
+						flushParagraph();
+						var ordered = !!numbered;
+						var pattern = ordered ? /^\s*\d+[.)]\s+(.*)$/ : /^\s*[-*+]\s+(.*)$/;
+						var items = [];
+						while (i < lines.length) {
+							var item = lines[i].match(pattern);
+							if (!item) { break; }
+							items.push('<li>' + inlineMd(item[1].trim()) + '</li>');
+							i++;
+						}
+						var tag = ordered ? 'ol' : 'ul';
+						out.push('<' + tag + ' class="wpab-md__list">' + items.join('') + '</' + tag + '>');
+						continue;
+					}
+
+					para.push(line);
+					i++;
+				}
+
+				flushParagraph();
+
+				return out.join('').replace(MD_FENCE_REF, function (m, n) {
+					return fences[Number(n)] || '';
+				});
 			}
 			function api(method, url, body) {
 				return fetch(url, {
@@ -2220,6 +2398,7 @@ final class WPAB_Editor {
 					chip.lastChild.textContent = sel.sec ? '\u00b7 ' + sel.sec : '';
 					wrap.insertBefore(chip, wrap.firstChild);
 				}
+				markWide(wrap);
 				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
 				return wrap;
 			}
@@ -2333,6 +2512,7 @@ final class WPAB_Editor {
 				body.className = 'wpab-msg__body';
 				body.appendChild(buildTree(st));
 				wrap.appendChild(body);
+				markWide(wrap);
 				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
 				return wrap;
 			}
@@ -2351,6 +2531,40 @@ final class WPAB_Editor {
 						addMessage('assistant', 'Could not read the theme structure.');
 					}).then(function () { structureBtn.disabled = false; });
 				});
+			}
+
+			/* ---- Wide answers ------------------------------------------------
+			   A table, a code block or the theme tree is not prose and should not
+			   be folded into a prose measure. When one appears the bubble drops
+			   its 82% cap and the dock widens; paragraphs keep their measure,
+			   because a paragraph at full width is harder to read, not easier. */
+			function markWide(wrap) {
+				if (!wrap || !wrap.querySelector('.wpab-md__tablewrap, pre, .wpab-tree')) { return; }
+				wrap.classList.add('wpab-msg--wide');
+				if (chatPanel) { chatPanel.classList.add('has-wide'); }
+			}
+			function clearWide() {
+				if (chatPanel) { chatPanel.classList.remove('has-wide'); }
+			}
+
+			/* ---- Full screen -------------------------------------------------
+			   One gesture in, three ways out: the toggle, the backdrop and Esc.
+			   The choice is remembered, because someone who works full screen
+			   works full screen. */
+			var chatBack = $('wpab-ed-chatback');
+			var CHAT_LARGE_KEY = 'wpabEditorChatLarge';
+			function setChatLarge(large) {
+				if (!chatPanel) { return; }
+				chatPanel.classList.toggle('is-large', large);
+				if (chatBack) { chatBack.classList.toggle('is-on', large); }
+				var btn = $('wpab-ed-expand');
+				if (btn) {
+					btn.textContent = large ? '⤡' : '⤢';
+					btn.setAttribute('aria-expanded', large ? 'true' : 'false');
+					btn.title = large ? 'Shrink the chat back to the dock' : 'Expand the chat to full screen';
+				}
+				try { window.localStorage.setItem(CHAT_LARGE_KEY, large ? '1' : '0'); } catch (e) { /* private mode */ }
+				thread.scrollTop = thread.scrollHeight;
 			}
 
 			function addTyping() {
@@ -2694,6 +2908,7 @@ final class WPAB_Editor {
 			if (newBtn) {
 				newBtn.addEventListener('click', function () {
 					conversationId = null;
+					clearWide();
 					thread.innerHTML = '<p class="wpab-ed__empty">Ask anything about this site — its theme, templates, pages or content.</p>';
 				});
 			}
@@ -3228,12 +3443,23 @@ final class WPAB_Editor {
 			var expandBtn = $('wpab-ed-expand');
 			if (expandBtn && chatPanel) {
 				expandBtn.addEventListener('click', function () {
-					chatPanel.classList.toggle('is-large');
-					var large = chatPanel.classList.contains('is-large');
-					expandBtn.textContent = large ? '⤡' : '⤢';
-					thread.scrollTop = thread.scrollHeight;
+					setChatLarge(!chatPanel.classList.contains('is-large'));
 				});
 			}
+			if (chatBack) {
+				chatBack.addEventListener('click', function () { setChatLarge(false); });
+			}
+			document.addEventListener('keydown', function (e) {
+				if (e.key !== 'Escape' || !chatPanel || !chatPanel.classList.contains('is-large')) { return; }
+				// Esc belongs to whatever is on top, and the wizard sits above
+				// the chat. `wizard` is declared below this line; the handler
+				// only ever runs long after that, so the hoisted var is fine.
+				if (wizard && !wizard.hidden) { return; }
+				setChatLarge(false);
+			});
+			try {
+				if (window.localStorage.getItem(CHAT_LARGE_KEY) === '1') { setChatLarge(true); }
+			} catch (e) { /* private mode */ }
 
 			// ---- New theme wizard: single prompt -> plan -> files -> write ----
 			var wizard = $('wpab-ed-wizard');
