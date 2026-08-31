@@ -11,13 +11,17 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.28.0",
+  version: "1.29.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-31",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.29.0</h4><ul>" +
+    "<li>Edits are now targeted: the AI replaces the lines it means to change instead of rewriting whole files, which is faster, cheaper and cannot cut a file short.</li>" +
+    "<li>A file you edited yourself — by FTP, in the theme editor, or through another plugin — is marked in the theme map, and the AI is warned before it touches it.</li>" +
+    "</ul>" +
     "<h4>1.28.0</h4><ul>" +
     "<li>The chat now draws tables, lists and headings instead of showing them as raw text, and gives a table or a code block the full width of the panel.</li>" +
     "<li>Your messages are Meikero blue.</li>" +

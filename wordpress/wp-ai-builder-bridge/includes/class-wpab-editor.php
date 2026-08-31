@@ -2145,6 +2145,8 @@ final class WPAB_Editor {
 			.wpab-tree__row { display: flex; align-items: baseline; gap: 8px; }
 			.wpab-tree__path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #141312; }
 			.wpab-tree__size { margin-left: auto; font-size: 11px; color: var(--ed-faint); flex: 0 0 auto; }
+			.wpab-tree__flag { flex: 0 0 auto; order: 2; margin-left: 8px; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: #a8442b; background: #f8e9e4; border-radius: 3px; padding: 2px 6px; }
+			.wpab-tree__row .wpab-tree__size { order: 3; margin-left: 8px; }
 			.wpab-tree__role { font-size: 11.5px; color: var(--ed-faint); line-height: 1.45; margin-top: 1px; }
 			.wpab-tree__src { margin: 0; padding: 10px 12px; background: #141312; color: #f2f0ec; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.55; max-height: 320px; overflow: auto; white-space: pre; }
 			.wpab-tree__note { padding: 9px 12px; font-size: 12px; color: var(--ed-faint); }
@@ -2463,6 +2465,15 @@ final class WPAB_Editor {
 						size.textContent = humanBytes(f.bytes);
 						row.appendChild(path); row.appendChild(size);
 						btn.appendChild(row);
+
+						if (f.drifted) {
+							// Somebody changed this file outside Meikero. Worth
+							// saying before the AI is asked to rewrite it.
+							var flag = document.createElement('span');
+							flag.className = 'wpab-tree__flag';
+							flag.textContent = 'edited outside Meikero';
+							row.appendChild(flag);
+						}
 
 						if (f.role) {
 							var role = document.createElement('div');

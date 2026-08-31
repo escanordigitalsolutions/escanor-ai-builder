@@ -8,6 +8,11 @@ import { pickModel } from "@/lib/ai/resolve";
 import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
 import { recordUsage } from "@/lib/ai/usage";
 import {
+  applyAnchoredEdits,
+  mergeEditedFiles,
+  parseEditOutput,
+} from "@/lib/agent/edit-output";
+import {
   createProjectFileReader,
   parseProjectSnapshot,
   renderStructureForPrompt,
@@ -31,14 +36,25 @@ Rules:
 1. Read every file before changing it. Start with the files in the plan, then read only direct dependencies if required.
 2. Make the smallest complete change. Do not redesign, rewrite, reformat or alter unrelated content.
 3. Preserve existing structure, classes, tokens and responsive behavior where possible.
-4. Return only changed files, each with its complete contents. Never return diffs.
-5. Do not create references to missing files or add external JS libraries.
-6. Do not use unsafe PHP, filesystem access, network calls or dynamic code execution.
-7. If the request cannot be completed safely from the available files, return no file blocks and explain the blocker in SUMMARY.
-8. Copy is sacred: never change visible text unless the request explicitly asks for a text change — and then use the EXACT wording given in the request, character for character. Never paraphrase, shorten or invent copy.
+4. Prefer an anchored edit (WPAB_EDIT) over rewriting a file. Return a whole file (WPAB_FILE) only when the change is structural — reordering or adding whole sections — or when most of the file changes.
+5. An anchor's FIND text must be copied from the file character for character, including indentation, and must be long enough to appear exactly once. If it appears twice the edit is refused, so include a surrounding line to make it unique.
+6. Never return a diff, and never put a markdown code fence inside a block.
+7. Do not create references to missing files or add external JS libraries.
+8. Do not use unsafe PHP, filesystem access, network calls or dynamic code execution.
+9. If the request cannot be completed safely from the available files, return no blocks and explain the blocker in SUMMARY.
+10. Copy is sacred: never change visible text unless the request explicitly asks for a text change — and then use the EXACT wording given in the request, character for character. Never paraphrase, shorten or invent copy.
 
-Final format:
+Final format. Use one block per change, and as many blocks as the change needs:
+
 SUMMARY: <what changed and where>
+
+===WPAB_EDIT:<relative-path>===
+---FIND---
+<text exactly as it appears in the file>
+---REPLACE---
+<what it becomes>
+===WPAB_END===
+
 ===WPAB_FILE:<relative-path>===
 <complete contents>
 ===WPAB_END===`;
@@ -74,28 +90,6 @@ const tools: ToolDef[] = [
 ];
 
 type Json = Record<string, unknown>;
-
-function parseOutput(text: string): { summary: string; files: { path: string; contents: string }[] } {
-  const files: { path: string; contents: string }[] = [];
-  const parts = text.split(/===\s*WPAB_FILE\s*:/);
-  for (let i = 1; i < parts.length; i++) {
-    const m = parts[i].match(/^\s*([^\n=]+?)\s*===\s*\r?\n?([\s\S]*)$/);
-    if (!m) continue;
-    const path = m[1].trim().replace(/^`+|`+$/g, "");
-    let contents = m[2].replace(/^﻿/, "");
-    contents = contents.replace(/\n?===\s*WPAB_END\s*===[\s\S]*$/, "");
-    // Cheap models sometimes wrap file contents in markdown fences — strip
-    // them so ```php never ends up inside a real theme file.
-    contents = contents
-      .replace(/^\s*```[a-zA-Z]*\s*\r?\n/, "")
-      .replace(/\r?\n```\s*$/, "");
-    if (path) {
-      files.push({ path, contents: contents.replace(/\s+$/, "") + "\n" });
-    }
-  }
-  const sm = text.match(/SUMMARY:\s*(.+)/);
-  return { summary: sm ? sm[1].trim() : "Updated the theme.", files };
-}
 
 function validatePaths(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -331,13 +325,23 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const parsed = parseOutput(result.text);
+      // Anchored edits are applied here, against the file exactly as the site
+      // sent it. Deliberately NOT through projectFiles.read(): that caps a file
+      // at 60 000 characters for the model's benefit, and applying an anchor to
+      // a capped file and writing the result back would truncate it on disk.
+      const parsed = parseEditOutput(result.text);
+      const anchorResult = applyAnchoredEdits(parsed.anchors, (path) =>
+        projectSnapshot?.files.get(path)
+      );
+      const changedFiles = mergeEditedFiles(parsed.files, anchorResult.files);
 
       await recordUsage(projectId, "edit", editModel, result.usage, {
         instruction: instruction.slice(0, 400),
         planSteps: planSteps.map((st) => st.title),
         inspected: inspected.slice(0, 12),
-        changed: parsed.files.map((f) => f.path).slice(0, 12),
+        changed: changedFiles.map((f) => f.path).slice(0, 12),
+        anchors: parsed.anchors.length,
+        anchorErrors: anchorResult.errors.slice(0, 6),
         summary: parsed.summary.slice(0, 300),
         toolCalls: result.toolCalls,
         durationMs: Date.now() - startedAt,
@@ -346,11 +350,13 @@ export async function POST(request: NextRequest) {
         async: true,
       }, jobId);
 
-      if (result.truncated || result.exhausted || parsed.files.length === 0) {
+      if (result.truncated || result.exhausted || changedFiles.length === 0) {
         const blocker =
-          parsed.summary && parsed.summary !== "Updated the theme."
-            ? parsed.summary.slice(0, 400)
-            : "The editor could not produce a change for that. Try rephrasing.";
+          anchorResult.errors.length > 0
+            ? anchorResult.errors.join(" ").slice(0, 400)
+            : parsed.summary && parsed.summary !== "Updated the theme."
+              ? parsed.summary.slice(0, 400)
+              : "The editor could not produce a change for that. Try rephrasing.";
         // Truncation is checked first and on its own: the reply ended mid-file,
         // so parsed.files may look perfectly plausible while the last one is
         // half a stylesheet. Nothing here is written.
@@ -377,7 +383,10 @@ export async function POST(request: NextRequest) {
           result: {
             success: true,
             summary: parsed.summary,
-            files: parsed.files,
+            files: changedFiles,
+            // An anchor that missed while others landed is worth saying out
+            // loud: part of the request did not happen.
+            notes: anchorResult.errors.slice(0, 6),
             inspected: inspected.slice(0, 12),
             usage: result.usage,
           },

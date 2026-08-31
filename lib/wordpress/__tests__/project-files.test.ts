@@ -14,6 +14,7 @@ import {
   SNAPSHOT_LIMITS,
   createProjectFileReader,
   parseProjectSnapshot,
+  renderStructureForPrompt,
 } from "../project-files";
 
 /**
@@ -324,5 +325,59 @@ describe("theme structure", () => {
     expect(out.listing.count).toBe(4);
     // Still no HTTP: the fallback reads the snapshot's own file list.
     expect(listProjectFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe("files edited outside Meikero", () => {
+  const drifted = {
+    ...PAYLOAD,
+    structure: {
+      theme: "Pour Grid",
+      groups: [
+        {
+          key: "setup",
+          label: "Theme setup",
+          files: [
+            { path: "functions.php", bytes: 2400, role: "Theme setup." },
+            { path: "style.css", bytes: 800, role: "The base stylesheet.", drifted: true },
+          ],
+        },
+      ],
+    },
+  };
+
+  it("carries the flag through, and only for a real true", () => {
+    const snapshot = parseProjectSnapshot(drifted)!;
+
+    expect(snapshot.structure!.groups[0].files[1].drifted).toBe(true);
+    expect(snapshot.structure!.groups[0].files[0].drifted).toBeUndefined();
+
+    const lying = parseProjectSnapshot({
+      ...drifted,
+      structure: {
+        groups: [{ key: "k", label: "L", files: [{ path: "a.php", bytes: 1, role: "", drifted: "yes" }] }],
+      },
+    })!;
+
+    expect(lying.structure!.groups[0].files[0].drifted).toBeUndefined();
+  });
+
+  it("warns the model before it plans, not after", () => {
+    const text = renderStructureForPrompt(parseProjectSnapshot(drifted)!.structure!);
+
+    // A hand-edited file is the one place a whole-file rewrite does real damage.
+    expect(text).toContain("style.css (0.8KB) [EDITED OUTSIDE MEIKERO]");
+    expect(text).not.toContain("functions.php (2.4KB) [EDITED");
+    expect(text).toMatch(/WARNING: style\.css has been changed outside Meikero/);
+    expect(text).toMatch(/prefer a targeted edit over rewriting/);
+  });
+
+  it("says nothing when nothing drifted", () => {
+    const clean = parseProjectSnapshot({
+      ...PAYLOAD,
+      structure: { groups: [{ key: "k", label: "K", files: [{ path: "a.php", bytes: 1, role: "" }] }] },
+    })!;
+
+    expect(renderStructureForPrompt(clean.structure!)).not.toContain("WARNING");
   });
 });

@@ -53,7 +53,13 @@ export type ThemeStructure = {
   groups: {
     key: string;
     label: string;
-    files: { path: string; bytes: number; role: string }[];
+    files: {
+      path: string;
+      bytes: number;
+      role: string;
+      /** Someone edited this file outside Meikero since we last wrote it. */
+      drifted?: boolean;
+    }[];
   }[];
 };
 
@@ -117,6 +123,7 @@ function parseThemeStructure(input: unknown): ThemeStructure | null {
           path,
           bytes: typeof row.bytes === "number" && row.bytes >= 0 ? Math.floor(row.bytes) : 0,
           role: text(row.role, SNAPSHOT_LIMITS.maxRoleChars),
+          ...(row.drifted === true ? { drifted: true } : {}),
         };
       })
       .filter((file): file is ThemeStructure["groups"][number]["files"][number] => file !== null);
@@ -240,17 +247,39 @@ function readFromSnapshot(scope: ProjectScope, path: string, content: string) {
  * what header.php is.
  */
 export function renderStructureForPrompt(structure: ThemeStructure): string {
+  const drifted: string[] = [];
+
   const groups = structure.groups.map((group) => {
     const files = group.files
-      .map((file) => `  ${file.path} (${Math.round(file.bytes / 100) / 10}KB)`)
+      .map((file) => {
+        if (file.drifted) drifted.push(file.path);
+
+        return `  ${file.path} (${Math.round(file.bytes / 100) / 10}KB)${
+          file.drifted ? " [EDITED OUTSIDE MEIKERO]" : ""
+        }`;
+      })
       .join("\n");
 
     return `${group.label}:\n${files}`;
   });
 
+  // A file somebody changed by hand is the one place a whole-file rewrite does
+  // real damage, so the model is told before it plans, not after.
+  const warning = drifted.length
+    ? [
+        "",
+        `WARNING: ${drifted.join(", ")} ${
+          drifted.length === 1 ? "has" : "have"
+        } been changed outside Meikero since this theme was last written. Read ${
+          drifted.length === 1 ? "it" : "them"
+        } before changing anything there, and prefer a targeted edit over rewriting the file.`,
+      ]
+    : [];
+
   return [
     `Active theme: ${structure.theme || "unknown"} — ${structure.count} files.`,
     ...groups,
+    ...warning,
   ].join("\n");
 }
 

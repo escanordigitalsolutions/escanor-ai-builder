@@ -276,15 +276,30 @@ final class WPAB_Files {
 		}
 
 		$grouped = array();
+		// What Meikero wrote, so a file somebody else has touched since can be
+		// told apart from one the AI last saw.
+		$known = class_exists( 'WPAB_Theme_Writer' ) ? WPAB_Theme_Writer::known_hashes() : array();
+		$root  = WPAB_Scopes::root( $scope );
+		$root  = is_wp_error( $root ) ? '' : $root;
 
 		foreach ( $walk['files'] as $file ) {
 			list( $group, $role ) = self::classify( $file['path'] );
 
-			$grouped[ $group ][] = array(
+			$entry = array(
 				'path'  => $file['path'],
 				'bytes' => (int) $file['bytes'],
 				'role'  => $role,
 			);
+
+			if ( '' !== $root && isset( $known[ $file['path'] ] ) ) {
+				$hash = @hash_file( 'sha256', $root . $file['path'] );
+
+				if ( is_string( $hash ) && $hash !== $known[ $file['path'] ] ) {
+					$entry['drifted'] = true;
+				}
+			}
+
+			$grouped[ $group ][] = $entry;
 
 			++$out['count'];
 			$out['bytes'] += (int) $file['bytes'];

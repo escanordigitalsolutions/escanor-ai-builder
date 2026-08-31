@@ -197,6 +197,10 @@ final class WPAB_Theme_Writer {
 
 		switch_theme( $slug );
 		update_option( self::GENERATED_OPTION, $slug, false );
+		// A fresh theme is entirely ours, so every file starts from a known
+		// hash. Without this the first hand-edit after generation would be
+		// indistinguishable from a file we simply never wrote.
+		self::record_hashes( $slug, $clean );
 
 		return array(
 			'success'       => true,
@@ -208,6 +212,19 @@ final class WPAB_Theme_Writer {
 	}
 
 	public const UNDO_OPTION = 'wpab_theme_undo';
+
+	/**
+	 * What Meikero last wrote, as path => sha256.
+	 *
+	 * Nothing here is about undo. It answers a different question: has anyone
+	 * else touched this file since? A theme edited by FTP, in the WordPress
+	 * theme editor, or by another plugin looks identical to one Meikero wrote,
+	 * and the AI will replace a hand-edit it never knew existed. Comparing the
+	 * file on disk to the hash of what we wrote is the whole detection.
+	 *
+	 * Hashes only — the option stays a few kilobytes however large the theme.
+	 */
+	public const HASHES_OPTION = 'wpab_theme_hashes';
 
 	/**
 	 * Edit files in the ACTIVE generated theme. Only the theme this plugin
@@ -311,6 +328,7 @@ final class WPAB_Theme_Writer {
 		}
 
 		update_option( self::UNDO_OPTION, array( 'slug' => $active, 'files' => $undo ), false );
+		self::record_hashes( $active, $clean );
 		wp_clean_themes_cache();
 
 		return array(
@@ -429,6 +447,58 @@ final class WPAB_Theme_Writer {
 		}
 
 		return implode( '/', $clean );
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Whose change is this?
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Remember the hash of every file we just wrote.
+	 *
+	 * Keyed by theme slug: a different theme's hashes say nothing about this
+	 * one, and generating a new theme should not leave the old theme's files
+	 * looking edited.
+	 *
+	 * @param array<string,string> $files path => contents, as written.
+	 */
+	public static function record_hashes( string $slug, array $files ): void {
+		$stored = get_option( self::HASHES_OPTION, array() );
+
+		if ( ! is_array( $stored ) || ( isset( $stored['slug'] ) && $stored['slug'] !== $slug ) ) {
+			$stored = array( 'slug' => $slug, 'files' => array() );
+		}
+
+		$known = isset( $stored['files'] ) && is_array( $stored['files'] ) ? $stored['files'] : array();
+
+		foreach ( $files as $rel => $contents ) {
+			$known[ (string) $rel ] = hash( 'sha256', (string) $contents );
+		}
+
+		update_option(
+			self::HASHES_OPTION,
+			array( 'slug' => $slug, 'files' => $known ),
+			false
+		);
+	}
+
+	/**
+	 * The hashes recorded for the active theme, or an empty list.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function known_hashes(): array {
+		$stored = get_option( self::HASHES_OPTION, array() );
+
+		if ( ! is_array( $stored ) || ! isset( $stored['files'] ) || ! is_array( $stored['files'] ) ) {
+			return array();
+		}
+
+		if ( ! isset( $stored['slug'] ) || $stored['slug'] !== get_stylesheet() ) {
+			return array();
+		}
+
+		return $stored['files'];
 	}
 
 	/**
