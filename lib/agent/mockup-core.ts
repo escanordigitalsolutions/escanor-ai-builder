@@ -64,7 +64,13 @@ Yours must come from this brief, not from that list.
 
 THE SECTION PLAN
 
-Between 4 and 7 sections. For each, give a kebab-case slug, the job it does for the visitor, and its structural shape. No two adjacent sections may share a shape — if two would, change one. A page of identically shaped sections is a list, not a design.
+Between 4 and 7 sections. For each, give a kebab-case slug, the job it does for the visitor, its structural shape, and — this one matters most — what it actually SAYS.
+
+The content line is a brief for the writing, and it has to be countable. Not "explain the services": "four capability blocks, each a short title and 30-50 words naming a specific SaaS problem and how it is solved". Not "build trust": "three paragraphs of the agency's actual position on why onboarding fails, 40-60 words each". Say how many items, and what each item carries. A section whose content line cannot be counted will come back as labels.
+
+Do not plan a section whose shape needs facts this brief does not contain. Nobody may invent a statistic, a client name, a logo or a testimonial, so a shape built around three oversized figures, a logo strip or a quote card is a shape that will arrive empty. When the brief gives you no numbers and no clients, plan the section that carries the business's own thinking instead — its point of view, its method, what it refuses to do. That is always available and it is usually more persuasive than a number nobody can check.
+
+No two adjacent sections may share a shape — if two would, change one. A page of identically shaped sections is a list, not a design.
 
 THE BRAND MARK
 
@@ -115,7 +121,7 @@ Answer with only JSON in exactly this shape. No markdown, no commentary, nothing
   "layout": {
     "grid": "",
     "rhythm": "",
-    "sections": [ { "slug": "", "job": "", "shape": "" } ]
+    "sections": [ { "slug": "", "job": "", "shape": "", "content": "" } ]
   },
   "imagery": { "strategy": "photography|typographic|css-illustration|mixed", "treatment": "", "queries": [] },
   "motion": "",
@@ -171,8 +177,18 @@ WHAT MAKES THIS PAGE WORTH LOOKING AT
 - The signature move is present, unmistakable, and among the first things a visitor notices. If it is not visible in the first screen, the page has failed regardless of how tidy the rest is.
 - Sections differ STRUCTURALLY, not only in content. A page where every section is a centred heading above a grid is a list, not a design. Alternate: full-bleed against contained, asymmetric against symmetric, dense against empty, light ground against dark.
 - Type does the heavy lifting. Use the whole scale. One or two moments on the page are genuinely large — large enough that the size itself is noticed.
-- Whitespace is a decision, not a default. Sections do not need equal padding. A quiet section beside a loud one is what makes the loud one land.
+- Whitespace is a decision, not a default. Sections do not need equal padding. A quiet section beside a loud one is what makes the loud one land. But emptiness is only restraint when there is something to be restrained about: a section with a heading, a label and nothing else is not quiet, it is unfinished.
 - Every word is real, specific to this business, and in the brief's language. No lorem. No "Your headline here". No "Elevate your business to the next level". No invented statistics, no fabricated client logos, and no testimonials attributed to invented named people — if the brief gives you none, design a section that does not need them.
+
+WHAT THE PAGE HAS TO SAY
+
+The section plan tells you what each section says and how many pieces it holds. Follow it the way you follow the palette: it is decided.
+
+- Write for someone deciding, not someone scanning. A visitor who reads one section and leaves should have learned something they could repeat to a colleague.
+- Every section carries at least one passage that could stand on its own — roughly 30 to 60 words of actual thinking, not a caption. A heading with a six-word subtitle under it is a placeholder wearing a design.
+- In a section of several items, each item is a real sentence about that item. "Interface clarity" is a label. "Onboarding that ends before the first useful action" is content.
+- Where the content genuinely is a list, write a list. A page of only headings and paragraphs is as monotonous as a page of only cards.
+- The exception is deliberate: a section can be one enormous line and nothing else, if that line is doing the work. Once per page, not four times.
 - Detail is what separates finished from generated: the optical alignment of a heading against an image edge, a hover that reveals rather than merely darkens, a footer that was designed rather than dumped.
 
 BEFORE YOU OUTPUT, VERIFY
@@ -181,6 +197,7 @@ BEFORE YOU OUTPUT, VERIFY
 - Both Google Fonts families are linked AND used. Nothing falls back silently.
 - The signature move is in the markup.
 - Between 4 and 7 top-level sections, each a different structural shape.
+- Every section carries the content its plan asked for, at the count the plan gave. Read them back: if a section is a heading and two labels, it is not finished.
 - Every interactive element has a designed hover AND focus-visible state.
 - No horizontal overflow at 320px, 768px or 1440px.
 - The page reads as one design, not five sections stapled together.

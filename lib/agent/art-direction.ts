@@ -389,7 +389,22 @@ export function sanitiseSvg(value: unknown, maxLength = 4000): string {
   return svg.length > maxLength ? "" : svg;
 }
 
-export type SectionPlan = { slug: string; job: string; shape: string };
+export type SectionPlan = {
+  slug: string;
+  job: string;
+  shape: string;
+  /**
+   * What the section actually says, in countable terms.
+   *
+   * Added because the pipeline specified form precisely and substance not at
+   * all. A plan that said "give visitors fast evidence of capability" in a
+   * shape built around "three oversized figures" met a designer forbidden to
+   * invent statistics — so the figures were filled with adjectives and the
+   * section carried twenty-six words. A shape without a content brief is a
+   * container nobody was asked to fill.
+   */
+  content: string;
+};
 
 export type ArtDirection = {
   concept: { name: string; thesis: string; rootedIn: string };
@@ -470,6 +485,7 @@ function sectionPlans(value: unknown): SectionPlan[] {
       slug,
       job: str(row.job, "", 200),
       shape: str(row.shape, "", 300),
+      content: str(row.content, "", 400),
     });
 
     if (out.length >= 7) break;

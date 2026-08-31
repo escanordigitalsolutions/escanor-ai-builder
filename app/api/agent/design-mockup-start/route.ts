@@ -249,7 +249,7 @@ export async function POST(request: NextRequest) {
       // finished, already-paid-for homepage — which is exactly what happened in
       // production. Everything after this point improves something that is
       // already safe on disk.
-      let designId = await archive(db, projectId, jobId, shape, mock, direction, check, false);
+      let designId = await archive(db, projectId, jobId, shape, brief, mock, direction, check, false);
 
       let done = payload(designId, mock, direction);
       ready = done;
@@ -301,7 +301,7 @@ export async function POST(request: NextRequest) {
           if (better) {
             mock = fixed;
             check = secondCheck;
-            designId = await archive(db, projectId, jobId, shape, mock, direction, check, true, designId);
+            designId = await archive(db, projectId, jobId, shape, brief, mock, direction, check, true, designId);
             done = payload(designId, mock, direction);
             ready = done;
             await writeResult(db, jobId, done);
@@ -547,6 +547,7 @@ async function archive(
   projectId: string,
   jobId: string,
   shape: string,
+  input: unknown,
   mock: MockupResult,
   direction: ArtDirection | null,
   check: ValidationResult,
@@ -558,9 +559,13 @@ async function archive(
     job_id: jobId,
     shape,
     concept: direction?.concept.name ?? null,
+    // The whole point of this archive is comparing runs, and until now the one
+    // thing it did not keep was what was asked for. Two designs a week apart
+    // were indistinguishable in the record even when the prompt had changed.
     brief: {
       jobId,
       concept: direction?.concept.name ?? null,
+      input,
     },
     model: mock.model,
     html: mock.html,

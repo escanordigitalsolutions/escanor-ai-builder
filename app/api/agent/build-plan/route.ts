@@ -22,7 +22,11 @@ export const maxDuration = 300;
 
 const INSTRUCTIONS = `Plan a classic PHP WordPress theme from the brief.
 
-Decide the theme name (brief.name if given), 3-5 pages, the sections each page uses (5-8 unique sections total, reused across pages), a simple color palette and a Google Fonts pairing (a valid https://fonts.googleapis.com/css2 URL with display=swap). Each section's "copy" is one sentence of content direction.
+Decide the theme name (brief.name if given), 3-5 pages, the sections each page uses (5-8 unique sections total, reused across pages), a simple color palette and a Google Fonts pairing (a valid https://fonts.googleapis.com/css2 URL with display=swap).
+
+Each section's "copy" is the brief for what that section SAYS, and it has to be countable: how many items it holds and what each item carries. "Three service blocks, each a short title and 30-50 words on the problem it solves" is a brief. "Explain the services" is not — it comes back as three labels, and a section of labels is an unfinished page whatever it looks like. Say the count and say the substance.
+
+Nobody may invent a statistic, a client name or a testimonial. If the brief supplies none, plan sections that carry the business's own thinking — its method, its point of view, what it will not do — rather than sections shaped around numbers that will arrive empty.
 
 Reply with ONLY this JSON — first character {, last }:
 {

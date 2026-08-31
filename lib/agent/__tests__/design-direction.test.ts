@@ -406,3 +406,67 @@ describe("brand mark", () => {
     expect(direction.brand.markSvg).not.toContain("script");
   });
 });
+
+/**
+ * The section plan's content brief.
+ *
+ * Added after a real generation came back at 298 words across five sections.
+ * The plan specified each section's job and its structural shape and said
+ * nothing about what it holds, so "give visitors fast evidence of capability"
+ * in a shape built around three oversized figures met a designer correctly
+ * forbidden to invent statistics — and the figures were filled with labels.
+ */
+describe("section content briefs", () => {
+  const base = {
+    concept: { name: "System Signals", thesis: "t", rootedIn: "r" },
+    signatureMove: "one tile migrates down the page",
+    typography: {
+      display: { family: "Syne" },
+      text: { family: "IBM Plex Sans" },
+      pairing: "p",
+    },
+    palette: { rationale: "r", unusualChoice: "u" },
+    imagery: { strategy: "typographic", treatment: "", queries: [] },
+    motion: "m",
+    voice: { tone: "t", sample: { h1: "a", sub: "b", cta: "c" } },
+    avoid: [],
+    colorways: [],
+  };
+
+  const withSections = (sections: unknown[]) =>
+    parseArtDirection(
+      JSON.stringify({ ...base, layout: { grid: "g", rhythm: "r", sections } })
+    );
+
+  it("keeps what each section is supposed to say", () => {
+    const direction = withSections([
+      {
+        slug: "product-modules",
+        job: "show the problems",
+        shape: "tile matrix",
+        content: "four capability blocks, each a short title and 30-50 words",
+      },
+    ]);
+
+    expect(direction!.layout.sections[0].content).toBe(
+      "four capability blocks, each a short title and 30-50 words"
+    );
+  });
+
+  it("does not break on an art director that ignores the field", () => {
+    const direction = withSections([{ slug: "a", job: "j", shape: "s" }]);
+
+    expect(direction!.layout.sections[0].content).toBe("");
+    expect(direction!.layout.sections[0].shape).toBe("s");
+  });
+
+  it("bounds it like every other model-supplied string", () => {
+    const direction = withSections([
+      { slug: "a", job: "j", shape: "s", content: 42 },
+      { slug: "b", job: "j", shape: "s", content: "x".repeat(9999) },
+    ]);
+
+    expect(direction!.layout.sections[0].content).toBe("");
+    expect(direction!.layout.sections[1].content).toHaveLength(400);
+  });
+});
