@@ -444,18 +444,22 @@ final class WPAB_Admin {
 							<a id="wpabd-usebtn" class="button button-primary" style="margin-left:auto;display:none;" href="#">Build a theme from this design →</a>
 						</div>
 						<?php
-						// sandbox="" and not allow-scripts, deliberately.
+						// allow-same-origin, and deliberately NOT allow-scripts.
 						//
 						// Every generated design hides its [data-reveal] blocks behind
 						// html.js and reveals them with an IntersectionObserver. Inside
 						// a preview iframe that observer has nothing to observe against,
 						// so with scripts enabled the page painted its header and then
-						// nothing at all — which is exactly what an archived design
-						// looked like here. No scripts means html.js is never added and
-						// every block stays visible, which is what a still preview wants
-						// anyway. It also stops archived markup from running at all.
+						// nothing at all. Without allow-scripts the archived markup
+						// cannot run at all, so html.js is never added and every block
+						// stays visible — which is what a still preview wants anyway.
+						//
+						// allow-same-origin adds nothing to what the framed page can do,
+						// because it can do nothing: it only lets THIS page reach in and
+						// route the design's links, so the preview can be walked like a
+						// site instead of being a picture of one.
 						?>
-						<iframe id="wpabd-prevframe" sandbox="" style="width:100%;height:680px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
+						<iframe id="wpabd-prevframe" sandbox="allow-same-origin" style="width:100%;height:680px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
 					</div>
 					<script>
 					(function () {
@@ -622,11 +626,52 @@ final class WPAB_Admin {
 							}
 						}
 
+						// Which screen a link in the design leads to. The inner page is
+						// the template every content page uses, so an ordinary internal
+						// link lands there — that is what a visitor would really get.
+						function screenForHref(href) {
+							var h = String(href || '').trim();
+							if (!h || h.charAt(0) === '#') { return null; }
+							if (/^(mailto:|tel:|javascript:)/i.test(h)) { return null; }
+							if (/^https?:\/\//i.test(h) && h.indexOf(location.host) === -1) { return null; }
+							var path = h.replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0].toLowerCase();
+							if (!path || path === '/' || /^\/?(home|index)(\.html?)?\/?$/.test(path)) { return 'home'; }
+							if (/(blog|news|journal|notes|articles|insights|posts|stories|updates)/.test(path)) { return 'archive'; }
+							if (/(404|not-?found)/.test(path)) { return 'notfound'; }
+							if (/(brand|identity|logo)/.test(path)) { return 'brand'; }
+							if (/(component|style-?guide|pattern|ui-?kit)/.test(path)) { return 'components'; }
+							return 'inner';
+						}
+
+						// The framed page cannot run a line of its own script, so the
+						// listener is attached from out here after each paint.
+						function wireFrameLinks(frame, id, wrap, card) {
+							var doc = null;
+							try { doc = frame.contentDocument; } catch (err) { return; }
+							if (!doc) { return; }
+							doc.addEventListener('click', function (e) {
+								var a = e.target && e.target.closest ? e.target.closest('a') : null;
+								if (!a) { return; }
+								var href = a.getAttribute('href') || '';
+								if (href.charAt(0) === '#') { return; }
+								e.preventDefault();
+								var target = screenForHref(href);
+								if (!target) { return; }
+								var have = (card.getAttribute('data-pages') || 'home').split(',');
+								if (have.indexOf(target) === -1) {
+									target = have.indexOf('inner') !== -1 && target !== 'home' ? 'inner' : 'home';
+								}
+								if (target !== openWhich) { showPage(id, target, wrap, frame, card); }
+							}, true);
+							doc.addEventListener('submit', function (e) { e.preventDefault(); }, true);
+						}
+
 						function showPage(id, which, wrap, frame, card) {
 							var note = document.getElementById('wpabd-whichnote');
 							if (note) { note.textContent = ''; }
 							markWhich(which);
 							fetchHtml(id, which).then(function (html) {
+								frame.onload = function () { wireFrameLinks(frame, id, wrap, card); };
 								frame.srcdoc = html;
 								wrap.style.display = 'block';
 								open = id;

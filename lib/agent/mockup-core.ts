@@ -205,6 +205,7 @@ TECHNICAL CONTRACT — the splitter is automatic and deviations break the build
 - That <style> block OPENS with the :root rule you were given, verbatim, before any other rule. Every colour, size, space, radius and font reference in the rest of the CSS goes through those custom properties. No hard-coded hex values anywhere below :root.
 - Exactly one inline <script> before </body>. Vanilla, under ~80 lines. It must implement: the mobile menu toggle; an IntersectionObserver adding .in-view to every [data-reveal] element (CSS handles the transition, and elements stay fully visible without JS); and .is-scrolled on the header once the page scrolls. Everything stays readable and usable with JavaScript disabled. Honour prefers-reduced-motion.
 - <body> opens with <header data-part="header">, then 4-7 top-level <section data-section="<kebab-slug>"> elements, never nested, and closes with <footer data-part="footer">. Use the slugs from the section plan.
+- Every link goes somewhere real. An internal link is a root-relative path naming the page it leads to — /about, /services, /journal, /contact — never href="#" standing in for a destination, and the writing on it says where it goes. The design is previewed as a walkable site and built into a theme where these become real routes, so a placeholder href is a dead end in both.
 - Photographs come only from the supplied PEXELS IMAGES urls, written as <img src="<url>" width="<w>" height="<h>" alt="..." loading="lazy">. Designing without photographs is allowed and is often the stronger choice.
 
 Output only the complete HTML document, from <!DOCTYPE html> to </html>. No markdown fences, no explanation, no questions.`;
@@ -666,6 +667,7 @@ TECHNICAL CONTRACT (required by the automatic splitter):
 - <body>: the given header markup verbatim; then <main data-part="page-body"> containing the page; then the given footer markup verbatim.
 - Every colour, size, space and radius goes through the existing custom properties. No new hex values, no new typefaces, no new Google Fonts.
 - Hover and focus-visible states follow the existing design. No <script> unless the page genuinely needs one, and then vanilla and under 30 lines.
+- Every link is a real root-relative path — a post title leads to that post, a category to that category, the pagination to the next page. Never href="#".
 - Real copy in the brief's language, and the page arrives full: every card, row, excerpt, date and label written as if the site were live. Invent the specifics — post titles, dates, categories, prices — keeping them plausible and consistent. No real company names or logos, and no quote attributed to a named person.
 
 Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;

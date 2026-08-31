@@ -9,6 +9,7 @@ import {
   type ColorwayCss,
   type DesignPage,
 } from "@/lib/agent/design-pages";
+import { resolveTarget } from "@/lib/agent/design-links";
 
 type Loaded = {
   html: string;
@@ -56,6 +57,48 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
    * consequence of rendering — and an effect that begins by clearing three
    * pieces of state re-renders twice before the request even leaves.
    */
+  /**
+   * Make the design's own links move the preview.
+   *
+   * Attached from out here because the framed page has no scripts of its own:
+   * on load, every anchor is intercepted and turned into a screen change.
+   */
+  function wireLinks(
+    frame: HTMLIFrameElement | null,
+    id: string,
+    available: DesignPage[]
+  ) {
+    if (!frame) return;
+
+    frame.onload = () => {
+      const doc = frame.contentDocument;
+
+      if (!doc) return;
+
+      doc.addEventListener(
+        "click",
+        (event) => {
+          const anchor = (event.target as Element | null)?.closest?.("a");
+
+          if (!anchor) return;
+
+          const href = anchor.getAttribute("href") ?? "";
+
+          if (href.startsWith("#")) return;
+
+          event.preventDefault();
+
+          const target = resolveTarget(href, available, window.location.host);
+
+          if (target) void open(id, target);
+        },
+        true
+      );
+
+      doc.addEventListener("submit", (event) => event.preventDefault(), true);
+    };
+  }
+
   async function open(id: string, page: DesignPage) {
     setOpenId(id);
     setWhich(page);
@@ -258,9 +301,12 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
                       </div>
                     ) : loaded?.html ? (
                       <iframe
-                        // sandbox without allow-scripts: an archived page is
-                        // untrusted markup, and nothing here needs it to run.
-                        sandbox=""
+                        ref={(node) => wireLinks(node, d.id, loaded.available)}
+                        // allow-same-origin, and deliberately not allow-scripts.
+                        // The archived markup still cannot run a line of its own;
+                        // this only lets the page reach in and route its links, so
+                        // the design can be walked instead of looked at.
+                        sandbox="allow-same-origin"
                         // Swapping the :root block is the entire re-skin: every
                         // rule below it goes through the custom properties.
                         srcDoc={

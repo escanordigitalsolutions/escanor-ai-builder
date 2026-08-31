@@ -11,13 +11,17 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.33.0",
+  version: "1.34.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-31",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.34.0</h4><ul>" +
+    "<li>The design preview is now a site you can walk through. Click the menu, a card, a footer link or a post title and the preview moves to that screen, so a new design can be judged the way a visitor would meet it.</li>" +
+    "<li>Designs are generated with real links between their pages rather than placeholders.</li>" +
+    "</ul>" +
     "<h4>1.33.0</h4><ul>" +
     "<li>The chat now remembers what a conversation has established — decisions, preferences, what you are working on — and shows it above the box, so you can see what it is carrying. Starting a new chat clears it.</li>" +
     "<li>Every answer can be unfolded to show what the AI actually looked at to reach it.</li>" +

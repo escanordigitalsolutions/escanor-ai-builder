@@ -4711,8 +4711,51 @@ final class WPAB_Editor {
 				}
 				if (!wrap || !frame) { return proceedFromMockup(myRun, sig, brief, mock); }
 				if (wProgress) { wProgress.hidden = true; }
-				var guard = '<script>document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a"):null;if(a){e.preventDefault();}},true);document.addEventListener("submit",function(e){e.preventDefault();},true);<' + '/script>';
+				// Walking the design like a site.
+				//
+				// The preview used to swallow every click, which kept a dead link
+				// from navigating the iframe to nowhere but also made the design
+				// feel like a screenshot. Now the framed page tells the parent
+				// which link was pressed and the parent switches screens — the
+				// nav, the footer, a card, a "read more" all lead somewhere, and
+				// the design can be judged the way a visitor would meet it.
+				//
+				// In-page anchors are left alone so they still scroll. The iframe
+				// has no same-origin access, so it can only post a string out; the
+				// parent checks the message came from this frame and treats the
+				// href as data, never as a URL to follow.
+				var guard = '<script>(function(){'
+					+ 'document.addEventListener("click",function(e){'
+					+ 'var a=e.target&&e.target.closest?e.target.closest("a"):null;if(!a)return;'
+					+ 'var h=a.getAttribute("href")||"";'
+					+ 'if(h.charAt(0)==="#")return;'
+					+ 'e.preventDefault();'
+					+ 'try{parent.postMessage({wpabNav:h},"*");}catch(err){}'
+					+ '},true);'
+					+ 'document.addEventListener("submit",function(e){e.preventDefault();},true);'
+					+ '})();<' + '/script>';
 				function guarded(d) { d = String(d || ''); return (d.indexOf('</body>') !== -1) ? d.replace('</body>', guard + '</body>') : d + guard; }
+
+				// Which screen a link leads to.
+				//
+				// The inner page is the template every content page uses, so any
+				// ordinary internal link lands there — that is what the visitor
+				// would actually get. The rest is recognising the few pages a
+				// theme has a separate design for.
+				function screenForHref(href) {
+					var h = String(href || '').trim();
+					if (!h || h.charAt(0) === '#') { return null; }
+					if (/^(mailto:|tel:|javascript:)/i.test(h)) { return null; }
+					// An absolute link to somewhere else is a real outbound link.
+					if (/^https?:\/\//i.test(h) && h.indexOf(location.host) === -1) { return null; }
+					var path = h.replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0].toLowerCase();
+					if (!path || path === '/' || /^\/?(home|index)(\.html?)?\/?$/.test(path)) { return 'home'; }
+					if (/(blog|news|journal|notes|articles|insights|posts|stories|updates)/.test(path)) { return 'archive'; }
+					if (/(404|not-?found)/.test(path)) { return 'notfound'; }
+					if (/(brand|identity|logo)/.test(path)) { return 'brand'; }
+					if (/(component|style-?guide|pattern|ui-?kit)/.test(path)) { return 'components'; }
+					return 'inner';
+				}
 				// Preview tabs, built from what this generation actually produced.
 				//
 				// Any stage after the homepage can be skipped when the run is
@@ -4745,8 +4788,18 @@ final class WPAB_Editor {
 					frame.srcdoc = html ? guarded(withWay(html)) : guarded('<p style="font:14px system-ui;padding:24px">Loading…</p>');
 				}
 
+				function syncTabs(which) {
+					var row = $('wpab-ed-mocktabs');
+					if (!row) { return; }
+					var all = row.querySelectorAll('[data-mocktab]');
+					for (var i = 0; i < all.length; i++) {
+						all[i].classList.toggle('is-on', all[i].getAttribute('data-mocktab') === which);
+					}
+				}
+
 				function openPage(which) {
 					curPage = which;
+					syncTabs(which);
 					if (pageCache[which]) { paint(); return; }
 					if (!cfg.restDesignHtml || !mock.designId) { return; }
 					paint();
@@ -4759,6 +4812,23 @@ final class WPAB_Editor {
 						if (curPage === which) { paint(); }
 					});
 				}
+
+				// Only this frame may drive the preview.
+				window.addEventListener('message', function (e) {
+					if (!frame || e.source !== frame.contentWindow) { return; }
+					var data = e.data;
+					if (!data || typeof data.wpabNav !== 'string') { return; }
+					var target = screenForHref(data.wpabNav);
+					if (!target) { return; }
+					var have = (Array.isArray(mock.pages) && mock.pages.length) ? mock.pages : ['home'];
+					// A link to a screen this run did not produce still has to go
+					// somewhere sensible: an inner page if there is one, otherwise
+					// back to the homepage. Silently doing nothing reads as broken.
+					if (have.indexOf(target) === -1) {
+						target = have.indexOf('inner') !== -1 && target !== 'home' ? 'inner' : 'home';
+					}
+					if (target !== curPage) { openPage(target); }
+				});
 
 				var mtabs = $('wpab-ed-mocktabs');
 				if (mtabs) {
@@ -4777,8 +4847,6 @@ final class WPAB_Editor {
 						var t = e.target;
 						while (t && t !== mtabs && !t.getAttribute('data-mocktab')) { t = t.parentNode; }
 						if (!t || t === mtabs) { return; }
-						var all = mtabs.querySelectorAll('[data-mocktab]');
-						for (var q = 0; q < all.length; q++) { all[q].classList.toggle('is-on', all[q] === t); }
 						openPage(t.getAttribute('data-mocktab'));
 					};
 				}
