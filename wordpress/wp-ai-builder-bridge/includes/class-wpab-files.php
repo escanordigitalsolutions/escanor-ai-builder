@@ -165,6 +165,147 @@ final class WPAB_Files {
 	}
 
 	/* ---------------------------------------------------------------------
+	 * Structure — what the theme IS, not just what files it has
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * Which group a theme file belongs in, and what it does.
+	 *
+	 * A flat list of thirty paths tells a person almost nothing; the same list
+	 * grouped by role, with a line explaining each known WordPress filename, is
+	 * a map. Classic themes have a fixed vocabulary, so this can be a table
+	 * rather than a guess.
+	 *
+	 * This lives in PHP rather than on the SaaS deliberately: the plugin sends
+	 * the structure with every request AND renders it in the chat on demand, so
+	 * a second copy of the table would be a second thing to keep in step.
+	 */
+	private const FILE_ROLES = array(
+		'index.php'      => array( 'templates', 'The fallback template WordPress uses when nothing more specific matches.' ),
+		'front-page.php' => array( 'templates', 'The homepage.' ),
+		'home.php'       => array( 'templates', 'The blog posts index.' ),
+		'page.php'       => array( 'templates', 'A single page.' ),
+		'single.php'     => array( 'templates', 'A single blog post.' ),
+		'archive.php'    => array( 'templates', 'Category, tag, author and date listings.' ),
+		'search.php'     => array( 'templates', 'Search results.' ),
+		'404.php'        => array( 'templates', 'The not-found page.' ),
+		'header.php'     => array( 'parts', 'The site header, opened on every page.' ),
+		'footer.php'     => array( 'parts', 'The site footer, closed on every page.' ),
+		'sidebar.php'    => array( 'parts', 'The widget sidebar.' ),
+		'searchform.php' => array( 'parts', 'The search form markup.' ),
+		'comments.php'   => array( 'parts', 'The comments list and form.' ),
+		'functions.php'  => array( 'setup', 'Theme setup: menus, supports, enqueued styles and scripts.' ),
+		'style.css'      => array( 'setup', 'The theme header WordPress reads, and the base stylesheet.' ),
+		'theme.json'     => array( 'setup', 'Editor and global style settings.' ),
+		'screenshot.png' => array( 'setup', 'The preview image shown in Appearance → Themes.' ),
+		'readme.txt'     => array( 'setup', 'Theme readme.' ),
+	);
+
+	private const GROUP_LABELS = array(
+		'templates' => 'Templates',
+		'parts'     => 'Template parts',
+		'setup'     => 'Theme setup',
+		'styles'    => 'Styles',
+		'scripts'   => 'Scripts',
+		'features'  => 'Features',
+		'other'     => 'Other files',
+	);
+
+	/** Group order: what someone looks for first comes first. */
+	private const GROUP_ORDER = array( 'templates', 'parts', 'setup', 'styles', 'scripts', 'features', 'other' );
+
+	private static function classify( string $path ): array {
+		if ( isset( self::FILE_ROLES[ $path ] ) ) {
+			return self::FILE_ROLES[ $path ];
+		}
+
+		$extension = WPAB_Scopes::extension( $path );
+
+		if ( 0 === strpos( $path, 'template-parts/' ) ) {
+			return array( 'parts', 'A reusable section included by the templates.' );
+		}
+
+		if ( 0 === strpos( $path, 'features/' ) ) {
+			return array( 'features', 'A site feature added after generation.' );
+		}
+
+		if ( 0 === strpos( $path, 'patterns/' ) ) {
+			return array( 'parts', 'A block pattern offered in the editor.' );
+		}
+
+		if ( 'css' === $extension ) {
+			return array( 'styles', '' );
+		}
+
+		if ( 'js' === $extension ) {
+			return array( 'scripts', '' );
+		}
+
+		if ( 'php' === $extension && false === strpos( $path, '/' ) ) {
+			// A top-level PHP file we have no entry for is still a template:
+			// page-about.php, single-product.php, taxonomy-genre.php and so on.
+			return array( 'templates', 'A template for a specific page or post type.' );
+		}
+
+		return array( 'other', '' );
+	}
+
+	/**
+	 * The theme, grouped by what each file is for.
+	 *
+	 * Bounded by the same walk as everything else here, and safe to call on
+	 * every request: it reads names and sizes, never contents.
+	 */
+	public static function structure( string $scope = 'theme' ): array {
+		$out = array(
+			'scope'  => $scope,
+			'theme'  => '',
+			'count'  => 0,
+			'bytes'  => 0,
+			'groups' => array(),
+		);
+
+		if ( function_exists( 'wp_get_theme' ) ) {
+			$out['theme'] = (string) wp_get_theme()->get( 'Name' );
+		}
+
+		$walk = self::walk( $scope, false );
+
+		if ( is_wp_error( $walk ) ) {
+			return $out;
+		}
+
+		$grouped = array();
+
+		foreach ( $walk['files'] as $file ) {
+			list( $group, $role ) = self::classify( $file['path'] );
+
+			$grouped[ $group ][] = array(
+				'path'  => $file['path'],
+				'bytes' => (int) $file['bytes'],
+				'role'  => $role,
+			);
+
+			++$out['count'];
+			$out['bytes'] += (int) $file['bytes'];
+		}
+
+		foreach ( self::GROUP_ORDER as $group ) {
+			if ( empty( $grouped[ $group ] ) ) {
+				continue;
+			}
+
+			$out['groups'][] = array(
+				'key'   => $group,
+				'label' => self::GROUP_LABELS[ $group ],
+				'files' => $grouped[ $group ],
+			);
+		}
+
+		return $out;
+	}
+
+	/* ---------------------------------------------------------------------
 	 * Snapshot — the theme, sent WITH the request
 	 * ------------------------------------------------------------------ */
 
@@ -189,6 +330,7 @@ final class WPAB_Files {
 		$out = array(
 			'scope'     => $scope,
 			'files'     => array(),
+			'structure' => null,
 			'truncated' => false,
 			'skipped'   => 0,
 		);
@@ -201,6 +343,10 @@ final class WPAB_Files {
 
 			return $out;
 		}
+
+		// The grouped map travels with the files: a few kilobytes, and it saves
+		// the SaaS from having to reinvent the same classification table.
+		$out['structure'] = self::structure( $scope );
 
 		$out['truncated'] = ! empty( $walk['truncated'] );
 		$out['skipped']   = (int) $walk['skipped'];

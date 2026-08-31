@@ -195,3 +195,134 @@ describe("createProjectFileReader", () => {
     expect(out.files[0].truncated).toBe(true);
   });
 });
+
+/** The grouped map the plugin classifies locally and ships with the snapshot. */
+const WITH_STRUCTURE = {
+  ...PAYLOAD,
+  structure: {
+    scope: "theme",
+    theme: "Pour Grid",
+    count: 3,
+    bytes: 400,
+    groups: [
+      {
+        key: "templates",
+        label: "Templates",
+        files: [{ path: "404.php", bytes: 100, role: "The not-found page." }],
+      },
+      {
+        key: "parts",
+        label: "Template parts",
+        files: [{ path: "header.php", bytes: 200, role: "The site header." }],
+      },
+      {
+        key: "styles",
+        label: "Styles",
+        files: [{ path: "assets/css/components.css", bytes: 100, role: "" }],
+      },
+    ],
+  },
+};
+
+describe("theme structure", () => {
+  it("carries the plugin's map through", () => {
+    const snapshot = parseProjectSnapshot(WITH_STRUCTURE)!;
+
+    expect(snapshot.structure!.theme).toBe("Pour Grid");
+    expect(snapshot.structure!.groups.map((g) => g.key)).toEqual([
+      "templates",
+      "parts",
+      "styles",
+    ]);
+    expect(snapshot.structure!.groups[0].files[0].role).toBe("The not-found page.");
+  });
+
+  it("recomputes the totals rather than trusting them", () => {
+    const snapshot = parseProjectSnapshot({
+      ...WITH_STRUCTURE,
+      structure: { ...WITH_STRUCTURE.structure, count: 999, bytes: 999_999 },
+    })!;
+
+    expect(snapshot.structure!.count).toBe(3);
+    expect(snapshot.structure!.bytes).toBe(400);
+  });
+
+  it("drops files whose path could escape the theme", () => {
+    const snapshot = parseProjectSnapshot({
+      ...WITH_STRUCTURE,
+      structure: {
+        groups: [
+          {
+            key: "templates",
+            label: "Templates",
+            files: [
+              { path: "../../wp-config.php", bytes: 1, role: "r" },
+              { path: "index.php", bytes: 2, role: "ok" },
+            ],
+          },
+          { key: "bad", label: "Bad", files: [{ path: "/etc/passwd", bytes: 1, role: "r" }] },
+          { key: "weird", label: "Weird", files: ["not an object"] },
+        ],
+      },
+    })!;
+
+    // The second and third groups have nothing safe left, so they disappear.
+    expect(snapshot.structure!.groups).toHaveLength(1);
+    expect(snapshot.structure!.groups[0].files.map((f) => f.path)).toEqual(["index.php"]);
+  });
+
+  it("bounds the role text and the group count", () => {
+    const long = parseProjectSnapshot({
+      ...WITH_STRUCTURE,
+      structure: {
+        groups: [
+          { key: "k", label: "L", files: [{ path: "a.php", bytes: 1, role: "x".repeat(9999) }] },
+        ],
+      },
+    })!;
+    expect(long.structure!.groups[0].files[0].role).toHaveLength(
+      SNAPSHOT_LIMITS.maxRoleChars
+    );
+
+    const wide = parseProjectSnapshot({
+      ...WITH_STRUCTURE,
+      structure: {
+        groups: Array.from({ length: 30 }, (_, i) => ({
+          key: `g${i}`,
+          label: "G",
+          files: [{ path: `f${i}.php`, bytes: 1, role: "" }],
+        })),
+      },
+    })!;
+    expect(wide.structure!.groups).toHaveLength(SNAPSHOT_LIMITS.maxGroups);
+  });
+
+  it("rejects a structure it cannot use", () => {
+    for (const structure of [null, { groups: "nope" }, { groups: [] }]) {
+      expect(parseProjectSnapshot({ ...WITH_STRUCTURE, structure })!.structure).toBeNull();
+    }
+  });
+
+  it("serves the map without touching the site", async () => {
+    const out = (await reader(parseProjectSnapshot(WITH_STRUCTURE)).structure("theme")) as {
+      theme: string;
+    };
+
+    expect(listProjectFiles).not.toHaveBeenCalled();
+    expect(out.theme).toBe("Pour Grid");
+  });
+
+  it("falls back to the flat listing, and says that is what it is", async () => {
+    const out = (await reader(parseProjectSnapshot(PAYLOAD)).structure("theme")) as {
+      grouped: boolean;
+      note: string;
+      listing: { count: number };
+    };
+
+    expect(out.grouped).toBe(false);
+    expect(out.note).toMatch(/flat file list/);
+    expect(out.listing.count).toBe(4);
+    // Still no HTTP: the fallback reads the snapshot's own file list.
+    expect(listProjectFiles).not.toHaveBeenCalled();
+  });
+});

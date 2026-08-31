@@ -50,6 +50,22 @@ const tools: ToolDef[] = [
     },
   },
   {
+    name: "theme_structure",
+    description:
+      "Get a map of the active theme grouped by what each file is for — templates, template parts, theme setup, styles, scripts and features — with a one-line role for every known WordPress filename. Call this when the user asks what the theme contains, how it is organised, where something lives, or which file to change. It is also shown to the user as a browsable tree, so prefer it over describing the file list yourself.",
+    parameters: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["theme"],
+        },
+      },
+      required: ["scope"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "read_project_files",
     description:
       "Read a small batch of relevant WordPress project files. Prefer one batch containing the most useful entrypoint files instead of calling repeatedly for individual files.",
@@ -410,6 +426,7 @@ Project: ${project.name} — ${site.site_url} (active theme: ${themeName}), acti
 The active theme name above is reported live by the site RIGHT NOW — trust it over any theme mentioned earlier in the conversation.
 
 You can inspect:
+- The theme's shape with theme_structure — a grouped map of every file and what it is for. The user sees it as a browsable tree, so call it whenever they ask what the theme has, how it is put together, or where something lives, and then add only what the tree does not already say.
 - Theme code with project file tools.
 - Native WordPress content with content tools.
 
@@ -445,6 +462,10 @@ Never guess project details. Read relevant files before making code-specific cla
     await writeStep("Understanding your request…");
 
     const activity: ActivityItem[] = [];
+    // The grouped theme map, when the conversation asked for it. It goes back
+    // to wp-admin as its own field so the editor can render a tree instead of
+    // making the model describe a file list in prose.
+    let structure: unknown = null;
     // When the chat decides the user wants a theme change it captures a single
     // instruction here and hands it back to the editor, which runs the actual
     // edit (read + generate + write) inline — keeping this request fast.
@@ -463,6 +484,13 @@ Never guess project details. Read relevant files before making code-specific cla
           activity.push({ tool: name, scope });
           await writeStep(`Listing ${scope} files…`);
           return projectFiles.list(scope);
+        }
+        if (name === "theme_structure") {
+          const scope = validateScope(args.scope);
+          activity.push({ tool: name, scope });
+          await writeStep("Mapping the theme…");
+          structure = await projectFiles.structure(scope);
+          return structure;
         }
         if (name === "read_project_files") {
           const scope = validateScope(args.scope);
@@ -601,6 +629,7 @@ Never guess project details. Read relevant files before making code-specific cla
       usage: result.usage,
       toolCalls: result.toolCalls,
       activity,
+      structure,
       editRequest,
     });
   } catch (error) {

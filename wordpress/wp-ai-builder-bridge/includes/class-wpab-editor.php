@@ -104,6 +104,28 @@ final class WPAB_Editor {
 				'permission_callback' => $permission,
 			)
 		);
+		// The theme map, and one file from it. Both read the local filesystem
+		// directly: the editor is already inside wp-admin, so asking the SaaS
+		// for something sitting on this disk would be slow, chargeable and
+		// dependent on a connection the site may not have.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/theme-structure',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_theme_structure' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/theme-file',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_theme_file' ),
+				'permission_callback' => $permission,
+			)
+		);
 		register_rest_route(
 			self::NAMESPACE,
 			'/editor/chat/history',
@@ -1537,6 +1559,43 @@ final class WPAB_Editor {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
+	/**
+	 * GET /editor/theme-structure — the active theme, grouped by file role.
+	 *
+	 * Local and free. The same array the plugin ships to the SaaS with every
+	 * request, so the tree the user browses and the map the AI reasons over
+	 * cannot disagree.
+	 */
+	public static function rest_theme_structure(): WP_REST_Response {
+		return new WP_REST_Response(
+			array(
+				'success'   => true,
+				'structure' => WPAB_Files::structure( 'theme' ),
+			),
+			200
+		);
+	}
+
+	/** POST /editor/theme-file — one theme file, read from this disk. */
+	public static function rest_theme_file( WP_REST_Request $request ) {
+		$params = $request->get_json_params();
+		$path   = isset( $params['path'] ) ? (string) $params['path'] : '';
+
+		if ( '' === trim( $path ) ) {
+			return new WP_Error( 'wpab_missing_path', 'A file path is required.', array( 'status' => 400 ) );
+		}
+
+		// WPAB_Files::read() resolves through WPAB_Scopes, which is what keeps
+		// a crafted path from escaping the theme directory.
+		$file = WPAB_Files::read( 'theme', $path );
+
+		if ( is_wp_error( $file ) ) {
+			return $file;
+		}
+
+		return new WP_REST_Response( $file, 200 );
+	}
+
 	/** Chat archive: list conversations, or fetch one conversation's messages. */
 	public static function rest_chat_history( WP_REST_Request $request ) {
 		$params  = self::json_params( $request );
@@ -1723,6 +1782,8 @@ final class WPAB_Editor {
 			'restSession'     => esc_url_raw( rest_url( self::NAMESPACE . '/cloud/session' ) ),
 			'restChat'        => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat' ) ),
 			'restChatHistory' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat/history' ) ),
+			'restStructure'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/theme-structure' ) ),
+			'restThemeFile'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/theme-file' ) ),
 			'restEditPlan'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-plan' ) ),
 			'restEditStart'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-start' ) ),
 			'restEditApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-apply' ) ),
@@ -1852,6 +1913,9 @@ final class WPAB_Editor {
 							</button>
 							<button type="button" id="wpab-ed-textmode" class="wpab-ed__dev wpab-ed__inspect" title="Click text on the page to edit it in place" aria-pressed="false">
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
+							</button>
+							<button type="button" id="wpab-ed-structure" class="wpab-ed__dev" title="Show the theme's files and what each one does">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h6l1.5 2H20v11.5A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M8 12h8"/><path d="M8 15.5h5"/></svg>
 							</button>
 							<button type="button" id="wpab-ed-attach" class="wpab-ed__dev" title="Attach an image or screenshot">
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M21 15.5l-4.5-4.5L7 20.5"/></svg>
@@ -2018,6 +2082,23 @@ final class WPAB_Editor {
 			.wpab-ed__seltag .x { border: 0; background: none; cursor: pointer; color: var(--ed-muted); font-size: 13px; line-height: 1; padding: 0 2px; }
 			.wpab-ed__seltag .x:hover { color: #141312; }
 			.wpab-ed__imgthumb { width: 26px; height: 26px; object-fit: cover; border-radius: 6px; display: block; }
+			/* Theme map: the file tree shown inside a chat message. */
+			.wpab-tree { border: 1px solid rgba(20,19,18,.12); border-radius: 12px; background: #fff; overflow: hidden; margin-top: 2px; }
+			.wpab-tree__head { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; border-bottom: 1px solid rgba(20,19,18,.08); background: rgba(250,249,247,.8); }
+			.wpab-tree__name { font-weight: 600; font-size: 13px; }
+			.wpab-tree__meta { font-size: 11.5px; color: var(--ed-faint); }
+			.wpab-tree__group { border-bottom: 1px solid rgba(20,19,18,.06); }
+			.wpab-tree__group:last-child { border-bottom: 0; }
+			.wpab-tree__label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ed-faint); padding: 8px 12px 4px; }
+			.wpab-tree__file { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 5px 12px 6px; cursor: pointer; font: inherit; }
+			.wpab-tree__file:hover { background: rgba(20,19,18,.035); }
+			.wpab-tree__file[aria-expanded="true"] { background: rgba(20,19,18,.05); }
+			.wpab-tree__row { display: flex; align-items: baseline; gap: 8px; }
+			.wpab-tree__path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #141312; }
+			.wpab-tree__size { margin-left: auto; font-size: 11px; color: var(--ed-faint); flex: 0 0 auto; }
+			.wpab-tree__role { font-size: 11.5px; color: var(--ed-faint); line-height: 1.45; margin-top: 1px; }
+			.wpab-tree__src { margin: 0; padding: 10px 12px; background: #141312; color: #f2f0ec; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.55; max-height: 320px; overflow: auto; white-space: pre; }
+			.wpab-tree__note { padding: 9px 12px; font-size: 12px; color: var(--ed-faint); }
 			.wpab-ed__msgimg { max-width: 190px; max-height: 150px; border-radius: 12px; display: block; margin-bottom: 6px; align-self: flex-end; border: 1px solid rgba(20,19,18,.12); box-shadow: var(--ed-shadow); }
 			.wpab-msg .wpab-ed__seltag { margin-bottom: 6px; background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.3); color: #fff; align-self: flex-end; }
 			.wpab-msg .wpab-ed__seltag .sec { color: rgba(255,255,255,.65); }
@@ -2138,6 +2219,136 @@ final class WPAB_Editor {
 				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
 				return wrap;
 			}
+			/* ---- Theme map -------------------------------------------------
+			   The same grouped structure the AI is given, rendered as a tree the
+			   user can browse. Two ways in: the folder button (instant, local,
+			   free) and any chat answer where the AI called theme_structure, so
+			   asking "what's in my theme?" shows the map instead of a paragraph
+			   describing it. Clicking a file reads it from this site's own disk;
+			   nothing here goes to the SaaS. ---- */
+			function humanBytes(n) {
+				n = Number(n) || 0;
+				if (n < 1024) { return n + ' B'; }
+				if (n < 1024 * 1024) { return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB'; }
+				return (n / 1048576).toFixed(1) + ' MB';
+			}
+			function buildTree(st) {
+				var card = document.createElement('div');
+				card.className = 'wpab-tree';
+
+				var head = document.createElement('div');
+				head.className = 'wpab-tree__head';
+				var name = document.createElement('span');
+				name.className = 'wpab-tree__name';
+				name.textContent = st.theme || 'Active theme';
+				var meta = document.createElement('span');
+				meta.className = 'wpab-tree__meta';
+				meta.textContent = (st.count || 0) + ' files \u00b7 ' + humanBytes(st.bytes);
+				head.appendChild(name); head.appendChild(meta);
+				card.appendChild(head);
+
+				var groups = Array.isArray(st.groups) ? st.groups : [];
+				if (!groups.length) {
+					var note = document.createElement('div');
+					note.className = 'wpab-tree__note';
+					note.textContent = 'No readable theme files were found.';
+					card.appendChild(note);
+					return card;
+				}
+
+				groups.forEach(function (g) {
+					var sec = document.createElement('div');
+					sec.className = 'wpab-tree__group';
+					var label = document.createElement('div');
+					label.className = 'wpab-tree__label';
+					label.textContent = g.label || g.key || 'Files';
+					sec.appendChild(label);
+
+					(g.files || []).forEach(function (f) {
+						var btn = document.createElement('button');
+						btn.type = 'button';
+						btn.className = 'wpab-tree__file';
+						btn.setAttribute('aria-expanded', 'false');
+
+						var row = document.createElement('div');
+						row.className = 'wpab-tree__row';
+						var path = document.createElement('span');
+						path.className = 'wpab-tree__path';
+						path.textContent = f.path;
+						var size = document.createElement('span');
+						size.className = 'wpab-tree__size';
+						size.textContent = humanBytes(f.bytes);
+						row.appendChild(path); row.appendChild(size);
+						btn.appendChild(row);
+
+						if (f.role) {
+							var role = document.createElement('div');
+							role.className = 'wpab-tree__role';
+							role.textContent = f.role;
+							btn.appendChild(role);
+						}
+
+						var src = null;
+						btn.addEventListener('click', function () {
+							if (src) {
+								var open = src.hidden;
+								src.hidden = !open;
+								btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+								return;
+							}
+							src = document.createElement('pre');
+							src.className = 'wpab-tree__src';
+							src.textContent = 'Reading\u2026';
+							btn.parentNode.insertBefore(src, btn.nextSibling);
+							btn.setAttribute('aria-expanded', 'true');
+							api('POST', cfg.restThemeFile, { path: f.path }).then(function (out) {
+								if (!out.ok || !out.data || typeof out.data.content !== 'string') {
+									src.textContent = (out.data && (out.data.message || out.data.error)) || 'That file could not be read.';
+									return;
+								}
+								src.textContent = out.data.content;
+							}).catch(function () { src.textContent = 'Could not read that file.'; });
+						});
+
+						sec.appendChild(btn);
+					});
+
+					card.appendChild(sec);
+				});
+
+				return card;
+			}
+			function addStructure(st) {
+				if (!st || !Array.isArray(st.groups)) { return null; }
+				var empty = thread.querySelector('.wpab-ed__empty');
+				if (empty) { empty.remove(); }
+				var wrap = document.createElement('div');
+				wrap.className = 'wpab-msg wpab-msg--assistant';
+				wrap.innerHTML = '<div class="wpab-msg__role">AI</div>';
+				var body = document.createElement('div');
+				body.className = 'wpab-msg__body';
+				body.appendChild(buildTree(st));
+				wrap.appendChild(body);
+				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
+				return wrap;
+			}
+			var structureBtn = $('wpab-ed-structure');
+			if (structureBtn) {
+				structureBtn.addEventListener('click', function () {
+					if (!cfg.restStructure) { return; }
+					structureBtn.disabled = true;
+					api('GET', cfg.restStructure, null).then(function (out) {
+						if (!out.ok || !out.data || !out.data.structure) {
+							addMessage('assistant', 'Could not read the theme structure.');
+							return;
+						}
+						addStructure(out.data.structure);
+					}).catch(function () {
+						addMessage('assistant', 'Could not read the theme structure.');
+					}).then(function () { structureBtn.disabled = false; });
+				});
+			}
+
 			function addTyping() {
 				var wrap = document.createElement('div'); wrap.className = 'wpab-msg wpab-msg--assistant';
 				wrap.innerHTML = '<div class="wpab-msg__role">AI</div><div class="wpab-typing">Thinking…</div>';
@@ -2349,6 +2560,8 @@ final class WPAB_Editor {
 					if (out.data.conversationId) { rememberConv(out.data.conversationId); }
 					var answer = out.data.answer || out.data.reply;
 					if (answer) { addMessage('assistant', answer); }
+					// The AI mapped the theme: show the tree, not its description.
+					if (out.data.structure) { addStructure(out.data.structure); }
 					if (out.data.editRequest && out.data.editRequest.instruction) {
 						return runEdit(out.data.editRequest.instruction);
 					}

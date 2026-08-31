@@ -11,13 +11,17 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.25.0",
+  version: "1.26.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-31",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.26.0</h4><ul>" +
+    "<li>A new folder button in the AI Editor shows your theme as a browsable map — every file grouped by what it does, with a line explaining each one. Click a file to read it.</li>" +
+    "<li>Ask the chat what your theme contains and it draws the same map instead of describing a file list.</li>" +
+    "</ul>" +
     "<h4>1.25.0</h4><ul>" +
     "<li>The chat can now answer about your pages, posts and products on sites Meikero cannot reach — the plugin sends them with your message instead of being asked for them.</li>" +
     "</ul>" +

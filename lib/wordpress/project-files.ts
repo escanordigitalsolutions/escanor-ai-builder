@@ -37,13 +37,31 @@ export const SNAPSHOT_LIMITS = {
    */
   maxTotalBytes: 800_000,
   maxPathLength: 200,
+  maxGroups: 12,
+  maxFilesPerGroup: 200,
+  maxRoleChars: 200,
   /** What a single read hands the model, matching the bridge's behaviour. */
   maxReadChars: 60_000,
 } as const;
 
+/** The theme grouped by what each file is for, as the plugin classified it. */
+export type ThemeStructure = {
+  scope: string;
+  theme: string;
+  count: number;
+  bytes: number;
+  groups: {
+    key: string;
+    label: string;
+    files: { path: string; bytes: number; role: string }[];
+  }[];
+};
+
 export type ProjectSnapshot = {
   scope: ProjectScope;
   files: Map<string, string>;
+  /** The plugin's own map of the theme. Null when it did not send one. */
+  structure: ThemeStructure | null;
   /** The plugin stopped early: absent paths may still exist on disk. */
   truncated: boolean;
   /** Files the plugin refused to send (binary, too large, unreadable). */
@@ -56,6 +74,74 @@ function isSafePath(path: string): boolean {
   if (path.includes("\0") || path.includes("\\")) return false;
   if (path.startsWith("/") || path.startsWith(".")) return false;
   return !path.split("/").some((part) => part === "" || part === "." || part === "..");
+}
+
+/**
+ * Validate the grouped structure the plugin sent.
+ *
+ * It is rendered as text in two places and shown to a model in a third, so
+ * every string is bounded and every path is checked the same way the file map's
+ * keys are. A structure that does not survive this is simply absent — the tool
+ * then falls back to the flat listing, which is worse but never wrong.
+ */
+function parseThemeStructure(input: unknown): ThemeStructure | null {
+  if (!input || typeof input !== "object") return null;
+
+  const raw = input as Record<string, unknown>;
+
+  if (!Array.isArray(raw.groups)) return null;
+
+  const text = (value: unknown, max: number) =>
+    typeof value === "string" ? value.slice(0, max) : "";
+
+  const groups: ThemeStructure["groups"] = [];
+
+  for (const entry of raw.groups.slice(0, SNAPSHOT_LIMITS.maxGroups)) {
+    if (!entry || typeof entry !== "object") continue;
+
+    const group = entry as Record<string, unknown>;
+
+    if (!Array.isArray(group.files)) continue;
+
+    const files = group.files
+      .slice(0, SNAPSHOT_LIMITS.maxFilesPerGroup)
+      .map((file) => {
+        if (!file || typeof file !== "object") return null;
+
+        const row = file as Record<string, unknown>;
+        const path = typeof row.path === "string" ? row.path : "";
+
+        if (!isSafePath(path)) return null;
+
+        return {
+          path,
+          bytes: typeof row.bytes === "number" && row.bytes >= 0 ? Math.floor(row.bytes) : 0,
+          role: text(row.role, SNAPSHOT_LIMITS.maxRoleChars),
+        };
+      })
+      .filter((file): file is ThemeStructure["groups"][number]["files"][number] => file !== null);
+
+    if (files.length === 0) continue;
+
+    groups.push({
+      key: text(group.key, 40),
+      label: text(group.label, 60),
+      files,
+    });
+  }
+
+  if (groups.length === 0) return null;
+
+  return {
+    scope: text(raw.scope, 40) || "theme",
+    theme: text(raw.theme, 120),
+    count: groups.reduce((sum, group) => sum + group.files.length, 0),
+    bytes: groups.reduce(
+      (sum, group) => sum + group.files.reduce((n, file) => n + file.bytes, 0),
+      0
+    ),
+    groups,
+  };
 }
 
 /**
@@ -111,7 +197,13 @@ export function parseProjectSnapshot(input: unknown): ProjectSnapshot | null {
 
   const skipped = typeof raw.skipped === "number" && raw.skipped > 0 ? Math.floor(raw.skipped) : 0;
 
-  return { scope: "theme", files, truncated, skipped };
+  return {
+    scope: "theme",
+    files,
+    structure: parseThemeStructure(raw.structure),
+    truncated,
+    skipped,
+  };
 }
 
 function describeFile(path: string, content: string) {
@@ -144,6 +236,8 @@ export type ProjectFileReader = {
   source: "site" | "bridge";
   list(scope: ProjectScope): Promise<unknown>;
   read(scope: ProjectScope, paths: string[]): Promise<unknown>;
+  /** The grouped map, or a flat listing when the plugin sent no structure. */
+  structure(scope: ProjectScope): Promise<unknown>;
 };
 
 /**
@@ -181,6 +275,20 @@ export function createProjectFileReader(options: {
         truncated: shot.truncated,
         skipped: shot.skipped,
         files,
+      };
+    },
+
+    async structure(scope) {
+      const shot = usable(scope);
+
+      if (shot?.structure) return shot.structure;
+
+      // An older plugin, or the browser dashboard. The flat list still answers
+      // the question, so say what is missing rather than failing.
+      return {
+        grouped: false,
+        note: "This site did not send a grouped theme map, so this is the flat file list.",
+        listing: await this.list(scope),
       };
     },
 
