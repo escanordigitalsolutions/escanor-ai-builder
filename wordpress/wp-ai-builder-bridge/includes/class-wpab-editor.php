@@ -3602,7 +3602,23 @@ final class WPAB_Editor {
 			 * know where the design came from.
 			 */
 			function startFromDesign(designId) {
-				if (!designId || busy || !cfg.restDesignPack || !cfg.restBuildPlan) { return; }
+				if (!designId || busy || !cfg.restBuildPlan) { return; }
+
+				if (!cfg.restDesignPack) {
+					// The plugin is older than the endpoint. Say so rather than
+					// doing nothing, which is what a silent return looked like.
+					if (wResult) {
+						wResult.className = 'wpab-ed__wresult is-err';
+						wResult.textContent = 'Update the Meikero plugin to build from a saved design.';
+					}
+					openWizard();
+					return;
+				}
+
+				// The wizard is where every step, progress line and error appears.
+				// Starting a run without opening it first ran the whole build behind
+				// a hidden overlay: the page simply sat there.
+				openWizard();
 
 				genToken++;
 				var myRun = genToken;
@@ -3798,9 +3814,14 @@ final class WPAB_Editor {
 					}
 				}
 
-				paint();
+				// Shown BEFORE the first paint. A design's scroll-reveal hides its
+				// blocks behind html.js and reveals them with an IntersectionObserver;
+				// inside a hidden iframe that observer has nothing to measure against,
+				// so the preview came up as a header over an empty page.
 				if (wizard) { wizard.classList.add('is-design'); }
 				wrap.hidden = false;
+
+				paint();
 				setBuildDetail('');
 				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = 'Review the design' + tokLabel() + ' — use it, or try another direction.'; }
 				var useBtn = $('wpab-ed-mockuse');
@@ -3892,19 +3913,25 @@ final class WPAB_Editor {
 			// touch a theme this plugin made. When the active theme is not one,
 			// the wizard is what the editor opens on.
 			(function () {
-				var t = (cfg && cfg.theme) || {};
-				if (!t.generated && wizard) {
-					setTimeout(function () { if (!busy && wizard.hidden) { openWizard(); } }, 120);
-				}
-			})();
-
-			// Arriving from the design archive with a design chosen.
-			(function () {
 				var picked = '';
 				try {
 					picked = new URLSearchParams(window.location.search).get('design') || '';
 				} catch (e) { picked = ''; }
-				if (picked) { setTimeout(function () { startFromDesign(picked); }, 60); }
+
+				// Arriving from the design archive with a design chosen: that IS the
+				// intent, so it wins over the empty wizard.
+				if (picked) {
+					setTimeout(function () { startFromDesign(picked); }, 60);
+					return;
+				}
+
+				// Nothing here can be edited until a theme has been generated — the
+				// writer refuses any theme this plugin did not make — so an editor
+				// that opens onto an empty chat is a dead end.
+				var t = (cfg && cfg.theme) || {};
+				if (!t.generated && wizard) {
+					setTimeout(function () { if (!busy && wizard.hidden) { openWizard(); } }, 120);
+				}
 			})();
 		})();
 		</script>

@@ -11,13 +11,17 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.23.0",
+  version: "1.23.1",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-30",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.23.1</h4><ul>" +
+    "<li>Archived designs preview in full again — they were painting a header over an empty page.</li>" +
+    "<li>Building from a saved design now opens the wizard and shows its progress instead of leaving you on a blank screen.</li>" +
+    "</ul>" +
     "<h4>1.23.0</h4><ul>" +
     "<li>The dashboard now reports your usage in credits, grouped by what the work was for, instead of model names and token prices.</li>" +
     "<li>Build a theme straight from any design in your archive — it skips the design step, which is about half the cost of a generation.</li>" +

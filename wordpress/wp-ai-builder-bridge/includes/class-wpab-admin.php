@@ -426,7 +426,7 @@ final class WPAB_Admin {
 									<div class="wpabd-dbar"><i></i><i></i><i></i></div>
 									<div class="wpabd-dthumb">
 										<div class="wpabd-dload">Loading…</div>
-										<iframe sandbox="allow-scripts" scrolling="no" tabindex="-1" aria-hidden="true"></iframe>
+										<iframe sandbox="" scrolling="no" tabindex="-1" aria-hidden="true"></iframe>
 									</div>
 								</div>
 								<div class="wpabd-dmeta">
@@ -443,7 +443,19 @@ final class WPAB_Admin {
 							<span id="wpabd-whichnote" style="color:#6f6b64;font-size:12px;"></span>
 							<a id="wpabd-usebtn" class="button button-primary" style="margin-left:auto;display:none;" href="#">Build a theme from this design →</a>
 						</div>
-						<iframe id="wpabd-prevframe" sandbox="allow-scripts" style="width:100%;height:680px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
+						<?php
+						// sandbox="" and not allow-scripts, deliberately.
+						//
+						// Every generated design hides its [data-reveal] blocks behind
+						// html.js and reveals them with an IntersectionObserver. Inside
+						// a preview iframe that observer has nothing to observe against,
+						// so with scripts enabled the page painted its header and then
+						// nothing at all — which is exactly what an archived design
+						// looked like here. No scripts means html.js is never added and
+						// every block stays visible, which is what a still preview wants
+						// anyway. It also stops archived markup from running at all.
+						?>
+						<iframe id="wpabd-prevframe" sandbox="" style="width:100%;height:680px;border:1px solid rgba(20,19,18,.1);border-radius:12px;background:#fff;"></iframe>
 					</div>
 					<script>
 					(function () {
