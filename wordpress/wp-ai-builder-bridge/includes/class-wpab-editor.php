@@ -117,6 +117,35 @@ final class WPAB_Editor {
 				'permission_callback' => $permission,
 			)
 		);
+		// The change history: what was edited, what it looked like before, and
+		// putting any of it back. All local — none of this involves the SaaS.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/history',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( __CLASS__, 'rest_history' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/history-file',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_history_file' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/restore',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_restore' ),
+				'permission_callback' => $permission,
+			)
+		);
 		register_rest_route(
 			self::NAMESPACE,
 			'/editor/theme-file',
@@ -526,7 +555,10 @@ final class WPAB_Editor {
 			return new WP_Error( 'wpab_edit_empty_files', $msg, array( 'status' => 502 ) );
 		}
 
-		$applied = WPAB_Theme_Writer::update( $files );
+		$applied = WPAB_Theme_Writer::update(
+			$files,
+			isset( $result['summary'] ) ? (string) $result['summary'] : ''
+		);
 
 		if ( is_wp_error( $applied ) ) {
 			return $applied;
@@ -603,7 +635,7 @@ final class WPAB_Editor {
 			);
 		}
 
-		$applied = WPAB_Theme_Writer::update( $files );
+		$applied = WPAB_Theme_Writer::update( $files, '' !== $summary ? $summary : 'Design pass' );
 
 		if ( is_wp_error( $applied ) ) {
 			// Keep the already-working theme rather than failing generation.
@@ -1059,7 +1091,8 @@ final class WPAB_Editor {
 		if ( empty( $files ) ) {
 			return new WP_Error( 'wpab_apply_empty', 'No files to apply.', array( 'status' => 400 ) );
 		}
-		$applied = WPAB_Theme_Writer::update( $files );
+		$summary = isset( $params['summary'] ) ? (string) $params['summary'] : '';
+		$applied = WPAB_Theme_Writer::update( $files, $summary );
 		if ( is_wp_error( $applied ) ) {
 			return $applied;
 		}
@@ -1183,7 +1216,7 @@ final class WPAB_Editor {
 		}
 
 		$updated = substr_replace( $contents, esc_html( $new ), $pos, strlen( $hit_needle ) );
-		$applied = WPAB_Theme_Writer::update( array( array( 'path' => $hit_file, 'contents' => $updated ) ) );
+		$applied = WPAB_Theme_Writer::update( array( array( 'path' => $hit_file, 'contents' => $updated ) ), 'Text edited on the page' );
 		if ( is_wp_error( $applied ) ) {
 			return $applied;
 		}
@@ -1576,6 +1609,49 @@ final class WPAB_Editor {
 		);
 	}
 
+	/** GET /editor/history — the recorded edits, newest first, without contents. */
+	public static function rest_history(): WP_REST_Response {
+		return new WP_REST_Response(
+			array( 'success' => true, 'entries' => WPAB_Theme_Writer::history() ),
+			200
+		);
+	}
+
+	/** POST /editor/history-file — one file before and after a recorded edit. */
+	public static function rest_history_file( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$id     = isset( $params['id'] ) ? (string) $params['id'] : '';
+		$path   = isset( $params['path'] ) ? (string) $params['path'] : '';
+
+		if ( '' === $id || '' === $path ) {
+			return new WP_Error( 'wpab_history_bad', 'A change id and a file path are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Theme_Writer::history_file( $id, $path );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/** POST /editor/restore — put the theme back to before one recorded edit. */
+	public static function rest_restore( WP_REST_Request $request ) {
+		$params = self::json_params( $request );
+		$id     = isset( $params['id'] ) ? (string) $params['id'] : '';
+
+		if ( '' === $id ) {
+			return new WP_Error( 'wpab_history_bad', 'A change id is required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Theme_Writer::restore( $id );
+
+		if ( is_wp_error( $result ) ) {
+			return $result;
+		}
+
+		self::after_theme_write();
+
+		return new WP_REST_Response( $result, 200 );
+	}
+
 	/** POST /editor/theme-file — one theme file, read from this disk. */
 	public static function rest_theme_file( WP_REST_Request $request ) {
 		$params = $request->get_json_params();
@@ -1788,6 +1864,9 @@ final class WPAB_Editor {
 			'restChatHistory' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat/history' ) ),
 			'restStructure'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/theme-structure' ) ),
 			'restThemeFile'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/theme-file' ) ),
+			'restHistory'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/history' ) ),
+			'restHistoryFile' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/history-file' ) ),
+			'restRestore'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/restore' ) ),
 			'restEditPlan'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-plan' ) ),
 			'restEditStart'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-start' ) ),
 			'restEditApply'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-apply' ) ),
@@ -1918,6 +1997,9 @@ final class WPAB_Editor {
 							</button>
 							<button type="button" id="wpab-ed-textmode" class="wpab-ed__dev wpab-ed__inspect" title="Click text on the page to edit it in place" aria-pressed="false">
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14"/><path d="M12 5v14"/><path d="M9 19h6"/></svg>
+							</button>
+							<button type="button" id="wpab-ed-changes" class="wpab-ed__dev" title="What changed, and how to put it back">
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/></svg>
 							</button>
 							<button type="button" id="wpab-ed-structure" class="wpab-ed__dev" title="Show the theme's files and what each one does">
 								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h6l1.5 2H20v11.5A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5z"/><path d="M8 12h8"/><path d="M8 15.5h5"/></svg>
@@ -2131,6 +2213,19 @@ final class WPAB_Editor {
 			.wpab-ed__chatback { position: absolute; inset: 0; z-index: 14; background: rgba(20,19,18,.3); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); opacity: 0; pointer-events: none; transition: opacity .32s ease; border: 0; padding: 0; cursor: default; }
 			.wpab-ed__chatback.is-on { opacity: 1; pointer-events: auto; }
 			.wpab-ed__chat.is-large .wpab-ed__thread > * { max-width: 980px; width: 100%; margin-left: auto; margin-right: auto; }
+			/* Changes: one recorded edit, its files and the lines that moved. */
+			.wpab-change__top { display: flex; align-items: baseline; gap: 9px; padding: 9px 12px 5px; }
+			.wpab-change__when { flex: 0 0 auto; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--ed-faint); }
+			.wpab-change__summary { font-size: 12.5px; color: var(--ed-text); }
+			.wpab-change__restore { margin: 4px 12px 12px; }
+			.wpab-tree__flag--new { color: #17795a; background: #e2f2ec; }
+			.wpab-diff { margin: 0; border-top: 1px solid rgba(20,18,16,.07); background: #fbfaf8; }
+			.wpab-diff__head { padding: 6px 12px; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--ed-faint); }
+			.wpab-diff__same { padding: 8px 12px; font-size: 12px; color: var(--ed-faint); }
+			.wpab-diff__body { margin: 0; padding: 0 0 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.6; overflow-x: auto; white-space: pre; }
+			.wpab-diff__line { display: block; padding: 0 12px; }
+			.wpab-diff__line--out { background: #fbeae5; color: #8c3a24; }
+			.wpab-diff__line--in { background: #e4f3ec; color: #146a4c; }
 			/* Theme map: the file tree shown inside a chat message. */
 			.wpab-tree { border: 1px solid rgba(20,19,18,.12); border-radius: 12px; background: #fff; overflow: hidden; margin-top: 2px; }
 			.wpab-tree__head { display: flex; align-items: baseline; gap: 8px; padding: 9px 12px; border-bottom: 1px solid rgba(20,19,18,.08); background: rgba(250,249,247,.8); }
@@ -2527,6 +2622,211 @@ final class WPAB_Editor {
 				thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
 				return wrap;
 			}
+			/* ---- Changes ------------------------------------------------------
+			   What the AI changed, what you changed, and how to put any of it
+			   back. Everything here reads this site's own disk — no request
+			   leaves WordPress, so it works whether or not Meikero can be
+			   reached. ---- */
+			function whenText(iso) {
+				var t = Date.parse(iso || '');
+				if (!t) { return ''; }
+				var mins = Math.round((Date.now() - t) / 60000);
+				if (mins < 1) { return 'just now'; }
+				if (mins < 60) { return mins + ' min ago'; }
+				var hours = Math.round(mins / 60);
+				if (hours < 24) { return hours + (hours === 1 ? ' hour ago' : ' hours ago'); }
+				return new Date(t).toLocaleDateString();
+			}
+			/* A line diff that trims what both sides share and shows the middle.
+			   Not Myers: for the targeted edits this tool makes, the changed
+			   region is one contiguous block, and pretending otherwise would be
+			   more code for a worse answer. */
+			function lineDiff(before, after) {
+				var a = String(before == null ? '' : before).split('\n');
+				var b = String(after == null ? '' : after).split('\n');
+				var start = 0;
+				while (start < a.length && start < b.length && a[start] === b[start]) { start++; }
+				var endA = a.length, endB = b.length;
+				while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) { endA--; endB--; }
+				return { start: start, removed: a.slice(start, endA), added: b.slice(start, endB) };
+			}
+			function diffBlock(before, after) {
+				var wrap = document.createElement('div');
+				wrap.className = 'wpab-diff';
+				var d = lineDiff(before, after);
+				if (!d.removed.length && !d.added.length) {
+					var same = document.createElement('div');
+					same.className = 'wpab-diff__same';
+					same.textContent = 'This file is unchanged since that edit.';
+					wrap.appendChild(same);
+					return wrap;
+				}
+				var head = document.createElement('div');
+				head.className = 'wpab-diff__head';
+				head.textContent = 'line ' + (d.start + 1)
+					+ ' · ' + d.removed.length + ' removed, ' + d.added.length + ' added';
+				wrap.appendChild(head);
+				var pre = document.createElement('pre');
+				pre.className = 'wpab-diff__body';
+				d.removed.forEach(function (line) {
+					var row = document.createElement('span');
+					row.className = 'wpab-diff__line wpab-diff__line--out';
+					row.textContent = '- ' + line + '\n';
+					pre.appendChild(row);
+				});
+				d.added.forEach(function (line) {
+					var row = document.createElement('span');
+					row.className = 'wpab-diff__line wpab-diff__line--in';
+					row.textContent = '+ ' + line + '\n';
+					pre.appendChild(row);
+				});
+				wrap.appendChild(pre);
+				return wrap;
+			}
+			function buildChanges(entries) {
+				var card = document.createElement('div');
+				card.className = 'wpab-tree';
+
+				var head = document.createElement('div');
+				head.className = 'wpab-tree__head';
+				var name = document.createElement('span');
+				name.className = 'wpab-tree__name';
+				name.textContent = 'Changes';
+				var meta = document.createElement('span');
+				meta.className = 'wpab-tree__meta';
+				meta.textContent = entries.length ? entries.length + ' recorded' : '';
+				head.appendChild(name); head.appendChild(meta);
+				card.appendChild(head);
+
+				if (!entries.length) {
+					var none = document.createElement('div');
+					none.className = 'wpab-tree__note';
+					none.textContent = 'Nothing has been changed in this theme yet.';
+					card.appendChild(none);
+					return card;
+				}
+
+				entries.forEach(function (entry) {
+					var sec = document.createElement('div');
+					sec.className = 'wpab-tree__group';
+
+					var top = document.createElement('div');
+					top.className = 'wpab-change__top';
+					var when = document.createElement('span');
+					when.className = 'wpab-change__when';
+					when.textContent = whenText(entry.at);
+					var sum = document.createElement('span');
+					sum.className = 'wpab-change__summary';
+					sum.textContent = entry.summary || 'Theme edit';
+					top.appendChild(when); top.appendChild(sum);
+					sec.appendChild(top);
+
+					(entry.files || []).forEach(function (f) {
+						var btn = document.createElement('button');
+						btn.type = 'button';
+						btn.className = 'wpab-tree__file';
+						btn.setAttribute('aria-expanded', 'false');
+						var row = document.createElement('div');
+						row.className = 'wpab-tree__row';
+						var path = document.createElement('span');
+						path.className = 'wpab-tree__path';
+						path.textContent = f.path;
+						row.appendChild(path);
+						if (f.created) {
+							var tag = document.createElement('span');
+							tag.className = 'wpab-tree__flag wpab-tree__flag--new';
+							tag.textContent = 'new file';
+							row.appendChild(tag);
+						}
+						btn.appendChild(row);
+
+						var panel = null;
+						btn.addEventListener('click', function () {
+							if (panel) {
+								panel.hidden = !panel.hidden;
+								btn.setAttribute('aria-expanded', panel.hidden ? 'false' : 'true');
+								return;
+							}
+							panel = document.createElement('div');
+							panel.className = 'wpab-diff';
+							panel.textContent = 'Reading…';
+							btn.parentNode.insertBefore(panel, btn.nextSibling);
+							btn.setAttribute('aria-expanded', 'true');
+							api('POST', cfg.restHistoryFile, { id: entry.id, path: f.path }).then(function (out) {
+								if (!out.ok || !out.data) {
+									panel.textContent = (out.data && (out.data.message || out.data.error)) || 'That change could not be read.';
+									return;
+								}
+								var block = diffBlock(out.data.before, out.data.after);
+								panel.replaceWith(block);
+								panel = block;
+							}).catch(function () { panel.textContent = 'That change could not be read.'; });
+						});
+
+						sec.appendChild(btn);
+					});
+
+					var restore = document.createElement('button');
+					restore.type = 'button';
+					restore.className = 'wpab-ed__undo wpab-change__restore';
+					restore.textContent = 'Restore what this changed';
+					restore.addEventListener('click', function () {
+						restore.disabled = true;
+						restore.textContent = 'Restoring…';
+						api('POST', cfg.restRestore, { id: entry.id }).then(function (out) {
+							if (!out.ok || !out.data || out.data.success === false) {
+								restore.disabled = false;
+								restore.textContent = (out.data && (out.data.message || out.data.error)) || 'Could not restore';
+								return;
+							}
+							restore.textContent = 'Restored';
+							// Putting something back is itself a change, so the
+							// list is stale the moment it succeeds.
+							loadChanges();
+							reloadPreview();
+						}).catch(function () {
+							restore.disabled = false;
+							restore.textContent = 'Could not restore';
+						});
+					});
+					sec.appendChild(restore);
+
+					card.appendChild(sec);
+				});
+
+				return card;
+			}
+			function loadChanges() {
+				if (!cfg.restHistory) { return; }
+				api('GET', cfg.restHistory, null).then(function (out) {
+					if (!out.ok || !out.data || !Array.isArray(out.data.entries)) {
+						addMessage('assistant', 'Could not read the change history.');
+						return;
+					}
+					var empty = thread.querySelector('.wpab-ed__empty');
+					if (empty) { empty.remove(); }
+					var wrap = document.createElement('div');
+					wrap.className = 'wpab-msg wpab-msg--assistant';
+					wrap.innerHTML = '<div class="wpab-msg__role">AI</div>';
+					var body = document.createElement('div');
+					body.className = 'wpab-msg__body';
+					body.appendChild(buildChanges(out.data.entries));
+					wrap.appendChild(body);
+					markWide(wrap);
+					thread.appendChild(wrap); thread.scrollTop = thread.scrollHeight;
+				}).catch(function () {
+					addMessage('assistant', 'Could not read the change history.');
+				});
+			}
+			var changesBtn = $('wpab-ed-changes');
+			if (changesBtn) {
+				changesBtn.addEventListener('click', function () {
+					changesBtn.disabled = true;
+					loadChanges();
+					window.setTimeout(function () { changesBtn.disabled = false; }, 400);
+				});
+			}
+
 			var structureBtn = $('wpab-ed-structure');
 			if (structureBtn) {
 				structureBtn.addEventListener('click', function () {

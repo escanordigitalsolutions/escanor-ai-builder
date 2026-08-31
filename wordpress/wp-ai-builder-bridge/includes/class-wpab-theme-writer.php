@@ -236,7 +236,7 @@ final class WPAB_Theme_Writer {
 	 * @param array $files List of array{ path:string, contents:string }.
 	 * @return array|WP_Error { updated, undo_available }
 	 */
-	public static function update( array $files ) {
+	public static function update( array $files, string $summary = '' ) {
 		$active    = get_stylesheet();
 		$generated = (string) get_option( self::GENERATED_OPTION, '' );
 
@@ -328,6 +328,7 @@ final class WPAB_Theme_Writer {
 		}
 
 		update_option( self::UNDO_OPTION, array( 'slug' => $active, 'files' => $undo ), false );
+		self::record_history( $undo, '' !== $summary ? $summary : 'Theme edit' );
 		self::record_hashes( $active, $clean );
 		wp_clean_themes_cache();
 
@@ -338,8 +339,283 @@ final class WPAB_Theme_Writer {
 		);
 	}
 
+	/* ---------------------------------------------------------------------
+	 * Change history
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * The last few edits, newest first, each with what the files held before.
+	 *
+	 * This replaces a single undo slot that every edit overwrote. One slot
+	 * answers "take that back" and nothing else: not what changed three edits
+	 * ago, not which files an edit touched, not how to get back to this morning.
+	 *
+	 * Bounded twice over, because this lives in wp_options: at most
+	 * HISTORY_MAX entries, and at most HISTORY_MAX_BYTES of stored contents.
+	 * The oldest entries are dropped first — the newest are the ones anybody
+	 * actually reaches for.
+	 */
+	public const HISTORY_OPTION    = 'wpab_theme_history';
+	public const HISTORY_MAX       = 20;
+	public const HISTORY_MAX_BYTES = 1500000;
+
+	/** @return array{slug:string,entries:array} */
+	private static function history_store(): array {
+		$stored = get_option( self::HISTORY_OPTION, array() );
+		$active = get_stylesheet();
+
+		if ( ! is_array( $stored ) || ! isset( $stored['slug'] ) || $stored['slug'] !== $active ) {
+			// A different theme's history is not this theme's history, and
+			// restoring across themes would write files that do not belong.
+			return array( 'slug' => $active, 'entries' => array() );
+		}
+
+		return array(
+			'slug'    => $active,
+			'entries' => isset( $stored['entries'] ) && is_array( $stored['entries'] ) ? $stored['entries'] : array(),
+		);
+	}
+
+	/**
+	 * Record one edit.
+	 *
+	 * @param array  $files   [{ path, contents:string|null, created:bool }] as they were BEFORE.
+	 * @param string $summary What the edit was for, in the words the user saw.
+	 */
+	public static function record_history( array $files, string $summary ): void {
+		if ( empty( $files ) ) {
+			return;
+		}
+
+		$store = self::history_store();
+
+		array_unshift(
+			$store['entries'],
+			array(
+				'id'      => substr( hash( 'sha256', uniqid( 'wpab', true ) ), 0, 16 ),
+				'at'      => gmdate( 'c' ),
+				'summary' => substr( trim( $summary ), 0, 200 ),
+				'files'   => array_values( $files ),
+			)
+		);
+
+		$store['entries'] = self::trim_history( $store['entries'] );
+
+		update_option( self::HISTORY_OPTION, $store, false );
+	}
+
+	/** Keep the newest entries that fit in both budgets. */
+	private static function trim_history( array $entries ): array {
+		$kept  = array();
+		$bytes = 0;
+
+		foreach ( $entries as $entry ) {
+			if ( count( $kept ) >= self::HISTORY_MAX ) {
+				break;
+			}
+
+			$size = 0;
+
+			foreach ( isset( $entry['files'] ) && is_array( $entry['files'] ) ? $entry['files'] : array() as $file ) {
+				$size += isset( $file['contents'] ) ? strlen( (string) $file['contents'] ) : 0;
+			}
+
+			// The newest entry is kept whatever it costs: an edit you cannot
+			// undo is worse than a history that is briefly over budget.
+			if ( $kept && $bytes + $size > self::HISTORY_MAX_BYTES ) {
+				break;
+			}
+
+			$bytes += $size;
+			$kept[] = $entry;
+		}
+
+		return $kept;
+	}
+
+	/**
+	 * The history as the editor shows it — no file contents, so the list stays
+	 * small however large the theme.
+	 */
+	public static function history(): array {
+		$out = array();
+
+		foreach ( self::history_store()['entries'] as $entry ) {
+			$files = array();
+
+			foreach ( isset( $entry['files'] ) && is_array( $entry['files'] ) ? $entry['files'] : array() as $file ) {
+				if ( ! isset( $file['path'] ) ) {
+					continue;
+				}
+
+				$files[] = array(
+					'path'    => (string) $file['path'],
+					'created' => ! empty( $file['created'] ),
+				);
+			}
+
+			$out[] = array(
+				'id'      => isset( $entry['id'] ) ? (string) $entry['id'] : '',
+				'at'      => isset( $entry['at'] ) ? (string) $entry['at'] : '',
+				'summary' => isset( $entry['summary'] ) ? (string) $entry['summary'] : '',
+				'files'   => $files,
+			);
+		}
+
+		return $out;
+	}
+
+	/**
+	 * What one file held before a given edit, and what it holds now.
+	 *
+	 * Both halves come from here so the editor never has to guess which
+	 * version it is looking at.
+	 *
+	 * @return array|WP_Error { path, before:string|null, after:string|null }
+	 */
+	public static function history_file( string $id, string $path ) {
+		foreach ( self::history_store()['entries'] as $entry ) {
+			if ( ! isset( $entry['id'] ) || (string) $entry['id'] !== $id ) {
+				continue;
+			}
+
+			foreach ( isset( $entry['files'] ) && is_array( $entry['files'] ) ? $entry['files'] : array() as $file ) {
+				if ( ! isset( $file['path'] ) || (string) $file['path'] !== $path ) {
+					continue;
+				}
+
+				$current = self::read_theme_file( $path );
+
+				return array(
+					'success' => true,
+					'path'    => $path,
+					'before'  => isset( $file['contents'] ) && null !== $file['contents'] ? (string) $file['contents'] : null,
+					'after'   => $current,
+				);
+			}
+		}
+
+		return new WP_Error( 'wpab_tw_no_change', 'That change is no longer in the history.', array( 'status' => 404 ) );
+	}
+
+	/** Current contents of one theme file, or null when it is not there. */
+	private static function read_theme_file( string $rel ): ?string {
+		$rel = self::clean_relative_path( $rel );
+
+		if ( is_wp_error( $rel ) ) {
+			return null;
+		}
+
+		$abs = trailingslashit( wp_normalize_path( get_stylesheet_directory() ) ) . $rel;
+
+		if ( ! file_exists( $abs ) ) {
+			return null;
+		}
+
+		$contents = @file_get_contents( $abs ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+		return false === $contents ? null : (string) $contents;
+	}
+
+	/**
+	 * Put the theme back to how it was before one recorded edit.
+	 *
+	 * The restore is itself recorded, so going back is reversible: someone who
+	 * undoes three edits and changes their mind has not lost anything.
+	 *
+	 * @return array|WP_Error
+	 */
+	public static function restore( string $id ) {
+		$store = self::history_store();
+		$found = null;
+
+		foreach ( $store['entries'] as $entry ) {
+			if ( isset( $entry['id'] ) && (string) $entry['id'] === $id ) {
+				$found = $entry;
+				break;
+			}
+		}
+
+		if ( ! $found ) {
+			return new WP_Error( 'wpab_tw_no_change', 'That change is no longer in the history.', array( 'status' => 404 ) );
+		}
+
+		$dir = trailingslashit( wp_normalize_path( get_stylesheet_directory() ) );
+		$fs  = self::fs();
+
+		if ( ! $fs ) {
+			return new WP_Error( 'wpab_tw_fs', 'WordPress could not get filesystem access.', array( 'status' => 500 ) );
+		}
+
+		$inverse  = array();
+		$written  = array();
+		$restored = 0;
+
+		foreach ( $found['files'] as $file ) {
+			if ( ! is_array( $file ) || ! isset( $file['path'] ) ) {
+				continue;
+			}
+
+			$rel = self::clean_relative_path( (string) $file['path'] );
+
+			if ( is_wp_error( $rel ) ) {
+				continue;
+			}
+
+			$abs     = $dir . $rel;
+			$current = self::read_theme_file( $rel );
+
+			// Whatever we are about to overwrite becomes the way back.
+			$inverse[] = array(
+				'path'     => $rel,
+				'contents' => $current,
+				'created'  => null === $current,
+			);
+
+			if ( ! empty( $file['created'] ) ) {
+				if ( file_exists( $abs ) && $fs->delete( $abs ) ) {
+					$restored++;
+				}
+				continue;
+			}
+
+			if ( ! isset( $file['contents'] ) || null === $file['contents'] ) {
+				continue;
+			}
+
+			if ( $fs->put_contents( $abs, (string) $file['contents'], FS_CHMOD_FILE ) ) {
+				$written[ $rel ] = (string) $file['contents'];
+				$restored++;
+			}
+		}
+
+		if ( 0 === $restored ) {
+			return new WP_Error( 'wpab_tw_restore_failed', 'Nothing could be restored.', array( 'status' => 500 ) );
+		}
+
+		self::record_history( $inverse, 'Restored: ' . ( isset( $found['summary'] ) ? (string) $found['summary'] : 'an earlier edit' ) );
+
+		if ( $written ) {
+			self::record_hashes( get_stylesheet(), $written );
+		}
+
+		wp_clean_themes_cache();
+
+		return array( 'success' => true, 'restored' => $restored );
+	}
+
 	/** Restore the files changed by the most recent update(). One level deep. */
 	public static function undo() {
+		// Undo is now just "restore the newest entry". The single-slot option
+		// below is only still read so an undo queued before this release still
+		// works; nothing writes to it any more except update(), for the same
+		// reason.
+		$entries = self::history_store()['entries'];
+
+		if ( ! empty( $entries ) && isset( $entries[0]['id'] ) ) {
+			return self::restore( (string) $entries[0]['id'] );
+		}
+
 		$undo = get_option( self::UNDO_OPTION, array() );
 
 		if ( ! is_array( $undo ) || empty( $undo['files'] ) ) {
