@@ -11,13 +11,17 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.30.0",
+  version: "1.31.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-31",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.31.0</h4><ul>" +
+    "<li>Every edit is now checked afterwards, and anything the check finds is shown with the Undo button instead of left for you to spot on the page.</li>" +
+    "<li>Chat answers can no longer be lost to a host that cuts long requests: the work runs in the background and the editor collects the answer when it is ready.</li>" +
+    "</ul>" +
     "<h4>1.30.0</h4><ul>" +
     "<li>A new Changes view in the AI Editor lists what was edited and when, shows the exact lines that moved in each file, and puts any of it back — not just the last edit.</li>" +
     "<li>Restoring is itself recorded, so changing your mind about an undo costs nothing.</li>" +

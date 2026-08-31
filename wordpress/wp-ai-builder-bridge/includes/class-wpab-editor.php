@@ -155,6 +155,17 @@ final class WPAB_Editor {
 				'permission_callback' => $permission,
 			)
 		);
+		// Chat as a background job, for hosts whose proxy ends a request before
+		// a considered answer is ready.
+		register_rest_route(
+			self::NAMESPACE,
+			'/editor/chat/start',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_chat_start' ),
+				'permission_callback' => $permission,
+			)
+		);
 		register_rest_route(
 			self::NAMESPACE,
 			'/editor/chat/history',
@@ -1683,7 +1694,16 @@ final class WPAB_Editor {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
-	public static function rest_chat( WP_REST_Request $request ) {
+	/**
+	 * Everything a chat turn sends to the SaaS.
+	 *
+	 * Shared by the inline and the job path so the two cannot send different
+	 * things — which, given one carries the whole theme and the site's content,
+	 * would be a difference nobody would notice until an answer was wrong.
+	 *
+	 * @return array|WP_Error
+	 */
+	private static function chat_payload( WP_REST_Request $request ) {
 		$params  = self::json_params( $request );
 		$message = isset( $params['message'] ) ? trim( (string) $params['message'] ) : '';
 
@@ -1724,11 +1744,42 @@ final class WPAB_Editor {
 		$body = WPAB_Files::attach_snapshot( $body );
 		$body = WPAB_Content::attach_snapshot( $body );
 
+		return $body;
+	}
+
+	public static function rest_chat( WP_REST_Request $request ) {
+		$body = self::chat_payload( $request );
+
+		if ( is_wp_error( $body ) ) {
+			return $body;
+		}
+
 		// 180, not 60: the route is allowed 300 seconds and a question that needs
 		// real inspection takes more than a minute. At 60 WordPress hung up while
 		// Vercel was still working, so the user saw a network error and the answer
 		// they had already paid for was thrown away.
 		$result = WPAB_Cloud::request( 'agent/chat', $body, 180 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/**
+	 * POST /editor/chat/start — the same turn, started as a job.
+	 *
+	 * Returns a job id in a second or two; the editor polls for the answer.
+	 * Nothing stays open long enough for a hosting proxy to cut it, which is
+	 * the one failure raising the timeout cannot fix.
+	 */
+	public static function rest_chat_start( WP_REST_Request $request ) {
+		$body = self::chat_payload( $request );
+
+		if ( is_wp_error( $body ) ) {
+			return $body;
+		}
+
+		$body['async'] = true;
+
+		$result = WPAB_Cloud::request( 'agent/chat', $body, 30 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -1862,6 +1913,7 @@ final class WPAB_Editor {
 			'restSession'     => esc_url_raw( rest_url( self::NAMESPACE . '/cloud/session' ) ),
 			'restChat'        => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat' ) ),
 			'restChatHistory' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat/history' ) ),
+			'restChatStart'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/chat/start' ) ),
 			'restStructure'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/theme-structure' ) ),
 			'restThemeFile'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/theme-file' ) ),
 			'restHistory'     => esc_url_raw( rest_url( self::NAMESPACE . '/editor/history' ) ),
@@ -2167,6 +2219,7 @@ final class WPAB_Editor {
 			.wpab-ed__undo:hover:not(:disabled) { border-color: var(--ed-accent); color: var(--ed-accent); }
 			.wpab-ed__undo:disabled { opacity: .55; cursor: default; }
 			.wpab-ed__editdone { font-weight: 600; color: var(--ed-text); }
+			.wpab-ed__editnote { margin-top: 7px; padding: 7px 10px; border-radius: 8px; background: #fdf3e7; border: 1px solid #f0dcc0; color: #8a5a1c; font-size: 12.5px; line-height: 1.5; }
 			.wpab-ed__selrow[hidden] { display: none !important; }
 			.wpab-ed__selrow { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; animation: wpabmsgin .5s ease; }
 			.wpab-ed__seltag { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; background: rgba(20,19,18,.06); border: 1px solid rgba(20,19,18,.12); border-radius: 9px; padding: 5px 10px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #141312; }
@@ -2912,7 +2965,7 @@ final class WPAB_Editor {
 				setTimeout(function () { frameBusy(false); }, 8000);
 				try { fr.contentWindow.location.reload(); } catch (e) { fr.src = fr.src; }
 			}
-			function addUndoMessage(summary, files, inspected) {
+			function addUndoMessage(summary, files, inspected, notes) {
 				var wrap = addMessage('assistant', '');
 				var mbody = wrap.querySelector('.wpab-msg__body');
 				if (!mbody) { return; }
@@ -2920,6 +2973,16 @@ final class WPAB_Editor {
 				head.className = 'wpab-ed__editdone';
 				head.textContent = '✓ ' + (summary || 'Theme updated.');
 				mbody.appendChild(head);
+				// Anything the edit could not do, or that the check afterwards
+				// spotted. Shown with the Undo button rather than left for the
+				// user to find on the page.
+				(notes || []).forEach(function (note) {
+					if (!note) { return; }
+					var warn = document.createElement('div');
+					warn.className = 'wpab-ed__editnote';
+					warn.textContent = note;
+					mbody.appendChild(warn);
+				});
 				if (files && files.length) {
 					var chips = document.createElement('div');
 					chips.className = 'wpab-ed__chips2';
@@ -3019,7 +3082,7 @@ final class WPAB_Editor {
 					function finishOk(data) {
 						clearInterval(ticker);
 						typing.remove();
-						addUndoMessage(data.summary, data.files, data.inspected);
+						addUndoMessage(data.summary, data.files, data.inspected, data.notes);
 						reloadPreview();
 					}
 					function finishErr(msg) {
@@ -3054,7 +3117,13 @@ final class WPAB_Editor {
 									frameBusy(true, 'Applying the change\u2026');
 									return api('POST', cfg.restEditApply, { files: r.files || [], summary: r.summary || '', inspected: r.inspected || [] }).then(function (aOut) {
 										if (!aOut.ok || !aOut.data || aOut.data.success === false) { finishErr((aOut.data && (aOut.data.message || aOut.data.error)) || 'Could not apply the change.'); return; }
-										finishOk(aOut.data);
+										// The apply response knows what was written; the job
+										// result knows what the check found and what an anchor
+										// could not do. The user needs both.
+										var merged = {};
+										for (var k in aOut.data) { if (Object.prototype.hasOwnProperty.call(aOut.data, k)) { merged[k] = aOut.data[k]; } }
+										merged.notes = (r.notes || []).concat(r.review ? [r.review] : []);
+										finishOk(merged);
 									});
 								}
 								if (d.status === 'error') { finishErr(d.error || 'The edit failed.'); return; }
@@ -3072,6 +3141,39 @@ final class WPAB_Editor {
 				});
 			}
 
+			/* One chat turn, taken the safest way this site allows.
+			   The job path is tried first: it hands back an id in a second or
+			   two and nothing stays open, so a host that cuts long requests has
+			   nothing to cut. Anything unexpected — an older SaaS with no such
+			   route, a missing job id — falls straight back to the inline call
+			   that has always worked. */
+			function chatRequest(body) {
+				if (!cfg.restChatStart || !cfg.restBuildJob) {
+					return api('POST', cfg.restChat, body);
+				}
+				return api('POST', cfg.restChatStart, body).then(function (sOut) {
+					var jobId = sOut.ok && sOut.data && sOut.data.jobId;
+					if (!jobId) { return api('POST', cfg.restChat, body); }
+					var startedAt = Date.now();
+					function poll() {
+						if (Date.now() - startedAt > 330000) {
+							return { ok: false, status: 504, data: { error: 'The answer took too long. Try a narrower question.' } };
+						}
+						return new Promise(function (res) { setTimeout(res, 2500); }).then(function () {
+							return api('POST', cfg.restBuildJob, { jobId: jobId });
+						}).then(function (jOut) {
+							var d = (jOut && jOut.data) || {};
+							if (d.status === 'done' && d.result) { return { ok: true, status: 200, data: d.result }; }
+							if (d.status === 'error') { return { ok: false, status: 502, data: { error: d.error || 'The answer failed.' } }; }
+							if (!jOut.ok && jOut.status !== 200) { return jOut; }
+							return poll();
+						});
+					}
+					return poll();
+				}).catch(function () {
+					return api('POST', cfg.restChat, body);
+				});
+			}
 			function sendChat(message, displayText, sel, image) {
 				addMessage('user', displayText || message, sel || null, image || null);
 				setBusy(true);
@@ -3079,7 +3181,7 @@ final class WPAB_Editor {
 				var body = { message: message };
 				if (image) { body.image = image; }
 				if (conversationId) { body.conversationId = conversationId; }
-				api('POST', cfg.restChat, body).then(function (out) {
+				chatRequest(body).then(function (out) {
 					typing.remove();
 					if (!out.ok || !out.data || out.data.success === false) {
 						frameBusy(false);

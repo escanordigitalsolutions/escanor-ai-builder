@@ -12,6 +12,7 @@ import {
   mergeEditedFiles,
   parseEditOutput,
 } from "@/lib/agent/edit-output";
+import { reviewEdit } from "@/lib/agent/review-edit";
 import {
   createProjectFileReader,
   parseProjectSnapshot,
@@ -376,6 +377,16 @@ export async function POST(request: NextRequest) {
         return;
       }
 
+      // A second pair of eyes, on the cheap tier, over only what changed. It
+      // runs before the job is marked done so the answer arrives with the Undo
+      // button rather than after the user has already looked at the page.
+      await setProgress("Checking the change…");
+      const review = await reviewEdit({
+        modelConfig,
+        instruction,
+        files: changedFiles,
+      });
+
       await db
         .from("ai_jobs")
         .update({
@@ -384,6 +395,7 @@ export async function POST(request: NextRequest) {
             success: true,
             summary: parsed.summary,
             files: changedFiles,
+            review: review.ok ? null : review.note,
             // An anchor that missed while others landed is worth saying out
             // loud: part of the request did not happen.
             notes: anchorResult.errors.slice(0, 6),

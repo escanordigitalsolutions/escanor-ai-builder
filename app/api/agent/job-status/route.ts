@@ -33,6 +33,9 @@ import { refundJobUsage } from "@/lib/billing/credits";
  */
 const DEAD_AFTER_MS: Record<string, number> = {
   mockup: 840_000,
+  // A chat turn is capped by the route's own maxDuration of 300s; a little
+  // beyond that and it is not coming back.
+  chat: 360_000,
 };
 
 const DEAD_AFTER_DEFAULT_MS = 330_000;
