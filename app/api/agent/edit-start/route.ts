@@ -7,7 +7,10 @@ import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
 import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
 import { recordUsage } from "@/lib/ai/usage";
-import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
+import {
+  createProjectFileReader,
+  parseProjectSnapshot,
+} from "@/lib/wordpress/project-files";
 
 export const maxDuration = 300;
 
@@ -162,6 +165,16 @@ export async function POST(request: NextRequest) {
 
   const bridgeToken = decryptSecret(site.bridge_token_encrypted);
   const siteUrl = site.site_url;
+
+  // The theme the plugin sent with this request. When it is there the agent
+  // never calls back into the site, which is the whole point: most WordPress
+  // installs are not reachable from Vercel.
+  const projectFiles = createProjectFileReader({
+    snapshot: parseProjectSnapshot((body as { project?: unknown }).project),
+    siteUrl,
+    token: bridgeToken,
+  });
+
   const modelConfig = (project as { model_config?: unknown }).model_config;
   const projectId = context.projectId;
 
@@ -198,7 +211,7 @@ export async function POST(request: NextRequest) {
       await setProgress("Reading the theme structure…");
       let structureBlock = "";
       try {
-        const structure = await listProjectFiles(siteUrl, bridgeToken, "theme");
+        const structure = await projectFiles.list("theme");
         structureBlock = `\n\nTheme structure (current, read-only):\n${JSON.stringify(structure)}`;
       } catch {
         structureBlock = "";
@@ -243,7 +256,7 @@ export async function POST(request: NextRequest) {
         handler: async (name, args) => {
           try {
             if (name === "list_project_files") {
-              return await listProjectFiles(siteUrl, bridgeToken, "theme");
+              return await projectFiles.list("theme");
             }
             if (name === "read_project_files") {
               const paths = validatePaths(args.paths);
@@ -251,7 +264,7 @@ export async function POST(request: NextRequest) {
                 if (!inspected.includes(pth)) inspected.push(pth);
               }
               void setProgress(`Reading ${paths.length} file${paths.length === 1 ? "" : "s"}…`);
-              return await readProjectFiles(siteUrl, bridgeToken, "theme", paths);
+              return await projectFiles.read("theme", paths);
             }
             return { error: `Unknown tool: ${name}` };
           } catch (e) {

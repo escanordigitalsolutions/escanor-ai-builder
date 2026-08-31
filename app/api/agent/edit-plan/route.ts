@@ -6,7 +6,10 @@ import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
 import { generateText } from "@/lib/ai/provider";
 import { logUsage } from "@/lib/ai/usage";
-import { listProjectFiles } from "@/lib/wordpress/bridge";
+import {
+  createProjectFileReader,
+  parseProjectSnapshot,
+} from "@/lib/wordpress/project-files";
 
 export const maxDuration = 120;
 
@@ -133,11 +136,11 @@ export async function POST(request: NextRequest) {
 
   let structure: unknown = null;
   try {
-    structure = await listProjectFiles(
-      site.site_url,
-      decryptSecret(site.bridge_token_encrypted),
-      "theme"
-    );
+    structure = await createProjectFileReader({
+      snapshot: parseProjectSnapshot((body as { project?: unknown }).project),
+      siteUrl: site.site_url,
+      token: decryptSecret(site.bridge_token_encrypted),
+    }).list("theme");
   } catch {
     structure = null;
   }

@@ -489,6 +489,8 @@ final class WPAB_Editor {
 		if ( isset( $params['selected'] ) && is_string( $params['selected'] ) ) {
 			$edit_payload['selected'] = substr( $params['selected'], 0, 600 );
 		}
+		$edit_payload = WPAB_Files::attach_snapshot( $edit_payload );
+
 		$result = WPAB_Cloud::request( 'agent/edit-theme', $edit_payload, 180 );
 
 		if ( is_wp_error( $result ) ) {
@@ -556,6 +558,8 @@ final class WPAB_Editor {
 			$payload['focus'] = substr( $focus, 0, 500 );
 		}
 
+		$payload = WPAB_Files::attach_snapshot( $payload );
+
 		$result = WPAB_Cloud::request( 'agent/review-theme', $payload, 180 );
 
 		if ( is_wp_error( $result ) ) {
@@ -615,6 +619,8 @@ final class WPAB_Editor {
 		} elseif ( isset( $params['blueprint'] ) && is_array( $params['blueprint'] ) ) {
 			$payload['blueprint'] = $params['blueprint'];
 		}
+
+		$payload = WPAB_Files::attach_snapshot( $payload );
 
 		$result = WPAB_Cloud::request( 'agent/design-plan', $payload, 120 );
 
@@ -1018,6 +1024,8 @@ final class WPAB_Editor {
 		if ( isset( $params['selected'] ) && is_string( $params['selected'] ) ) {
 			$payload['selected'] = substr( $params['selected'], 0, 600 );
 		}
+		$payload = WPAB_Files::attach_snapshot( $payload );
+
 		$result = WPAB_Cloud::request( 'agent/edit-start', $payload, 30 );
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -1509,6 +1517,8 @@ final class WPAB_Editor {
 		if ( isset( $params['selected'] ) && is_string( $params['selected'] ) ) {
 			$plan_payload['selected'] = substr( $params['selected'], 0, 600 );
 		}
+		$plan_payload = WPAB_Files::attach_snapshot( $plan_payload );
+
 		$result = WPAB_Cloud::request( 'agent/edit-plan', $plan_payload, 90 );
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -1569,6 +1579,9 @@ final class WPAB_Editor {
 		if ( '' !== $conversation_id ) {
 			$body['conversationId'] = $conversation_id;
 		}
+
+		// The chat reads the theme from what we send, not by being called back.
+		$body = WPAB_Files::attach_snapshot( $body );
 
 		$result = WPAB_Cloud::request( 'agent/chat', $body, 60 );
 

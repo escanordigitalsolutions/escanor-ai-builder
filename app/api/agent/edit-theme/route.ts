@@ -6,7 +6,10 @@ import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
 import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
 import { logUsage } from "@/lib/ai/usage";
-import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
+import {
+  createProjectFileReader,
+  parseProjectSnapshot,
+} from "@/lib/wordpress/project-files";
 
 // Model calls can run long; don't let Vercel's plan-default duration kill the
 // function mid-generation.
@@ -186,13 +189,23 @@ export async function POST(request: NextRequest) {
   const bridgeToken = decryptSecret(site.bridge_token_encrypted);
   const siteUrl = site.site_url;
 
+  // The theme the plugin sent with this request. When it is there the agent
+  // never calls back into the site, which is the whole point: most WordPress
+  // installs are not reachable from Vercel.
+  const projectFiles = createProjectFileReader({
+    snapshot: parseProjectSnapshot((body as { project?: unknown }).project),
+    siteUrl,
+    token: bridgeToken,
+  });
+
+
   const editModel = pickModel((project as { model_config?: unknown }).model_config, "edit");
   try {
     // Always hand the model the real theme structure up front — it never
     // guesses paths and saves a tool round.
     let structureBlock = "";
     try {
-      const structure = await listProjectFiles(siteUrl, bridgeToken, "theme");
+      const structure = await projectFiles.list("theme");
       structureBlock = `\n\nTheme structure (current, read-only):\n${JSON.stringify(structure)}`;
     } catch {
       structureBlock = "";
@@ -230,14 +243,14 @@ export async function POST(request: NextRequest) {
       handler: async (name, args) => {
         try {
           if (name === "list_project_files") {
-            return await listProjectFiles(siteUrl, bridgeToken, "theme");
+            return await projectFiles.list("theme");
           }
           if (name === "read_project_files") {
             const paths = validatePaths(args.paths);
             for (const pth of paths) {
               if (!inspected.includes(pth)) inspected.push(pth);
             }
-            return await readProjectFiles(siteUrl, bridgeToken, "theme", paths);
+            return await projectFiles.read("theme", paths);
           }
           return { error: `Unknown tool: ${name}` };
         } catch (e) {

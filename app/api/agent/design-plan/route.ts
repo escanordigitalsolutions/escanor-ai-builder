@@ -5,7 +5,10 @@ import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { decryptSecret } from "@/lib/security/encryption";
 import { pickModel } from "@/lib/ai/resolve";
 import { runToolLoop, type ToolDef } from "@/lib/ai/toolloop";
-import { listProjectFiles, readProjectFiles } from "@/lib/wordpress/bridge";
+import {
+  createProjectFileReader,
+  parseProjectSnapshot,
+} from "@/lib/wordpress/project-files";
 
 // Model calls can run long; don't let Vercel's plan-default duration kill the
 // function mid-generation.
@@ -141,6 +144,16 @@ export async function POST(request: NextRequest) {
   const bridgeToken = decryptSecret(site.bridge_token_encrypted);
   const siteUrl = site.site_url;
 
+  // The theme the plugin sent with this request. When it is there the agent
+  // never calls back into the site, which is the whole point: most WordPress
+  // installs are not reachable from Vercel.
+  const projectFiles = createProjectFileReader({
+    snapshot: parseProjectSnapshot((body as { project?: unknown }).project),
+    siteUrl,
+    token: bridgeToken,
+  });
+
+
   const input = concept
     ? `The theme's intended design concept:\n${JSON.stringify(concept)}\n\nReview the active theme and return the highest-impact design elevations.`
     : `Review the active theme (infer its intended concept from the code) and return the highest-impact design elevations.`;
@@ -156,10 +169,10 @@ export async function POST(request: NextRequest) {
       handler: async (name, args) => {
         try {
           if (name === "list_project_files") {
-            return await listProjectFiles(siteUrl, bridgeToken, "theme");
+            return await projectFiles.list("theme");
           }
           if (name === "read_project_files") {
-            return await readProjectFiles(siteUrl, bridgeToken, "theme", validatePaths(args.paths));
+            return await projectFiles.read("theme", validatePaths(args.paths));
           }
           return { error: `Unknown tool: ${name}` };
         } catch (e) {

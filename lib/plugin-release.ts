@@ -11,13 +11,16 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.23.1",
+  version: "1.24.0",
   file: "/plugin/meikero-bridge.zip",
-  released: "2026-08-30",
+  released: "2026-08-31",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.24.0</h4><ul>" +
+    "<li>The AI Editor no longer needs your site to be reachable from the internet. Chat and edits used to fail with a connection error on sites behind Cloudflare, HTTP auth or a firewall; the plugin now sends the theme with each request instead of waiting to be called back.</li>" +
+    "</ul>" +
     "<h4>1.23.1</h4><ul>" +
     "<li>Archived designs preview in full again — they were painting a header over an empty page.</li>" +
     "<li>Building from a saved design now opens the wizard and shows its progress instead of leaving you on a blank screen.</li>" +

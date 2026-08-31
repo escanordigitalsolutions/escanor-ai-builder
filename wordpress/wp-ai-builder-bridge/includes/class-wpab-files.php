@@ -18,6 +18,24 @@ final class WPAB_Files {
 	public const MAX_DEPTH      = 9;
 	public const MAX_READ_BYTES = 1000000;
 
+	/**
+	 * Snapshot limits.
+	 *
+	 * A snapshot travels inside every AI Editor request, so it is bounded far
+	 * more tightly than a walk. These numbers mirror SNAPSHOT_LIMITS on the
+	 * SaaS side; raising one without raising the other means the SaaS silently
+	 * drops files and falls back to calling this site over HTTP, which is the
+	 * exact failure the snapshot exists to remove.
+	 *
+	 * The total is what it is because of the ceiling above it: the SaaS runs on
+	 * Vercel, which rejects a request body over 4.5 MB, and a chat message may
+	 * also carry a 3 MB screenshot. 800 KB of theme survives JSON escaping with
+	 * room to spare, and a generated theme is a fraction of that.
+	 */
+	public const SNAPSHOT_MAX_FILES       = 400;
+	public const SNAPSHOT_MAX_FILE_BYTES  = 200000;
+	public const SNAPSHOT_MAX_TOTAL_BYTES = 800000;
+
 	/* ---------------------------------------------------------------------
 	 * Walking
 	 * ------------------------------------------------------------------ */
@@ -144,6 +162,116 @@ final class WPAB_Files {
 			'truncated' => $truncated,
 			'skipped'   => $skipped,
 		);
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Snapshot — the theme, sent WITH the request
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * The whole readable theme as path => content.
+	 *
+	 * The bridge was designed as a pull: the SaaS called back here over HTTP
+	 * whenever the agent wanted a file. That needs this site to be reachable
+	 * from the internet inside ten seconds, and most WordPress installs are
+	 * not — behind Cloudflare, behind HTTP auth, on a host that blocks
+	 * datacentre traffic, or just slow. Theme generation never noticed because
+	 * it only ever pushes. Chat and edits died on the pull.
+	 *
+	 * So we send the theme instead of waiting to be asked for it. Reading it is
+	 * local and costs milliseconds; the site no longer has to be reachable at
+	 * all for the AI Editor to work.
+	 *
+	 * Never returns a WP_Error: a snapshot that cannot be built is simply an
+	 * empty one, and the SaaS falls back to the old pull.
+	 */
+	public static function snapshot( string $scope = 'theme' ): array {
+		$out = array(
+			'scope'     => $scope,
+			'files'     => array(),
+			'truncated' => false,
+			'skipped'   => 0,
+		);
+
+		$root = WPAB_Scopes::root( $scope );
+		$walk = is_wp_error( $root ) ? $root : self::walk( $scope, false );
+
+		if ( is_wp_error( $root ) || is_wp_error( $walk ) ) {
+			$out['truncated'] = true;
+
+			return $out;
+		}
+
+		$out['truncated'] = ! empty( $walk['truncated'] );
+		$out['skipped']   = (int) $walk['skipped'];
+
+		$total = 0;
+
+		foreach ( $walk['files'] as $file ) {
+			if ( count( $out['files'] ) >= self::SNAPSHOT_MAX_FILES ) {
+				$out['truncated'] = true;
+				break;
+			}
+
+			if ( $file['bytes'] > self::SNAPSHOT_MAX_FILE_BYTES ) {
+				$out['truncated'] = true;
+				++$out['skipped'];
+				continue;
+			}
+
+			if ( $total + $file['bytes'] > self::SNAPSHOT_MAX_TOTAL_BYTES ) {
+				$out['truncated'] = true;
+				break;
+			}
+
+			$content = @file_get_contents( $root . $file['path'] );
+
+			if ( false === $content || ! self::is_sendable_text( $content ) ) {
+				// One unreadable or non-UTF-8 file must not take the request
+				// down with it: wp_json_encode() fails on the whole payload if
+				// any string in it is invalid UTF-8.
+				//
+				// Deliberately NOT truncated: the SaaS reads that flag as "ask
+				// the site for anything missing", and a file that is not valid
+				// UTF-8 is no more readable over HTTP than it is here. Marking
+				// it would buy nothing and cost a ten-second timeout on every
+				// miss. A file dropped for SIZE above is different — the bridge
+				// serves those, so that path does set the flag.
+				++$out['skipped'];
+				continue;
+			}
+
+			$out['files'][ $file['path'] ] = $content;
+			$total                        += $file['bytes'];
+		}
+
+		return $out;
+	}
+
+	/** Text that survives JSON encoding: no NUL bytes, valid UTF-8. */
+	private static function is_sendable_text( string $content ): bool {
+		if ( false !== strpos( $content, "\0" ) ) {
+			return false;
+		}
+
+		return '' === $content || 1 === preg_match( '//u', $content );
+	}
+
+	/**
+	 * Add the theme snapshot to an outbound SaaS payload.
+	 *
+	 * Attached only when there is something to send — an empty snapshot would
+	 * JSON-encode as [] rather than {}, and the SaaS would reject it and fall
+	 * back to the pull anyway.
+	 */
+	public static function attach_snapshot( array $payload, string $scope = 'theme' ): array {
+		$snapshot = self::snapshot( $scope );
+
+		if ( ! empty( $snapshot['files'] ) ) {
+			$payload['project'] = $snapshot;
+		}
+
+		return $payload;
 	}
 
 	/**

@@ -12,13 +12,15 @@ import { logUsage } from "@/lib/ai/usage";
 export const maxDuration = 300;
 
 import {
-  listProjectFiles,
-  readProjectFiles,
   listSiteContentTypes,
   listSiteContent,
   getSiteContentItem,
   type ProjectScope,
 } from "@/lib/wordpress/bridge";
+import {
+  createProjectFileReader,
+  parseProjectSnapshot,
+} from "@/lib/wordpress/project-files";
 
 /**
  * WordPress -> SaaS chat (v3A).
@@ -365,6 +367,15 @@ export async function POST(request: NextRequest) {
 
     const bridgeToken = decryptSecret(site.bridge_token_encrypted);
 
+    // The theme the plugin sent with this message. With it the chat reads the
+    // theme without ever calling back into the site — the content tools below
+    // still need the site, because only it holds the pages and posts.
+    const projectFiles = createProjectFileReader({
+      snapshot: parseProjectSnapshot((body as { project?: unknown }).project),
+      siteUrl: site.site_url,
+      token: bridgeToken,
+    });
+
     // The site reports its ACTIVE theme with every message — the stored
     // theme_name is only a connection-time snapshot and goes stale the moment
     // a new theme is generated. Trust the live value and refresh the record.
@@ -446,14 +457,14 @@ Never guess project details. Read relevant files before making code-specific cla
           const scope = validateScope(args.scope);
           activity.push({ tool: name, scope });
           await writeStep(`Listing ${scope} files…`);
-          return listProjectFiles(site.site_url, bridgeToken, scope);
+          return projectFiles.list(scope);
         }
         if (name === "read_project_files") {
           const scope = validateScope(args.scope);
           const paths = validatePaths(args.paths);
           activity.push({ tool: name, scope, paths });
           await writeStep(`Reading ${scope}: ${paths.slice(0, 4).join(", ")}`);
-          return readProjectFiles(site.site_url, bridgeToken, scope, paths);
+          return projectFiles.read(scope, paths);
         }
         if (name === "list_content_types") {
           activity.push({ tool: name });
