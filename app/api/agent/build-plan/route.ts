@@ -22,11 +22,23 @@ export const maxDuration = 300;
 
 const INSTRUCTIONS = `Plan a classic PHP WordPress theme from the brief.
 
-Decide the theme name (brief.name if given), 3-5 pages, the sections each page uses (5-8 unique sections total, reused across pages), a simple color palette and a Google Fonts pairing (a valid https://fonts.googleapis.com/css2 URL with display=swap).
+Decide the theme name (brief.name if given), the pages, the sections they are built from, the templates the theme needs, a colour palette and a Google Fonts pairing (a valid https://fonts.googleapis.com/css2 URL with display=swap).
 
-Each section's "copy" is the brief for what that section SAYS, and it has to be countable: how many items it holds and what each item carries. "Three service blocks, each a short title and 30-50 words on the problem it solves" is a brief. "Explain the services" is not — it comes back as three labels, and a section of labels is an unfinished page whatever it looks like. Say the count and say the substance.
+SCOPE — plan the site this business would really have
 
-Nobody may invent a statistic, a client name or a testimonial. If the brief supplies none, plan sections that carry the business's own thinking — its method, its point of view, what it will not do — rather than sections shaped around numbers that will arrive empty.
+- 5 to 8 pages. A one-line brief is the normal case, not a reason to plan three pages: work out what this kind of business needs a visitor to be able to read, and plan those pages. For most businesses that means a home page, what they do, how they work, who they are, something that answers objections, and a way to get in touch.
+- 8 to 14 unique sections, reused across pages. A section used on one page only is usually a page that needed its own idea; a section used on four pages is the theme earning its keep.
+- The templates WordPress needs to render the site: front-page, a general page, any page-<slug> that genuinely differs, single, archive, search and 404.
+
+GLOBAL PARAMETERS — this is what keeps it one site
+
+Every page, section and template draws from the same set: one palette, one type pairing, one spacing rhythm, one radius, one button treatment, one card treatment, one section-heading treatment. Name them once here; nothing invents its own. A theme where the services page has its own heading style and the about page has another is five designs sharing a menu.
+
+CONTENT — the theme arrives populated
+
+Each section's "copy" is the brief for what that section SAYS, and it has to be countable: how many items it holds and what each one carries. "Three service blocks, each a short title and 30-50 words on the problem it solves" is a brief. "Explain the services" is not — it comes back as three labels.
+
+Write for a site that goes live tomorrow. Where the brief gives no specifics, invent them: figures, timeframes, plan names, prices, example projects, questions customers ask, a quote attributed to a role. Keep them plausible and consistent across the theme. The owner will replace what is not true of their business, and editing a real sentence is easier than filling an empty box. Two exceptions, because editing does not make them true: no real company names or logos, and no quote attributed to a named individual.
 
 Reply with ONLY this JSON — first character {, last }:
 {
@@ -34,7 +46,8 @@ Reply with ONLY this JSON — first character {, last }:
   "design": {
     "palette": { "bg": hex, "surface": hex, "fg": hex, "muted": hex, "border": hex, "accent": hex },
     "fonts": { "heading": string, "body": string, "googleUrl": string },
-    "radius": string, "dark": boolean
+    "radius": string, "dark": boolean,
+    "rhythm": string, "buttons": string, "cards": string, "headings": string
   },
   "menu": [ { "title": string, "slug": string } ],
   "frontPage": string,

@@ -468,6 +468,24 @@ final class WPAB_Editor {
 	}
 
 	/** Design archive: fetch one design's HTML for the wp-admin preview. */
+	/**
+	 * Which archived screen was asked for.
+	 *
+	 * This used to be `'inner' === $which ? 'inner' : 'home'`, written when a
+	 * design had exactly two screens. Four more arrived in 1.22 and the list was
+	 * never widened, so Components, Blog archive, 404 and Brand sheet all asked
+	 * the SaaS for the homepage and got it — the tab changed, the preview did
+	 * not. Anything unknown still falls back to the homepage; the SaaS applies
+	 * the same rule at its end.
+	 */
+	private const DESIGN_PAGES = array( 'home', 'inner', 'components', 'archive', 'notfound', 'brand' );
+
+	private static function design_page( $value ): string {
+		$raw = is_string( $value ) ? strtolower( trim( $value ) ) : '';
+
+		return in_array( $raw, self::DESIGN_PAGES, true ) ? $raw : 'home';
+	}
+
 	public static function rest_design_html( WP_REST_Request $request ) {
 		$params    = self::json_params( $request );
 		$design_id = isset( $params['designId'] ) ? trim( (string) $params['designId'] ) : '';
@@ -476,7 +494,7 @@ final class WPAB_Editor {
 			return new WP_Error( 'wpab_dhtml_bad', 'A designId is required.', array( 'status' => 400 ) );
 		}
 
-		$which = isset( $params['which'] ) && 'inner' === $params['which'] ? 'inner' : 'home';
+		$which = self::design_page( isset( $params['which'] ) ? $params['which'] : '' );
 
 		$result = WPAB_Cloud::request(
 			'agent/design-html',
@@ -3884,7 +3902,10 @@ final class WPAB_Editor {
 			var wBarFill = $('wpab-ed-wbarfill');
 			var wStepEl = $('wpab-ed-wstep');
 			var busy = false;
-			var MAX_FILES = 60;
+			// 90, not 60: the blueprint now plans 5-8 pages and 8-14 sections, and a
+			// section costs two files. At 60 a full plan would have been trimmed —
+			// silently, and from the end, which is exactly where the sections are.
+			var MAX_FILES = 90;
 
 			function val(id) { var e = $(id); return e ? (e.value || '').trim() : ''; }
 
@@ -4189,7 +4210,13 @@ final class WPAB_Editor {
 			function runPipeline(myRun, sig, brand, blueprint, prevBuilt, mockCtx) {
 				var files = (blueprint.files || []).filter(function (pp) { return typeof pp === 'string' && pp; });
 				if (!files.length) { throw new Error('The plan returned no files.'); }
-				if (files.length > MAX_FILES) { files = files.slice(0, MAX_FILES); }
+				if (files.length > MAX_FILES) {
+					// Say so. A theme quietly missing its last four sections looks like
+					// a generation that went wrong rather than a limit that was hit.
+					var dropped = files.length - MAX_FILES;
+					files = files.slice(0, MAX_FILES);
+					addMessage('assistant', 'This plan asked for ' + (MAX_FILES + dropped) + ' files, which is more than one build can write. Building the first ' + MAX_FILES + '; the last ' + dropped + ' were left out.');
+				}
 
 				// Real page copy for the inner pages, written IN PARALLEL with the
 				// build (cheap model) — stored as post_content when the pages are

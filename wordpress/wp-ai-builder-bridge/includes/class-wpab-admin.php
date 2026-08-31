@@ -471,7 +471,10 @@ final class WPAB_Admin {
 						// so the cache is keyed on both. Keying on the id alone would show
 						// whichever was fetched first for the rest of the session.
 						function fetchHtml(id, which) {
-							which = which === 'inner' ? 'inner' : 'home';
+							// Same fix as the editor's proxy: this list stopped at two
+							// screens while the design pipeline grew to six, so every
+							// other tab quietly rendered the homepage.
+							which = ['home','inner','components','archive','notfound','brand'].indexOf(which) === -1 ? 'home' : which;
 							var key = id + ':' + which;
 							if (cache[key]) { return Promise.resolve(cache[key]); }
 							return fetch(URL_HTML, {

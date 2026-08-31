@@ -68,7 +68,7 @@ Between 4 and 7 sections. For each, give a kebab-case slug, the job it does for 
 
 The content line is a brief for the writing, and it has to be countable. Not "explain the services": "four capability blocks, each a short title and 30-50 words naming a specific SaaS problem and how it is solved". Not "build trust": "three paragraphs of the agency's actual position on why onboarding fails, 40-60 words each". Say how many items, and what each item carries. A section whose content line cannot be counted will come back as labels.
 
-Do not plan a section whose shape needs facts this brief does not contain. Nobody may invent a statistic, a client name, a logo or a testimonial, so a shape built around three oversized figures, a logo strip or a quote card is a shape that will arrive empty. When the brief gives you no numbers and no clients, plan the section that carries the business's own thinking instead — its point of view, its method, what it refuses to do. That is always available and it is usually more persuasive than a number nobody can check.
+Plan the sections this business needs, not the sections its brief happens to describe. A one-line brief is the normal case; treat it as the starting point and design the site that business would actually have. If the page wants figures, a comparison table, a set of packages or a quote from a customer, plan them — the writer is expected to invent plausible specifics, so a shape is never off limits for lack of material. Only two things are: real company names or logos, and quotes attributed to a named person.
 
 No two adjacent sections may share a shape — if two would, change one. A page of identically shaped sections is a list, not a design.
 
@@ -178,17 +178,14 @@ WHAT MAKES THIS PAGE WORTH LOOKING AT
 - Sections differ STRUCTURALLY, not only in content. A page where every section is a centred heading above a grid is a list, not a design. Alternate: full-bleed against contained, asymmetric against symmetric, dense against empty, light ground against dark.
 - Type does the heavy lifting. Use the whole scale. One or two moments on the page are genuinely large — large enough that the size itself is noticed.
 - Whitespace is a decision, not a default. Sections do not need equal padding. A quiet section beside a loud one is what makes the loud one land. But emptiness is only restraint when there is something to be restrained about: a section with a heading, a label and nothing else is not quiet, it is unfinished.
-- Every word is real, specific to this business, and in the brief's language. No lorem. No "Your headline here". No "Elevate your business to the next level". No invented statistics, no fabricated client logos, and no testimonials attributed to invented named people — if the brief gives you none, design a section that does not need them.
 
-WHAT THE PAGE HAS TO SAY
+CONTENT
 
-The section plan tells you what each section says and how many pieces it holds. Follow it the way you follow the palette: it is decided.
+The page ships finished. Every section is fully written — headings, body copy, list items, labels, form fields, footer — as if the site went live tomorrow.
 
-- Write for someone deciding, not someone scanning. A visitor who reads one section and leaves should have learned something they could repeat to a colleague.
-- Every section carries at least one passage that could stand on its own — roughly 30 to 60 words of actual thinking, not a caption. A heading with a six-word subtitle under it is a placeholder wearing a design.
-- In a section of several items, each item is a real sentence about that item. "Interface clarity" is a label. "Onboarding that ends before the first useful action" is content.
-- Where the content genuinely is a list, write a list. A page of only headings and paragraphs is as monotonous as a page of only cards.
-- The exception is deliberate: a section can be one enormous line and nothing else, if that line is doing the work. Once per page, not four times.
+The brief will usually be a sentence or two. That is not a reason to write less; it is the reason to write. Invent whatever the page needs: figures, timeframes, example engagements, process detail, prices, opening hours, questions a customer actually asks, a quote attributed to a role ("Operations director, mid-market logistics"). Make it specific and make it consistent — a number in one section must not contradict one in another. This is a theme: the owner will replace what is not true of their business, and replacing a real sentence is easy while filling an empty box is not.
+
+Two things stay off limits, because they do not become true when the owner edits them: no real company names or logos, and no quotes attributed to a named individual. Invented roles and invented businesses are fine; a real person's name in a testimonial they never gave is not.
 - Detail is what separates finished from generated: the optical alignment of a heading against an image edge, a hover that reveals rather than merely darkens, a footer that was designed rather than dumped.
 
 BEFORE YOU OUTPUT, VERIFY
@@ -197,7 +194,7 @@ BEFORE YOU OUTPUT, VERIFY
 - Both Google Fonts families are linked AND used. Nothing falls back silently.
 - The signature move is in the markup.
 - Between 4 and 7 top-level sections, each a different structural shape.
-- Every section carries the content its plan asked for, at the count the plan gave. Read them back: if a section is a heading and two labels, it is not finished.
+- Every section carries the content its plan asked for, at the count the plan gave. Read it back as a visitor: nothing is a heading with an empty box under it.
 - Every interactive element has a designed hover AND focus-visible state.
 - No horizontal overflow at 320px, 768px or 1440px.
 - The page reads as one design, not five sections stapled together.
@@ -420,13 +417,20 @@ export async function critiqueMockup(
 // Stage 4 — one inner page, in the same design
 // ---------------------------------------------------------------------------
 
-const INNER_RULES = `Design ONE representative INNER PAGE (an About-style content page) for the same site, matching the approved homepage exactly — same tokens, typography, palette, spacing, motion and voice.
+const INNER_RULES = `Design the INNER PAGE TEMPLATE for a site whose homepage is already designed. Match it exactly — same tokens, typography, palette, spacing, motion and voice.
 
-You are given the homepage's design tokens, its Google Fonts links, its header and footer markup, and the class names its stylesheet already defines. Reuse those classes wherever they fit. The header and footer markup must be copied VERBATIM. Do not restyle anything the homepage already defines, and write only the additional rules this page needs.
+This is not one page. It is the shape every page that is not the homepage will take: About, Services, a single blog post, a legal page. It has to look right with any title and any length of body, because WordPress will pour real content through it. Design it as the site's inner pages should look, not as a bespoke page about one subject.
+
+Two parts do the work:
+
+- THE PAGE HERO. The title area every inner page opens with: the title, and whatever belongs beside it — an intro line, a breadcrumb, a date, a thin rule. Content-agnostic, so a two-word title and a nine-word title both look deliberate. This is the piece the theme reuses everywhere, so it carries the design.
+- THE CONTENT AREA. WordPress body typography, styled and demonstrated: h2, h3, paragraphs, an unordered and an ordered list, a blockquote with attribution, an inline link, an image with a caption. Write it as a real page of this business, fully — not three sentences to show the styling.
+
+You are given the homepage's design tokens, its Google Fonts links, its header and footer markup, and the class names its stylesheet already defines. Reuse those classes wherever they fit. The header and footer are copied VERBATIM. Do not restyle anything the homepage already defines; write only the rules this page adds.
 
 TECHNICAL CONTRACT (required by the automatic splitter):
 - ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim, nothing else inside), then <style data-part="inner"> containing ONLY the additional rules this page needs, written against the same custom properties.
-- <body>: the given header markup verbatim; then <section data-part="page-hero"> — the designed page-title area (title, optional intro line or breadcrumb) — reused on EVERY inner page, so keep it content-agnostic; then <article><div class="entry container"> demonstrating WordPress content typography (h2, h3, paragraphs, a list, a blockquote, a link — realistic on-brand copy); then ONE <section data-part="components"> block; then the given footer markup verbatim.
+- <body>: the given header markup verbatim; then <section data-part="page-hero">; then <article><div class="entry container"> with the content; then the given footer markup verbatim. Nothing else — no extra marketing sections, no component showcase. An inner page that ends in a call-to-action band is a landing page, not a template.
 - Hover and focus states and the [data-reveal] pattern follow the homepage. One tiny vanilla script only if the homepage has one.
 - No new Google Fonts, no new colour literals, no <img> unless its url already appears in the given markup. No horizontal overflow.
 
@@ -566,7 +570,7 @@ RULES
 - Reuse the existing classes wherever one already fits. Invent a class only when nothing does.
 - Every colour, size, space and radius goes through the design's custom properties. No new hex values, no new typefaces.
 - Hover and focus-visible states on everything interactive, matching the homepage's behaviour.
-- Real, plausible copy in the brief's language. No lorem, no "Button" as a button label.
+- Real, plausible copy in the brief's language, fully written. No lorem, no "Button" as a button label. Invent whatever specifics the piece needs — names of plans, field labels, a comment, a table of real-looking rows — but no real company names or logos, and no quote attributed to a named person.
 
 TECHNICAL CONTRACT (required by the automatic splitter):
 - ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim and nothing else inside), then <style data-part="components"> holding ONLY the new rules.
@@ -662,7 +666,7 @@ TECHNICAL CONTRACT (required by the automatic splitter):
 - <body>: the given header markup verbatim; then <main data-part="page-body"> containing the page; then the given footer markup verbatim.
 - Every colour, size, space and radius goes through the existing custom properties. No new hex values, no new typefaces, no new Google Fonts.
 - Hover and focus-visible states follow the existing design. No <script> unless the page genuinely needs one, and then vanilla and under 30 lines.
-- Real copy in the brief's language. No lorem.
+- Real copy in the brief's language, and the page arrives full: every card, row, excerpt, date and label written as if the site were live. Invent the specifics — post titles, dates, categories, prices — keeping them plausible and consistent. No real company names or logos, and no quote attributed to a named person.
 
 Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;
 
