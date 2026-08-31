@@ -201,8 +201,20 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
                       </button>
                     ))}
 
+                    {/* Every screen, every colourway and the direction that
+                        produced them, as a folder. A screenshot cannot be
+                        measured, diffed or sent to anybody. */}
+                    <a
+                      href={`/api/admin/designs/${d.id}/download`}
+                      download
+                      className="btn-ghost ml-auto px-3 py-1.5 text-xs"
+                      title="Download every screen, colourway and the art direction as a zip"
+                    >
+                      Download pack ↓
+                    </a>
+
                     {d.outputTokens ? (
-                      <span className="ml-auto font-mono text-[11px] text-neutral-500">
+                      <span className="font-mono text-[11px] text-neutral-500">
                         {d.inputTokens ?? 0} in · {d.outputTokens} out
                       </span>
                     ) : null}
