@@ -13,10 +13,23 @@
  * Set OPENAI_MODEL_FAST to a cheaper model to actually reduce spend.
  */
 
-const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.6-luna";
+/**
+ * Read a model id from the environment.
+ *
+ * A variable that exists but is blank means "not configured" here. Vercel keeps
+ * an emptied variable in the list rather than removing it, and `??` would hand
+ * that empty string straight to the API as a model id.
+ */
+export function envModel(name: string): string | undefined {
+  const raw = process.env[name];
+  const value = typeof raw === "string" ? raw.trim() : "";
+  return value || undefined;
+}
 
-export const FAST_MODEL = process.env.OPENAI_MODEL_FAST ?? DEFAULT_MODEL;
-export const SMART_MODEL = process.env.OPENAI_MODEL_SMART ?? DEFAULT_MODEL;
+const DEFAULT_MODEL = envModel("OPENAI_MODEL") ?? "gpt-5.6-luna";
+
+export const FAST_MODEL = envModel("OPENAI_MODEL_FAST") ?? DEFAULT_MODEL;
+export const SMART_MODEL = envModel("OPENAI_MODEL_SMART") ?? DEFAULT_MODEL;
 
 /**
  * GEN_MODEL — the theme GENERATION + design tier (build-plan, build-files,
@@ -26,13 +39,23 @@ export const SMART_MODEL = process.env.OPENAI_MODEL_SMART ?? DEFAULT_MODEL;
  * touching chat, edits or the correctness review. Falls back to SMART_MODEL, so
  * nothing changes until OPENAI_MODEL_GEN is set in the environment.
  */
-export const GEN_MODEL = process.env.OPENAI_MODEL_GEN ?? SMART_MODEL;
+export const GEN_MODEL = envModel("OPENAI_MODEL_GEN") ?? SMART_MODEL;
 
 /**
- * BUILD_MODEL — the no-tools theme generation calls (build-plan, build-files),
- * which run through the provider-agnostic generateText() and therefore accept a
- * Claude model too. Set MODEL_BUILD to a Claude id (e.g. a Haiku model) to
- * generate themes with Claude, while the tool-loop routes (chat, edit, design
- * critique, review) keep using their OpenAI model. Falls back to GEN_MODEL.
+ * DESIGN_MODEL — the two creative decisions: the art direction and the homepage
+ * designer, plus the blueprint. This is the ONLY place a strong (expensive)
+ * model belongs; everything downstream of it is mechanical. Set MODEL_DESIGN to
+ * a Claude id (e.g. claude-sonnet-5) to run the creative steps on Claude while
+ * file generation, chat, edits and review stay on the cheap OpenAI model.
+ * Falls back to GEN_MODEL, then SMART_MODEL, then the default.
  */
-export const BUILD_MODEL = process.env.MODEL_BUILD ?? GEN_MODEL;
+export const DESIGN_MODEL = envModel("MODEL_DESIGN") ?? GEN_MODEL;
+
+/**
+ * BUILD_MODEL — file generation (build-files). This is mechanical porting work:
+ * the blueprint and the design are already decided by DESIGN_MODEL, so a cheap
+ * model does it just as well and it is the highest-volume tier by far (dozens of
+ * calls per theme). It deliberately does NOT inherit the design model — set
+ * MODEL_BUILD only to override the cheap default.
+ */
+export const BUILD_MODEL = envModel("MODEL_BUILD") ?? DEFAULT_MODEL;

@@ -137,7 +137,10 @@ export async function generateArtDirection(
   shape: DesignShape,
   language?: string
 ): Promise<StageResult<ArtDirection | null>> {
-  const model = pickModel(modelConfig, "cheap");
+  // The art direction is the single decision every later stage obeys: colours,
+  // type, the signature move. Small output, huge leverage — it belongs on the
+  // strong design model, not the cheap helper tier.
+  const model = pickModel(modelConfig, "design");
 
   const gen = await generateText({
     model,
@@ -215,7 +218,8 @@ export async function generateMockup(
   retry?: string,
   timeoutMs?: number
 ): Promise<MockupResult> {
-  const model = pickModel(modelConfig, "plan");
+  // The homepage designer — the screen the customer judges the product by.
+  const model = pickModel(modelConfig, "design");
   const shapeKey = resolveShape(shape);
 
   // A typographic direction wants no photographs at all, so fetching them is

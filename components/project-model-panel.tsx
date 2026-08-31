@@ -3,19 +3,31 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Tier = "plan" | "build" | "edit" | "chat" | "review" | "cheap";
+type Tier =
+  | "plan"
+  | "design"
+  | "build"
+  | "edit"
+  | "chat"
+  | "review"
+  | "cheap";
 type Cfg = Partial<Record<Tier, string>>;
 
 const TIERS: { key: Tier; label: string; hint: string }[] = [
   {
     key: "plan",
-    label: "Blueprint & design plan",
-    hint: "The creative step — pick your STRONGEST model here. Empty = same as file generation.",
+    label: "Blueprint",
+    hint: "Plans the sections of the theme. Creative — a strong model earns its price here. Empty = MODEL_DESIGN.",
+  },
+  {
+    key: "design",
+    label: "Art direction & homepage",
+    hint: "Decides the colours, type and the signature move, then designs the homepage. The most quality-sensitive tier — put your STRONGEST model here. Empty = MODEL_DESIGN.",
   },
   {
     key: "build",
     label: "File generation",
-    hint: "Writes the theme files from the blueprint — a fast, cheap model does fine.",
+    hint: "Ports the finished design into PHP and CSS — mechanical, dozens of calls per theme. Keep this CHEAP; it no longer follows the design model.",
   },
   { key: "edit", label: "Edits & design", hint: "Chat edits — multi-step file reading before changes. Default: gpt-5.6-luna (cheap)." },
   { key: "chat", label: "Chat", hint: "AI Editor conversation. Default: gpt-5.6-luna (cheap)." },
@@ -23,7 +35,7 @@ const TIERS: { key: Tier; label: string; hint: string }[] = [
   {
     key: "cheap",
     label: "Cheap helper",
-    hint: "Design concept + quick design review stages — a fast low-cost model (default gpt-5.6-luna).",
+    hint: "Supporting design pages (inner, components, archive, 404), the design critique and page content — a fast low-cost model (default gpt-5.6-luna).",
   },
 ];
 
