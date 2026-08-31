@@ -61,7 +61,9 @@ PHP files:
 6. Templates start with get_header() and end with get_footer(); front-page.php includes the designed sections with get_template_part('template-parts/section','<slug>') in the blueprint order; escape output. page.php, every page-<slug>.php and single.php are CONTENT-DRIVEN: the page hero, then the loop rendering the_content() inside <article><div class="entry container">. When a PAGE HERO FRAGMENT is provided, convert it keeping markup and classes exactly (the heading becomes the_title(); single.php may add the date); without one, build a compact hero from the mockup's tokens. NEVER hardcode page copy in these templates — the real copy lives in WordPress and renders through the_content(). assets/css/inner.css: exactly the INNER PAGE CSS rules when provided (do not re-derive them); otherwise the page-hero + .entry rules these templates need. Files WITHOUT a fragment reuse the mockup's classes and tokens so they look like the same site.
 7. functions.php: title-tag, post-thumbnails, custom-logo, html5; register_nav_menus 'primary'; enqueue the GOOGLE FONTS URLS, get_stylesheet_uri(), then EVERY stylesheet listed under CSS FILES TO ENQUEUE in that exact order (handle = file name without extension), and assets/js/main.js in the footer. Prefix functions with the textDomain; no external JS libraries. NEVER require or include any other PHP file — everything lives in functions.php (no inc/ files).
 8. assets/js/main.js: vanilla JS only, no libraries — the nav toggle (.is-open on [data-nav], aria-expanded on [data-nav-toggle], .nav-open on body), .is-scrolled on [data-header], AND every behavior the mockup's inline script implements: the scroll-reveal (IntersectionObserver adding .in-view to [data-reveal]) and any accordion/tabs the mockup uses — port them exactly so the live site feels like the preview. style.css: the WordPress theme header comment (Theme Name from blueprint.theme.name) + minimal base.
-9. PHP never calls eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_get/post, base64_decode, call_user_func, preg_replace_callback or similar.
+9. assets/css/components.css: exactly the COMPONENT CSS when provided — the buttons, forms, tables, blockquotes, pagination and widgets the design defines. Do not re-derive or trim it; templates below depend on these classes existing.
+10. archive.php (and index.php when no separate archive body is given): convert the ARCHIVE BODY fragment keeping markup and classes exactly, replacing its example posts with the WordPress loop — the_permalink(), the_title(), get_the_date(), the_excerpt(), post thumbnail where the design shows an image — and its pagination markup with the_posts_pagination() styled by the same classes. Keep the page heading; never hardcode post copy. 404.php: convert the 404 BODY fragment the same way, keeping its links and its search field as get_search_form(). assets/css/pages.css: exactly the ARCHIVE CSS and 404 CSS rules provided, concatenated, and nothing else.
+11. PHP never calls eval, exec, system, file_get_contents, fopen, unlink, curl_exec, wp_remote_get/post, base64_decode, call_user_func, preg_replace_callback or similar.
 
 Output each requested path, in order:
 ===WPAB_FILE:<path>===
@@ -75,6 +77,15 @@ export type MockupCtx = {
   fragments?: Record<string, string>;
   /** Inner-page design pack: extra CSS over the mockup css, and the page-hero fragment. */
   inner?: { css?: string; pageHero?: string };
+  /**
+   * The design stage now produces more than a homepage, and a theme that
+   * ignores the rest is a theme whose blog listing and 404 were invented by a
+   * build model that never saw them designed. Each pack carries the extra CSS
+   * and the body markup for one screen.
+   */
+  components?: { css?: string };
+  archive?: { css?: string; body?: string };
+  notFound?: { css?: string; body?: string };
 };
 
 export type BuildFilesResult = {
@@ -118,12 +129,16 @@ export async function generateBuildFiles(
           .map((sec) => (typeof sec?.slug === "string" ? sec.slug : ""))
           .filter(Boolean)
       : [];
+    // Order matters: components before the per-screen sheets that override
+    // them, and both after the tokens everything else reads.
     const enqueue = [
       "assets/css/base.css",
+      "assets/css/components.css",
       "assets/css/header.css",
       ...slugs.map((sl) => `assets/css/sections/${sl}.css`),
       "assets/css/footer.css",
       "assets/css/inner.css",
+      "assets/css/pages.css",
     ];
     input += `CSS FILES TO ENQUEUE (in this order):\n${enqueue.join("\n")}\n\n`;
   }
@@ -160,6 +175,30 @@ export async function generateBuildFiles(
       }
       if (needsInner && mockup.inner.css) {
         input += `INNER PAGE CSS (additional rules over MOCKUP CSS — assets/css/inner.css ports exactly these):\n${mockup.inner.css}\n\n`;
+      }
+    }
+
+    if (mockup.components?.css && paths.includes("assets/css/components.css")) {
+      input += `COMPONENT CSS (assets/css/components.css ports exactly these rules):\n${mockup.components.css}\n\n`;
+    }
+
+    const wantsPagesCss = paths.includes("assets/css/pages.css");
+
+    if (mockup.archive) {
+      if (mockup.archive.body && (paths.includes("archive.php") || paths.includes("index.php"))) {
+        input += `ARCHIVE BODY (the designed blog listing — port it, replacing the example posts with the loop):\n${mockup.archive.body}\n\n`;
+      }
+      if (mockup.archive.css && wantsPagesCss) {
+        input += `ARCHIVE CSS (goes into assets/css/pages.css):\n${mockup.archive.css}\n\n`;
+      }
+    }
+
+    if (mockup.notFound) {
+      if (mockup.notFound.body && paths.includes("404.php")) {
+        input += `404 BODY (the designed not-found page — port it, its search field becomes get_search_form()):\n${mockup.notFound.body}\n\n`;
+      }
+      if (mockup.notFound.css && wantsPagesCss) {
+        input += `404 CSS (also goes into assets/css/pages.css):\n${mockup.notFound.css}\n\n`;
       }
     }
   }

@@ -462,6 +462,18 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // The list the wizard builds its preview tabs from. Derived here because
+      // only the server knows which stages actually ran: any of them may be
+      // skipped when the clock runs short, and a tab for a screen that does not
+      // exist is worse than no tab.
+      done.pages = [
+        "home",
+        ...(done.innerHtml ? ["inner"] : []),
+        ...(["components", "archive", "notfound", "brand"] as const).filter(
+          (key) => typeof pages[key] === "string" && pages[key].length > 0
+        ),
+      ];
+
       await enrich(
         db,
         designId,

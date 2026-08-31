@@ -70,12 +70,20 @@ const CORE_FILES = [
   "page.php",
   "single.php",
   "404.php",
+  "archive.php",
   "searchform.php",
   "front-page.php",
   "assets/css/base.css",
+  // The component sheet the design stage derives from the finished homepage.
+  // Without it the buttons, forms and tables on every inner page are invented
+  // by the build model and match nothing.
+  "assets/css/components.css",
   "assets/css/header.css",
   "assets/css/footer.css",
   "assets/css/inner.css",
+  // Archive and 404 rules together: two small sheets would cost two more build
+  // batches for a few dozen rules.
+  "assets/css/pages.css",
   "assets/js/main.js",
 ];
 

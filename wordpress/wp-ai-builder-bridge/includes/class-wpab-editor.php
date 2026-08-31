@@ -1690,6 +1690,7 @@ final class WPAB_Editor {
 			'restBuildJob'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/job' ) ),
 			'restMockupStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/mockup-start' ) ),
 			'restDesignStatus' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/status' ) ),
+			'restDesignHtml'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/html' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
@@ -1748,10 +1749,8 @@ final class WPAB_Editor {
 					</div>
 
 					<div id="wpab-ed-mockwrap" class="wpab-ed__mockwrap" hidden>
-						<div id="wpab-ed-mocktabs" class="wpab-ed__mocktabs" hidden>
-							<button type="button" class="wpab-ed__mocktab is-on" data-mocktab="home">Homepage</button>
-							<button type="button" class="wpab-ed__mocktab" data-mocktab="inner">Inner page</button>
-						</div>
+						<div id="wpab-ed-mocktabs" class="wpab-ed__mocktabs" hidden></div>
+						<div id="wpab-ed-mockways" class="wpab-ed__mocktabs" hidden></div>
 						<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-scripts"></iframe>
 						<div id="wpab-ed-mockmeta" class="wpab-ed__mockmeta" hidden></div>
 						<div class="wpab-ed__mockactions">
@@ -3302,7 +3301,7 @@ final class WPAB_Editor {
 				// Componentized build: many SMALL batches. Critical files go solo;
 				// header/footer pair with their CSS; every section is its own batch
 				// (php + its css); leftover templates are chunked by 2.
-				var SOLO = { 'assets/css/main.css': 1, 'assets/css/base.css': 1, 'assets/js/main.js': 1, 'functions.php': 1 };
+				var SOLO = { 'assets/css/main.css': 1, 'assets/css/base.css': 1, 'assets/css/components.css': 1, 'assets/js/main.js': 1, 'functions.php': 1 };
 				var remSet = {};
 				for (var ri = 0; ri < remaining.length; ri++) { remSet[remaining[ri]] = 1; }
 				function take(pathName) { if (remSet[pathName]) { delete remSet[pathName]; return true; } return false; }
@@ -3325,6 +3324,12 @@ final class WPAB_Editor {
 				if (take('page.php')) { inr.push('page.php'); }
 				if (take('assets/css/inner.css')) { inr.push('assets/css/inner.css'); }
 				if (inr.length) { batches.push(inr); }
+				// 2c) the designed archive and 404 with the stylesheet they share
+				var arc = [];
+				if (take('archive.php')) { arc.push('archive.php'); }
+				if (take('assets/css/pages.css')) { arc.push('assets/css/pages.css'); }
+				if (take('404.php')) { arc.push('404.php'); }
+				if (arc.length) { batches.push(arc); }
 				// 3) one batch per section: its template part + its css
 				for (var s2 = 0; s2 < remaining.length; s2++) {
 					var mSec = remaining[s2].match(/^template-parts\/section-([a-z0-9-]+)\.php$/);
@@ -3364,6 +3369,11 @@ final class WPAB_Editor {
 							if (mockCtx.inner && (mp2 === 'assets/css/inner.css' || /^page(-[a-z0-9-]+)?\.php$/.test(mp2) || mp2 === 'single.php')) {
 								mk.inner = mockCtx.inner; any = true;
 							}
+							// Each remaining pack goes only to the files that port it,
+							// so no batch carries markup it will not use.
+							if (mockCtx.components && mp2 === 'assets/css/components.css') { mk.components = mockCtx.components; any = true; }
+							if (mockCtx.archive && (mp2 === 'archive.php' || mp2 === 'index.php' || mp2 === 'assets/css/pages.css')) { mk.archive = mockCtx.archive; any = true; }
+							if (mockCtx.notFound && (mp2 === '404.php' || mp2 === 'assets/css/pages.css')) { mk.notFound = mockCtx.notFound; any = true; }
 						}
 						if (any) { payload.mockup = mk; }
 					}
@@ -3624,30 +3634,107 @@ final class WPAB_Editor {
 				if (wProgress) { wProgress.hidden = true; }
 				var guard = '<script>document.addEventListener("click",function(e){var a=e.target&&e.target.closest?e.target.closest("a"):null;if(a){e.preventDefault();}},true);document.addEventListener("submit",function(e){e.preventDefault();},true);<' + '/script>';
 				function guarded(d) { d = String(d || ''); return (d.indexOf('</body>') !== -1) ? d.replace('</body>', guard + '</body>') : d + guard; }
-				frame.srcdoc = guarded(mock.html);
-				// Homepage / Inner page preview tabs — shown only when the design
-				// pack includes an inner page.
+				// Preview tabs, built from what this generation actually produced.
+				//
+				// Any stage after the homepage can be skipped when the run is
+				// short of time, so the list comes from the server rather than
+				// being assumed here — a tab for a screen that does not exist is
+				// worse than no tab. The homepage and inner page are already in
+				// memory; the rest are fetched once each, on demand, and cached.
+				var PAGE_LABEL = {
+					home: 'Homepage',
+					inner: 'Inner page',
+					components: 'Components',
+					archive: 'Blog archive',
+					notfound: '404',
+					brand: 'Brand sheet'
+				};
+				var pageCache = { home: mock.html || '', inner: mock.innerHtml || '' };
+				var ways = Array.isArray(mock.colorways) ? mock.colorways : [];
+				var curPage = 'home';
+				var curWay = -1;
+
+				// Every rule below :root goes through the custom properties, so
+				// swapping that one block re-skins the whole document.
+				function withWay(html) {
+					if (curWay < 0 || !ways[curWay] || !ways[curWay].rootCss) { return html; }
+					return String(html).replace(/:root\s*\{[\s\S]*?\}/, function () { return ways[curWay].rootCss; });
+				}
+
+				function paint() {
+					var html = pageCache[curPage];
+					frame.srcdoc = html ? guarded(withWay(html)) : guarded('<p style="font:14px system-ui;padding:24px">Loading…</p>');
+				}
+
+				function openPage(which) {
+					curPage = which;
+					if (pageCache[which]) { paint(); return; }
+					if (!cfg.restDesignHtml || !mock.designId) { return; }
+					paint();
+					wpost(cfg.restDesignHtml, { designId: mock.designId, which: which }).then(function (out) {
+						var d = (out && out.data) || {};
+						pageCache[which] = d.html || '';
+						if (curPage === which) { paint(); }
+					}).catch(function () {
+						pageCache[which] = '<p style="font:14px system-ui;padding:24px">This screen could not be loaded.</p>';
+						if (curPage === which) { paint(); }
+					});
+				}
+
 				var mtabs = $('wpab-ed-mocktabs');
 				if (mtabs) {
-					var tabBtns = mtabs.querySelectorAll('[data-mocktab]');
-					for (var tb = 0; tb < tabBtns.length; tb++) {
-						tabBtns[tb].classList.toggle('is-on', tabBtns[tb].getAttribute('data-mocktab') === 'home');
+					var pages = (Array.isArray(mock.pages) && mock.pages.length) ? mock.pages : ['home'];
+					mtabs.innerHTML = '';
+					for (var pi = 0; pi < pages.length; pi++) {
+						var b = document.createElement('button');
+						b.type = 'button';
+						b.className = 'wpab-ed__mocktab' + (pages[pi] === 'home' ? ' is-on' : '');
+						b.setAttribute('data-mocktab', pages[pi]);
+						b.textContent = PAGE_LABEL[pages[pi]] || pages[pi];
+						mtabs.appendChild(b);
 					}
-					if (mock.innerHtml) {
-						mtabs.hidden = false;
-						mtabs.onclick = function (e) {
+					mtabs.hidden = pages.length < 2;
+					mtabs.onclick = function (e) {
+						var t = e.target;
+						while (t && t !== mtabs && !t.getAttribute('data-mocktab')) { t = t.parentNode; }
+						if (!t || t === mtabs) { return; }
+						var all = mtabs.querySelectorAll('[data-mocktab]');
+						for (var q = 0; q < all.length; q++) { all[q].classList.toggle('is-on', all[q] === t); }
+						openPage(t.getAttribute('data-mocktab'));
+					};
+				}
+
+				var mways = $('wpab-ed-mockways');
+				if (mways) {
+					mways.innerHTML = '';
+					if (ways.length) {
+						var names = ['As generated'];
+						for (var wi = 0; wi < ways.length; wi++) { names.push(ways[wi].name || ('Option ' + (wi + 1))); }
+						for (var wj = 0; wj < names.length; wj++) {
+							var wb = document.createElement('button');
+							wb.type = 'button';
+							wb.className = 'wpab-ed__mocktab' + (wj === 0 ? ' is-on' : '');
+							wb.setAttribute('data-mockway', String(wj - 1));
+							wb.textContent = names[wj];
+							mways.appendChild(wb);
+						}
+						mways.hidden = false;
+						mways.onclick = function (e) {
 							var t = e.target;
-							while (t && t !== mtabs && !t.getAttribute('data-mocktab')) { t = t.parentNode; }
-							if (!t || t === mtabs) { return; }
-							var which = t.getAttribute('data-mocktab');
-							for (var tb2 = 0; tb2 < tabBtns.length; tb2++) { tabBtns[tb2].classList.toggle('is-on', tabBtns[tb2] === t); }
-							frame.srcdoc = guarded(which === 'inner' ? mock.innerHtml : mock.html);
+							while (t && t !== mways && !t.getAttribute('data-mockway')) { t = t.parentNode; }
+							if (!t || t === mways) { return; }
+							var all = mways.querySelectorAll('[data-mockway]');
+							for (var q2 = 0; q2 < all.length; q2++) { all[q2].classList.toggle('is-on', all[q2] === t); }
+							curWay = parseInt(t.getAttribute('data-mockway'), 10);
+							paint();
 						};
 					} else {
-						mtabs.hidden = true;
-						mtabs.onclick = null;
+						mways.hidden = true;
+						mways.onclick = null;
 					}
 				}
+
+				paint();
 				if (wizard) { wizard.classList.add('is-design'); }
 				wrap.hidden = false;
 				setBuildDetail('');
@@ -3699,6 +3786,16 @@ final class WPAB_Editor {
 				// content templates and assets/css/inner.css.
 				if (mock.pageHero || mock.innerCss) {
 					ctx.inner = { css: mock.innerCss || '', pageHero: mock.pageHero || '' };
+				}
+				// The design stage produces more than a homepage now. Without
+				// these, the build model invents its own buttons, blog listing
+				// and 404 — and they match nothing that was approved above.
+				if (mock.componentsCss) { ctx.components = { css: mock.componentsCss }; }
+				if (mock.archiveBody || mock.archiveCss) {
+					ctx.archive = { css: mock.archiveCss || '', body: mock.archiveBody || '' };
+				}
+				if (mock.notfoundBody || mock.notfoundCss) {
+					ctx.notFound = { css: mock.notfoundCss || '', body: mock.notfoundBody || '' };
 				}
 				return ctx;
 			}

@@ -11,13 +11,17 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.21.0",
+  version: "1.22.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-08-30",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.22.0</h4><ul>" +
+    "<li>The design preview now shows every screen the generation produced — inner page, components, blog archive, 404 and the brand sheet — and lets you switch between the alternative colourways.</li>" +
+    "<li>The theme build uses them: your blog listing, 404 page and component styles now come from the design you approved instead of being invented during the build.</li>" +
+    "</ul>" +
     "<h4>1.21.0</h4><ul>" +
     "<li>WordPress now tells you when a Meikero update is available, and a Check for updates button forces the check instead of waiting for the cache.</li>" +
     "<li>A warning appears when your credits will not cover another site generation, and again if they run out.</li>" +
