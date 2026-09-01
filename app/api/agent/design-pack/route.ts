@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateSiteRequest } from "@/lib/security/site-auth";
 import { createServiceClient } from "@/lib/supabase/service";
-import { colorwayCss } from "@/lib/agent/design-pages";
+import { availablePages, colorwayCss, pickPage } from "@/lib/agent/design-pages";
 
 /**
  * WordPress -> SaaS : everything needed to build a theme from a stored design.
@@ -125,6 +125,23 @@ export async function POST(request: NextRequest) {
     /<main[^>]*data-part=["']page-body["'][\s\S]*?<\/main>/i
   );
 
+  // Every designed page, so a rebuild from the archive puts the same content
+  // into WordPress that the person approved in the preview.
+  const designed: Record<string, { title: string; css: string; body: string }> = {};
+
+  for (const page of availablePages(design)) {
+    if (page.slug === "home") continue;
+
+    const html = pickPage(design, page.slug);
+    if (!html) continue;
+
+    designed[page.slug] = {
+      title: page.label,
+      css: between(html, /<style[^>]*data-part=["']page["'][^>]*>([\s\S]*?)<\/style>/i),
+      body: between(html, /<main[^>]*data-part=["']page-body["'][\s\S]*?<\/main>/i),
+    };
+  }
+
   return NextResponse.json({
     success: true,
     designId: design.id,
@@ -149,5 +166,8 @@ export async function POST(request: NextRequest) {
     // before the art director planned pages simply have none, and the build
     // falls back to planning its own — which is what it always did.
     sitePages: sitePagesOf(design.direction),
+    // The pages themselves, keyed by slug.
+    designedPages: designed,
+    pagesCss: assets.pagesCss ?? "",
   });
 }

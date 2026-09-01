@@ -11,13 +11,19 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.35.0",
+  version: "1.36.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.36.0</h4><ul>" +
+    "<li>A design is now a whole site you can walk through: the homepage, every page in the menu, the blog, a blog post and the 404 are each really designed, and clicking a link in the preview takes you to that page.</li>" +
+    "<li>The preview lists the pages down the left, by name and by file, instead of a row of tabs.</li>" +
+    "<li>The component sheet and the brand sheet are gone. Neither was a page anybody could reach, and the real pages now carry what they used to supply.</li>" +
+    "<li>Pages are drawn at the same time rather than one after another, so a whole site takes about as long as one page used to — and a slow homepage no longer costs you the blog.</li>" +
+    "</ul>" +
     "<h4>1.35.0</h4><ul>" +
     "<li>A design can now be changed before you build from it. Say what you want different — a darker header, more room between sections, a different tone in the hero — and the design is edited in place, keeping everything you already approved.</li>" +
     "<li>The design decides what pages the site has, and its menu links to them. Until now every generated design was a one-page site whose menu pointed at its own sections, and the theme was later built around a different set of pages.</li>" +

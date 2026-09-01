@@ -1,8 +1,7 @@
 import { type ZipEntry } from "@/lib/zip";
 import {
-  DESIGN_PAGES,
-  PAGE_LABEL,
   applyColorway,
+  availablePages,
   colorwayCss,
   pickPage,
 } from "@/lib/agent/design-pages";
@@ -31,12 +30,18 @@ function slug(value: string, fallback: string): string {
   return cleaned || fallback;
 }
 
-const FILE_NAME: Record<(typeof DESIGN_PAGES)[number], string> = {
-  home: "home.html",
+/**
+ * A design's pages are its own now, so the filenames come from the slugs rather
+ * than from a table written in advance. The three reserved screens keep names
+ * that sort and read the way somebody opening the folder would expect.
+ */
+const FILE_NAME: Record<string, string> = {
+  home: "index.html",
+  archive: "blog.html",
+  post: "blog-post.html",
+  notfound: "404.html",
   inner: "inner-page.html",
   components: "components.html",
-  archive: "blog-archive.html",
-  notfound: "404.html",
   brand: "brand-sheet.html",
 };
 
@@ -118,13 +123,16 @@ export function buildDesignPack(design: DesignRecord): ZipEntry[] {
   const entries: ZipEntry[] = [];
   const screens: string[] = [];
 
-  for (const page of DESIGN_PAGES) {
-    const html = pickPage(design, page);
+  for (const page of availablePages(design)) {
+    const html = pickPage(design, page.slug);
 
     if (!html) continue;
 
-    entries.push({ name: `screens/${FILE_NAME[page]}`, data: html });
-    screens.push(PAGE_LABEL[page]);
+    entries.push({
+      name: `screens/${FILE_NAME[page.slug] ?? `${page.slug}.html`}`,
+      data: html,
+    });
+    screens.push(page.label);
   }
 
   // No screens, no pack. A design row with nothing in it is a failed run, and

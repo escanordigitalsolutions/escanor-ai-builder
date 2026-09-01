@@ -6,7 +6,7 @@ import { recordUsage } from "@/lib/ai/usage";
 import { errorDetail } from "@/lib/debug";
 import { borrowsBaseCss, editDesign, syncBaseCss } from "@/lib/agent/design-edit";
 import { splitMockup } from "@/lib/agent/mockup-core";
-import { DESIGN_PAGES, PAGE_LABEL, availablePages, colorwayCss } from "@/lib/agent/design-pages";
+import { availablePages, colorwayCss, titleFromSlug } from "@/lib/agent/design-pages";
 
 export const maxDuration = 300;
 
@@ -113,19 +113,16 @@ export async function POST(request: NextRequest) {
         ? syncBaseCss(data.inner_html, split.css)
         : data.inner_html;
 
-    for (const page of DESIGN_PAGES) {
-      if (page === "home" || page === "inner") continue;
-
-      const html = pages[page];
-
-      if (typeof html !== "string" || !html) continue;
+    for (const [slug, html] of Object.entries(pages)) {
+      if (slug === "home" || typeof html !== "string" || !html) continue;
 
       if (borrowsBaseCss(html)) {
-        pages[page] = syncBaseCss(html, split.css);
+        pages[slug] = syncBaseCss(html, split.css);
       } else {
-        // The brand sheet is rendered by us, not by a model, so it has no
-        // borrowed stylesheet to update. Worth saying rather than pretending.
-        untouched.push(PAGE_LABEL[page]);
+        // A screen rendered by us rather than by a model — an older design's
+        // brand sheet — has no borrowed stylesheet to update. Worth saying
+        // rather than pretending it moved with the rest.
+        untouched.push(titleFromSlug(slug));
       }
     }
 

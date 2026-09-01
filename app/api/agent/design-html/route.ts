@@ -11,9 +11,9 @@ import {
 /**
  * WordPress -> SaaS : one archived design's HTML for the wp-admin preview.
  *
- * `which` picks the homepage or the inner page. Before the archive stored the
- * inner page there was nothing to pick between, which is why the wp-admin
- * archive only ever showed one screen per design.
+ * `which` is a page slug — "home", or any page this design holds. It used to be
+ * one of six fixed names, three of which were not pages at all, which is why a
+ * design's own About and Services could not be previewed.
  */
 
 export async function POST(request: NextRequest) {
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
   const { data: design, error } = await createServiceClient()
     .from("ai_designs")
-    .select("id, html, inner_html, pages")
+    .select("id, html, inner_html, pages, direction")
     .eq("id", designId)
     .eq("project_id", auth.context.projectId)
     .single();

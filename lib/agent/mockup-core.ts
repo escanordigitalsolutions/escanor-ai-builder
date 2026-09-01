@@ -426,42 +426,10 @@ export async function critiqueMockup(
   return { data: gen.text.trim().slice(0, 600), usage: gen.usage, model };
 }
 
-// ---------------------------------------------------------------------------
-// Stage 4 — one inner page, in the same design
-// ---------------------------------------------------------------------------
-
-const INNER_RULES = `Design the INNER PAGE TEMPLATE for a site whose homepage is already designed. Match it exactly — same tokens, typography, palette, spacing, motion and voice.
-
-This is not one page. It is the shape every page that is not the homepage will take: About, Services, a single blog post, a legal page. It has to look right with any title and any length of body, because WordPress will pour real content through it. Design it as the site's inner pages should look, not as a bespoke page about one subject.
-
-Two parts do the work:
-
-- THE PAGE HERO. The title area every inner page opens with: the title, and whatever belongs beside it — an intro line, a breadcrumb, a date, a thin rule. Content-agnostic, so a two-word title and a nine-word title both look deliberate. This is the piece the theme reuses everywhere, so it carries the design.
-- THE CONTENT AREA. WordPress body typography, styled and demonstrated: h2, h3, paragraphs, an unordered and an ordered list, a blockquote with attribution, an inline link, an image with a caption. Write it as a real page of this business, fully — not three sentences to show the styling.
-
-You are given the homepage's design tokens, its Google Fonts links, its header and footer markup, and the class names its stylesheet already defines. Reuse those classes wherever they fit. The header and footer are copied VERBATIM. Do not restyle anything the homepage already defines; write only the rules this page adds.
-
-TECHNICAL CONTRACT (required by the automatic splitter):
-- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim, nothing else inside), then <style data-part="inner"> containing ONLY the additional rules this page needs, written against the same custom properties.
-- <body>: the given header markup verbatim; then <section data-part="page-hero">; then <article><div class="entry container"> with the content; then the given footer markup verbatim. Nothing else — no extra marketing sections, no component showcase. An inner page that ends in a call-to-action band is a landing page, not a template.
-- Hover and focus states and the [data-reveal] pattern follow the homepage. One tiny vanilla script only if the homepage has one.
-- No new Google Fonts, no new colour literals, no <img> unless its url already appears in the given markup. No horizontal overflow.
-
-Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;
-
-export type InnerResult = {
-  html: string;
-  css: string;
-  pageHero: string;
-  truncated: boolean;
-  usage: Usage;
-  model: string;
-};
-
 /**
  * The class names a stylesheet defines, without the rules.
  *
- * The inner page needs to know that `.container` and `.btn--primary` exist; it
+ * A derived page needs to know that `.container` and `.btn--primary` exist; it
  * does not need to read their declarations. Sending the whole homepage
  * stylesheet as input — often ten thousand tokens — only to instruct the model
  * not to repeat it was the most expensive redundancy in the pipeline.
@@ -469,7 +437,7 @@ export type InnerResult = {
 export function classInventory(css: string, limit = 120): string[] {
   const names = new Set<string>();
 
-  for (const m of css.matchAll(/\.(-?[_a-z][\w-]*)/gi)) {
+  for (const m of css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) {
     names.add(m[1]);
     if (names.size >= limit) break;
   }
@@ -477,270 +445,180 @@ export function classInventory(css: string, limit = 120): string[] {
   return [...names];
 }
 
-export async function generateInnerMockup(
-  modelConfig: unknown,
-  brief: unknown,
-  direction: ArtDirection | null,
-  home: { css: string; header: string; footer: string; fonts: string[] }
-): Promise<InnerResult> {
-  const model = pickModel(modelConfig, "cheap");
-
-  const tokenBlock = direction
-    ? serialiseTokens(direction.tokens)
-    : (home.css.match(/:root\s*\{[\s\S]*?\}/i) ?? [""])[0];
-
-  const gen = await generateText({
-    model,
-    system: INNER_RULES,
-    maxTokens: 12000,
-    input:
-      `BRIEF\n${JSON.stringify(brief)}` +
-      (direction
-        ? `\n\nCONCEPT: "${direction.concept.name}" — ${direction.concept.thesis}` +
-          `\nVOICE: ${direction.voice.tone}`
-        : "") +
-      (home.fonts.length ? `\n\nGOOGLE FONTS (link these)\n${home.fonts.join("\n")}` : "") +
-      `\n\nDESIGN TOKENS — already defined by the homepage; use them, do not redefine them\n${tokenBlock}` +
-      `\n\nCLASSES THE HOMEPAGE ALREADY DEFINES — reuse where they fit\n${classInventory(home.css).join(", ")}` +
-      `\n\nHEADER MARKUP (copy verbatim)\n${home.header}` +
-      `\n\nFOOTER MARKUP (copy verbatim)\n${home.footer}`,
-  });
-
-  let html = gen.text.trim();
-
-  const fence = html.match(/```(?:html)?\s*([\s\S]*?)```/i);
-  if (fence) html = fence[1].trim();
-
-  const start = html.search(/<!DOCTYPE/i);
-  if (start > 0) html = html.slice(start);
-
-  const endIdx = html.lastIndexOf("</html>");
-  if (endIdx !== -1) html = html.slice(0, endIdx + "</html>".length);
-
-  const cssM = html.match(/<style[^>]*data-part=["']inner["'][^>]*>([\s\S]*?)<\/style>/i);
-  const heroM = html.match(/<section[^>]*data-part=["']page-hero["'][\s\S]*?<\/section>/i);
-
-  // Inject the real homepage CSS so the preview iframe renders standalone.
-  if (html.includes("/*HOMEPAGE-CSS*/")) {
-    html = html.replace("/*HOMEPAGE-CSS*/", () => home.css);
-  } else {
-    html = html.replace(/<head([^>]*)>/i, (m) => `${m}\n<style>${home.css}</style>`);
-  }
-
-  console.log(
-    `inner-mockup model=${model} chars=${html.length} hero=${heroM ? "yes" : "MISSING"} ` +
-      `css=${cssM ? cssM[1].trim().length : 0} truncated=${gen.truncated}`
-  );
-
-  return {
-    html,
-    css: cssM ? cssM[1].trim() : "",
-    pageHero: heroM ? heroM[0] : "",
-    truncated: gen.truncated,
-    usage: gen.usage,
-    model,
-  };
-}
-
 /** Kept under its old name: the route and the plugin both still say "style". */
 export const resolveStyle = resolveShape;
 
 // ---------------------------------------------------------------------------
-// Stage 5 — the component system, extracted from the finished page
+// Stage 4 — every other page of the site
 // ---------------------------------------------------------------------------
 
 /**
- * The order here is the whole argument.
+ * One generator for every page that is not the homepage.
  *
- * A component library generated FIRST and composed into pages afterwards
- * produces exactly the assembled, catalogue look this pipeline exists to avoid:
- * the model never sees a whole page, so nothing on it is composed for the page
- * it is on. Generating the page first and DERIVING the system from it keeps the
- * bespoke result and still yields a vocabulary — one that inherits the design's
- * character because it was cut from it.
+ * It replaces three stages that each existed for a different reason and
+ * together produced a design nobody could walk through:
  *
- * What the sheet adds is everything a WordPress theme needs and a homepage
- * happens not to contain: form fields, tables, pagination, comments, a
- * blockquote, a sidebar widget. Those are the parts that otherwise get invented
- * separately on every inner page and never match.
+ *   - the INNER PAGE, a single template standing in for About, Services,
+ *     Contact and everything else at once. Five menu items led to one screen
+ *     with the title swapped, so the preview could be clicked but never
+ *     arrived anywhere.
+ *   - the COMPONENT SHEET, a catalogue of buttons and form fields no visitor
+ *     could reach. It existed to guarantee that a form here matched a form
+ *     there — which real pages now do by themselves, because a contact page
+ *     has the form, the blog has the cards and pagination, and a post has the
+ *     body typography.
+ *   - the BRAND SHEET, a document about the design rather than a page of the
+ *     site. Free to render, but it was a tab in a strip of pages while not
+ *     being one.
+ *
+ * What made all three affordable to replace is that the pages are independent
+ * of each other: each needs the direction and the finished homepage, and
+ * nothing else. So they are generated in parallel, and a site of eight pages
+ * costs about what one page used to.
  */
-const COMPONENTS_RULES = `You are extending a finished website design into the component set its WordPress theme needs.
+const SITE_PAGE_RULES = `Design ONE page of a site whose homepage is already designed. Match it exactly — same tokens, typefaces, palette, spacing, motion and voice. This page belongs to that site; it is not a variation on it.
 
-You are given the design's tokens, its typefaces, its header and footer, and the class names its stylesheet already defines. Your job is NOT to redesign anything. It is to write the pieces the homepage happens not to contain, in the same visual language, so that a page built from them looks like it belongs to the same site.
+THIS IS A REAL PAGE, NOT A TEMPLATE
 
-Build each of these, styled and in every state a person will actually see:
-- buttons: primary, secondary and quiet, each with rest, hover, focus-visible and disabled
-- a form: text input, textarea, select, checkbox, radio, a validation error, and a submit
-- a card, in the design's own idiom
-- long-form content: h2, h3, paragraph, unordered and ordered list, blockquote with attribution, inline link, code, a horizontal rule, and a figure with a caption
-- a data table with a header row
-- pagination, and a breadcrumb
-- a tag or badge, and a notice or callout
-- a sidebar widget with a heading and a list
-- a comment, with avatar placeholder, name, date and body
+It is what a visitor gets when they click that item in the menu, and it ships finished. Give it the structure its own job needs: the page hero, then 2 to 4 sections that actually do this page's work. A page that is a title followed by four paragraphs is a document, not a designed page.
 
-RULES
-- Reuse the existing classes wherever one already fits. Invent a class only when nothing does.
-- Every colour, size, space and radius goes through the design's custom properties. No new hex values, no new typefaces.
-- Hover and focus-visible states on everything interactive, matching the homepage's behaviour.
-- Real, plausible copy in the brief's language, fully written. No lorem, no "Button" as a button label. Invent whatever specifics the piece needs — names of plans, field labels, a comment, a table of real-looking rows — but no real company names or logos, and no quote attributed to a named person.
+The homepage is a VOCABULARY, NOT A TEMPLATE. Reuse a shape where it genuinely fits, so that a card here matches a card there. But where this page's content asks for a shape the homepage does not have, make that shape. A page that only rearranges the homepage is the same page twice.
+
+Sections still differ structurally from one another. And this page as a whole differs from the homepage: it is quieter, because a visitor arrives here already interested, and it says more.
+
+CONTENT
+
+Fully written, in the brief's language, as if the site went live tomorrow. Invent whatever the page needs — figures, timeframes, plan names, process detail, prices, opening hours, the questions customers actually ask, a quote attributed to a role. Keep it consistent with the rest of the site: a number here must not contradict a number on the homepage. Two things stay off limits, because they do not become true when the owner edits them: no real company names or logos, and no quote attributed to a named individual.
 
 TECHNICAL CONTRACT (required by the automatic splitter):
-- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim and nothing else inside), then <style data-part="components"> holding ONLY the new rules.
-- <body>: the given header markup verbatim, then one <section data-component="<kebab-slug>"> per group above, each opening with an <h2> naming it, then the given footer markup verbatim.
-- No <script>. No <img> unless its url already appears in the given markup.
-
-Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;
-
-export type SheetResult = {
-  html: string;
-  css: string;
-  blocks: MockupSection[];
-  truncated: boolean;
-  usage: Usage;
-  model: string;
-};
-
-export async function generateComponentSheet(
-  modelConfig: unknown,
-  brief: unknown,
-  direction: ArtDirection | null,
-  home: { css: string; header: string; footer: string; fonts: string[] },
-  timeoutMs?: number
-): Promise<SheetResult> {
-  const model = pickModel(modelConfig, "cheap");
-
-  const gen = await generateText({
-    model,
-    system: COMPONENTS_RULES,
-    maxTokens: 12000,
-    timeoutMs,
-    input: contextBlock(brief, direction, home),
-  });
-
-  const html = cleanDocument(gen.text, home.css);
-
-  const cssMatch = html.match(
-    /<style[^>]*data-part=["']components["'][^>]*>([\s\S]*?)<\/style>/i
-  );
-
-  const blocks: MockupSection[] = [];
-  const seen = new Set<string>();
-
-  for (const m of html.matchAll(
-    /<section[^>]*data-component=["']([a-z0-9-]+)["'][\s\S]*?<\/section>/gi
-  )) {
-    const slug = m[1].toLowerCase();
-    if (!seen.has(slug)) {
-      seen.add(slug);
-      blocks.push({ slug, html: m[0] });
-    }
-  }
-
-  console.log(
-    `components model=${model} chars=${html.length} blocks=${blocks.length} truncated=${gen.truncated}`
-  );
-
-  return {
-    html,
-    css: cssMatch ? cssMatch[1].trim() : "",
-    blocks,
-    truncated: gen.truncated,
-    usage: gen.usage,
-    model,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Stage 6 — the other pages a theme needs
-// ---------------------------------------------------------------------------
-
-export type ExtraPageKind = "archive" | "notfound";
-
-const PAGE_BRIEFS: Record<ExtraPageKind, string> = {
-  archive: `Design the BLOG ARCHIVE — the page that lists posts. It needs a page heading, an optional filter or category row, a list or grid of post cards (title, date, excerpt, and a link), and pagination. This is the one remaining page whose structure is genuinely different from the homepage's, so give it a real layout decision of its own rather than a grid of identical boxes.`,
-  notfound: `Design the 404 PAGE. Short, and useful: say plainly that the page is not there, give the visitor two or three real ways onward, and include the search field. Small, so make it count — a designed 404 is one of the few pages people remember.`,
-};
-
-/**
- * A page built from the system, and allowed to leave it.
- *
- * The instruction below is deliberate: given a component sheet, a model will
- * assemble pages out of it and stop designing. The sheet is a vocabulary — it
- * guarantees that a button here matches a button there — but a page that only
- * ever arranges existing parts is the catalogue look again, one level up.
- */
-const EXTRA_PAGE_RULES = `Design ONE more page for a site whose design is already decided, matching it exactly — same tokens, typefaces, palette, spacing, motion and voice.
-
-The component set you are given is a VOCABULARY, NOT A TEMPLATE. Use it wherever it fits, so that a button, a card or a form on this page is the same as everywhere else. But this page is still designed, not assembled: where its content asks for a shape the components do not have, make that shape. A page that only rearranges existing parts is a catalogue, not a design.
-
-TECHNICAL CONTRACT (required by the automatic splitter):
-- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the existing CSS there — write the placeholder comment verbatim and nothing else inside), then <style data-part="page"> holding ONLY the rules this page adds.
-- <body>: the given header markup verbatim; then <main data-part="page-body"> containing the page; then the given footer markup verbatim.
+- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim and nothing else inside), then <style data-part="page"> holding ONLY the rules this page adds.
+- <body>: the given header markup verbatim; then <section data-part="page-hero"> carrying this page's title; then <main data-part="page-body"> holding the rest of the page; then the given footer markup verbatim.
+- The page hero has to work with ANY title, because the theme reuses it on every page WordPress renders: a title, whatever belongs beside one — an intro line, a breadcrumb, a date, a thin rule — and nothing that is true only of this page. A two-word title and a nine-word title must both look deliberate.
 - Every colour, size, space and radius goes through the existing custom properties. No new hex values, no new typefaces, no new Google Fonts.
-- Hover and focus-visible states follow the existing design. No <script> unless the page genuinely needs one, and then vanilla and under 30 lines.
-- Every link is a real root-relative path — a post title leads to that post, a category to that category, the pagination to the next page. Never href="#".
-- Real copy in the brief's language, and the page arrives full: every card, row, excerpt, date and label written as if the site were live. Invent the specifics — post titles, dates, categories, prices — keeping them plausible and consistent. No real company names or logos, and no quote attributed to a named person.
+- Hover and focus-visible states follow the homepage, and [data-reveal] behaves as it does there. No <script> unless the page genuinely needs one, and then vanilla and under 30 lines.
+- Every link is a real root-relative path. THE PAGES OF THIS SITE ARE LISTED BELOW — internal links point at those. Never href="#" standing in for a destination.
+- No <img> unless its url already appears in the given markup.
+- No horizontal overflow at 320px, 768px or 1440px.
 
 Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;
 
-export type ExtraPageResult = {
-  kind: ExtraPageKind;
+/** What one page is for, in the words the designer is given. */
+export type PageSpec = {
+  slug: string;
+  title: string;
+  brief: string;
+  maxTokens: number;
+};
+
+export type SitePageResult = {
+  slug: string;
   html: string;
   css: string;
   body: string;
+  pageHero: string;
   truncated: boolean;
   usage: Usage;
   model: string;
 };
 
-export async function generateExtraPage(
+const ARCHIVE_BRIEF = (slug: string) =>
+  `This is the BLOG — the page that lists posts, at /${slug}. It needs a page heading, a category or filter row, a list or grid of post cards (title, date, excerpt and a link into the post), and pagination. This is the one page whose structure is genuinely unlike the homepage's, so give it a real layout decision of its own rather than a grid of identical boxes. Write six to nine plausible posts for this business, each with a real title, date and excerpt.`;
+
+const POST_BRIEF = (slug: string) =>
+  `This is ONE BLOG POST, at /${slug}. It is also the template every long piece of writing on this site will use, so the body typography IS the work: h2, h3, paragraphs, an unordered and an ordered list, a blockquote with attribution, an inline link, a figure with a caption, and a small data table — each styled and each demonstrated in the flow of a real article. Write a genuine post for this business, 600 to 900 words, with a title, a date and an author role. Wrap the article body in <article><div class="entry container"> … </div></article> inside the page body: the theme styles all WordPress content through .entry, so those two classes have to carry the typography.`;
+
+const NOTFOUND_BRIEF =
+  `This is the 404 PAGE. Short, and useful: say plainly that the page is not there, give the visitor two or three real ways onward to pages this site actually has, and include the search field. It is small, so make it count — a designed 404 is one of the few pages people remember.`;
+
+/**
+ * Every page to design after the homepage, in the order they are worth having.
+ *
+ * The site's own pages come first because they are what the menu points at: if
+ * the clock runs out, a site missing its 404 is far less broken than a site
+ * whose Services link leads nowhere.
+ */
+export function sitePageSpecs(direction: ArtDirection | null): PageSpec[] {
+  const specs: PageSpec[] = [];
+  const taken = new Set<string>(["home"]);
+
+  for (const page of direction?.pages ?? []) {
+    if (taken.has(page.slug)) continue;
+    taken.add(page.slug);
+    specs.push({
+      slug: page.slug,
+      title: page.title,
+      brief:
+        `This page is "${page.title}", at /${page.slug}.` +
+        (page.purpose ? ` What it is for: ${page.purpose}` : "") +
+        `\n\nWork out what somebody who clicked "${page.title}" came here to find, and put it in front of them — in full, not as an outline.`,
+      maxTokens: 16000,
+    });
+  }
+
+  // The blog lives at whichever slug the direction chose for it, so the menu
+  // link and the designed page are the same page. Falling back to /blog only
+  // when this business was not given one.
+  const blogSlug =
+    specs.find((s) => /^(blog|news|journal|notes|articles|insights|posts|stories|updates)$/.test(s.slug))
+      ?.slug ?? "archive";
+
+  if (blogSlug === "archive") {
+    specs.push({ slug: "archive", title: "Blog", brief: ARCHIVE_BRIEF("blog"), maxTokens: 14000 });
+  } else {
+    // Replace the generic page spec with the archive brief: it IS the blog.
+    const at = specs.findIndex((s) => s.slug === blogSlug);
+    specs[at] = { ...specs[at], brief: ARCHIVE_BRIEF(blogSlug), maxTokens: 14000 };
+  }
+
+  specs.push({ slug: "post", title: "Blog post", brief: POST_BRIEF(`${blogSlug}/a-post`), maxTokens: 16000 });
+  specs.push({ slug: "notfound", title: "404", brief: NOTFOUND_BRIEF, maxTokens: 7000 });
+
+  return specs;
+}
+
+export async function generateSitePage(
   modelConfig: unknown,
   brief: unknown,
   direction: ArtDirection | null,
   home: { css: string; header: string; footer: string; fonts: string[] },
-  kind: ExtraPageKind,
-  components?: string,
+  spec: PageSpec,
   timeoutMs?: number
-): Promise<ExtraPageResult> {
+): Promise<SitePageResult> {
   const model = pickModel(modelConfig, "cheap");
 
   const gen = await generateText({
     model,
-    system: EXTRA_PAGE_RULES,
-    maxTokens: kind === "notfound" ? 6000 : 12000,
+    system: SITE_PAGE_RULES,
+    maxTokens: spec.maxTokens,
     timeoutMs,
-    input:
-      `${PAGE_BRIEFS[kind]}\n\n` +
-      contextBlock(brief, direction, home) +
-      (components
-        ? `\n\nCOMPONENT CSS ALREADY AVAILABLE — reuse these classes\n${components.slice(0, 6000)}`
-        : ""),
+    input: `THE PAGE YOU ARE DESIGNING\n${spec.brief}\n\n` + contextBlock(brief, direction, home),
   });
 
   const html = cleanDocument(gen.text, home.css);
 
   const cssMatch = html.match(/<style[^>]*data-part=["']page["'][^>]*>([\s\S]*?)<\/style>/i);
   const bodyMatch = html.match(/<main[^>]*data-part=["']page-body["'][\s\S]*?<\/main>/i);
+  const heroMatch = html.match(/<section[^>]*data-part=["']page-hero["'][\s\S]*?<\/section>/i);
 
   console.log(
-    `extra-page kind=${kind} model=${model} chars=${html.length} body=${
-      bodyMatch ? "yes" : "MISSING"
-    } truncated=${gen.truncated}`
+    `site-page slug=${spec.slug} model=${model} chars=${html.length} ` +
+      `body=${bodyMatch ? "yes" : "MISSING"} hero=${heroMatch ? "yes" : "MISSING"} ` +
+      `truncated=${gen.truncated}`
   );
 
   return {
-    kind,
+    slug: spec.slug,
     html,
     css: cssMatch ? cssMatch[1].trim() : "",
     body: bodyMatch ? bodyMatch[0] : "",
+    pageHero: heroMatch ? heroMatch[0] : "",
     truncated: gen.truncated,
     usage: gen.usage,
     model,
   };
 }
 
-/** The shared briefing every derived page and sheet is given. */
+/** The shared briefing every derived page is given. */
 function contextBlock(
   brief: unknown,
   direction: ArtDirection | null,
@@ -755,6 +633,10 @@ function contextBlock(
     (direction
       ? `\n\nCONCEPT: "${direction.concept.name}" — ${direction.concept.thesis}` +
         `\nVOICE: ${direction.voice.tone}`
+      : "") +
+    (direction?.pages.length
+      ? `\n\nTHE PAGES OF THIS SITE — internal links point at these, by these paths\n` +
+        direction.pages.map((p) => `- /${p.slug} — ${p.title}`).join("\n")
       : "") +
     (home.fonts.length ? `\n\nGOOGLE FONTS (link these)\n${home.fonts.join("\n")}` : "") +
     `\n\nDESIGN TOKENS — already defined; use them, do not redefine them\n${tokens}` +

@@ -507,19 +507,19 @@ final class WPAB_Editor {
 	/**
 	 * Which archived screen was asked for.
 	 *
-	 * This used to be `'inner' === $which ? 'inner' : 'home'`, written when a
-	 * design had exactly two screens. Four more arrived in 1.22 and the list was
-	 * never widened, so Components, Blog archive, 404 and Brand sheet all asked
-	 * the SaaS for the homepage and got it — the tab changed, the preview did
-	 * not. Anything unknown still falls back to the homepage; the SaaS applies
-	 * the same rule at its end.
+	 * This has been a list written in advance twice, and both times the list
+	 * fell behind what a design actually held: first two names when there were
+	 * six, and then six names when a design started holding the site's own
+	 * pages. Both times every unlisted screen quietly asked for the homepage and
+	 * got it — the tab changed, the preview did not. So the test is now the
+	 * SHAPE of a slug rather than a set of names, which cannot fall behind. The
+	 * SaaS applies the same rule at its end, and owns the question of whether
+	 * this particular design has that page.
 	 */
-	private const DESIGN_PAGES = array( 'home', 'inner', 'components', 'archive', 'notfound', 'brand' );
-
 	private static function design_page( $value ): string {
 		$raw = is_string( $value ) ? strtolower( trim( $value ) ) : '';
 
-		return in_array( $raw, self::DESIGN_PAGES, true ) ? $raw : 'home';
+		return preg_match( '/^[a-z0-9][a-z0-9-]{0,39}$/', $raw ) ? $raw : 'home';
 	}
 
 	public static function rest_design_html( WP_REST_Request $request ) {
@@ -2075,9 +2075,11 @@ final class WPAB_Editor {
 					</div>
 
 					<div id="wpab-ed-mockwrap" class="wpab-ed__mockwrap" hidden>
-						<div id="wpab-ed-mocktabs" class="wpab-ed__mocktabs" hidden></div>
 						<div id="wpab-ed-mockways" class="wpab-ed__mocktabs" hidden></div>
-						<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-scripts"></iframe>
+						<div class="wpab-ed__mockstage">
+							<nav id="wpab-ed-mocktabs" class="wpab-ed__mockrail" aria-label="Pages in this design" hidden></nav>
+							<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-scripts"></iframe>
+						</div>
 						<div id="wpab-ed-mockmeta" class="wpab-ed__mockmeta" hidden></div>
 						<div class="wpab-ed__mockedit" id="wpab-ed-mockedit" hidden>
 							<input type="text" id="wpab-ed-mockeditinput" class="wpab-ed__mockeditinput" placeholder="Change something before we build — e.g. make the hero smaller, or turn the method section into a list" />
@@ -2448,6 +2450,23 @@ final class WPAB_Editor {
 		.wpab-ed__mocktab:hover { color: #141312; }
 		.wpab-ed__mocktab.is-on { background: #141312; border-color: #141312; color: #fff; }
 		.wpab-ed__mockframe { width: 100%; height: 440px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: #fff; display: block; }
+		/* The pages of the site down the left, the page itself on the right — so
+		   the preview reads as a site with a shape rather than a strip of tabs. */
+		.wpab-ed__mockstage { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 12px; align-items: start; }
+		.wpab-ed__mockrail { display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: rgba(20,19,18,.02); max-height: 68vh; overflow-y: auto; }
+		.wpab-ed__mockrail[hidden] { display: none !important; }
+		.wpab-ed__mockrail .wpab-ed__mocktab { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 7px 10px; background: transparent; }
+		.wpab-ed__mockrail .wpab-ed__mocktab:hover { background: rgba(20,19,18,.06); color: #141312; }
+		.wpab-ed__mockrail .wpab-ed__mocktab.is-on { background: #141312; color: #fff; }
+		.wpab-ed__mocktabname { font-size: 13px; font-weight: 600; line-height: 1.3; }
+		.wpab-ed__mocktabfile { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; opacity: .55; line-height: 1.3; }
+		.wpab-ed__mocktab:focus-visible { outline: 2px solid #2f6fe4; outline-offset: 1px; }
+		@media (max-width: 900px) {
+			.wpab-ed__mockstage { grid-template-columns: 1fr; }
+			.wpab-ed__mockrail { flex-direction: row; flex-wrap: wrap; max-height: none; }
+			.wpab-ed__mockrail .wpab-ed__mocktab { width: auto; }
+			.wpab-ed__mocktabfile { display: none; }
+		}
 		.wpab-ed__mockactions { display: flex; gap: 8px; margin-top: 10px; }
 		</style>
 		<?php
@@ -4810,42 +4829,87 @@ final class WPAB_Editor {
 					+ '})();<' + '/script>';
 				function guarded(d) { d = String(d || ''); return (d.indexOf('</body>') !== -1) ? d.replace('</body>', guard + '</body>') : d + guard; }
 
-				// Which screen a link leads to.
+				// The pages this design has, as the server listed them.
 				//
-				// The inner page is the template every content page uses, so any
-				// ordinary internal link lands there — that is what the visitor
-				// would actually get. The rest is recognising the few pages a
-				// theme has a separate design for.
-				function screenForHref(href) {
+				// They arrive as {slug,label} now, in the order the site's own
+				// menu lists them, so the rail and the header agree about what
+				// this site is. An older job result held bare strings; both are
+				// normalised here so a design generated before this change can
+				// still be opened.
+				var FILE_NAME = {
+					home: 'index.html',
+					archive: 'blog.html',
+					post: 'blog-post.html',
+					notfound: '404.html',
+					inner: 'inner-page.html',
+					components: 'components.html',
+					brand: 'brand-sheet.html'
+				};
+				var LEGACY_LABEL = {
+					home: 'Homepage', archive: 'Blog', post: 'Blog post', notfound: '404',
+					inner: 'Inner page', components: 'Components', brand: 'Brand sheet'
+				};
+
+				function pageList() {
+					var raw = (mock && Array.isArray(mock.pages) && mock.pages.length) ? mock.pages : ['home'];
+					var out = [];
+					for (var i = 0; i < raw.length; i++) {
+						var it = raw[i];
+						var slug = (typeof it === 'string') ? it : (it && it.slug ? String(it.slug) : '');
+						if (!slug) { continue; }
+						var label = (it && it.label) ? String(it.label)
+							: (LEGACY_LABEL[slug] || slug.replace(/-/g, ' ').replace(/^./, function (c) { return c.toUpperCase(); }));
+						out.push({ slug: slug, label: label, file: FILE_NAME[slug] || (slug + '.html') });
+					}
+					return out.length ? out : [{ slug: 'home', label: 'Homepage', file: 'index.html' }];
+				}
+
+				function hasPage(slug) {
+					var list = pageList();
+					for (var i = 0; i < list.length; i++) { if (list[i].slug === slug) { return true; } }
+					return false;
+				}
+
+				// Where a link leads.
+				//
+				// Every page is really designed now, so a link is answered with
+				// the page itself rather than with a template standing in for it.
+				// A link to a page this design does not have goes to the 404 —
+				// which is what a visitor would meet, and is more honest than
+				// quietly showing the homepage as though the link had worked.
+				function targetFor(href) {
 					var h = String(href || '').trim();
 					if (!h || h.charAt(0) === '#') { return null; }
-					if (/^(mailto:|tel:|javascript:)/i.test(h)) { return null; }
-					// An absolute link to somewhere else is a real outbound link.
+					if (/^(mailto:|tel:|javascript:|data:)/i.test(h)) { return null; }
 					if (/^https?:\/\//i.test(h) && h.indexOf(location.host) === -1) { return null; }
+
 					var path = h.replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0].toLowerCase();
-					if (!path || path === '/' || /^\/?(home|index)(\.html?)?\/?$/.test(path)) { return 'home'; }
-					if (/(blog|news|journal|notes|articles|insights|posts|stories|updates)/.test(path)) { return 'archive'; }
-					if (/(404|not-?found)/.test(path)) { return 'notfound'; }
-					if (/(brand|identity|logo)/.test(path)) { return 'brand'; }
-					if (/(component|style-?guide|pattern|ui-?kit)/.test(path)) { return 'components'; }
-					return 'inner';
+					var home = hasPage('home') ? 'home' : pageList()[0].slug;
+
+					if (!path || path === '/' || /^\/?(home|index)(\.html?)?\/?$/.test(path)) { return home; }
+
+					var parts = path.replace(/^\/+|\/+$/g, '').split('/');
+					var first = parts[0].replace(/\.html?$/, '');
+
+										// Something under the blog is one post, and that has to be
+					// decided before the blog's own page matches the first segment —
+					// otherwise every post link stops at the listing it came from.
+					var deep = parts.length > 1;
+					var blogish = /^(archive|blog|news|journal|notes|articles|insights|posts|stories|updates)$/.test(first);
+
+					if (deep && blogish && hasPage('post')) { return 'post'; }
+					if (hasPage(first)) { return first; }
+					if (deep && hasPage('post')) { return 'post'; }
+					if (/^(404|not-?found)$/.test(first) && hasPage('notfound')) { return 'notfound'; }
+					if (blogish && hasPage('archive')) { return 'archive'; }
+					if (hasPage('notfound')) { return 'notfound'; }
+					return home;
 				}
-				// Preview tabs, built from what this generation actually produced.
-				//
-				// Any stage after the homepage can be skipped when the run is
-				// short of time, so the list comes from the server rather than
-				// being assumed here — a tab for a screen that does not exist is
-				// worse than no tab. The homepage and inner page are already in
-				// memory; the rest are fetched once each, on demand, and cached.
-				var PAGE_LABEL = {
-					home: 'Homepage',
-					inner: 'Inner page',
-					components: 'Components',
-					archive: 'Blog archive',
-					notfound: '404',
-					brand: 'Brand sheet'
-				};
-				var pageCache = { home: mock.html || '', inner: mock.innerHtml || '' };
+
+				// The homepage and the blog post are already in memory; the rest
+				// are fetched once each, on demand, and cached.
+				var pageCache = { home: mock.html || '' };
+				if (mock.innerHtml) { pageCache.post = mock.innerHtml; }
 				var ways = Array.isArray(mock.colorways) ? mock.colorways : [];
 				var curPage = 'home';
 				var curWay = -1;
@@ -4857,40 +4921,9 @@ final class WPAB_Editor {
 					return String(html).replace(/:root\s*\{[\s\S]*?\}/, function () { return ways[curWay].rootCss; });
 				}
 
-				// The site's own pages, decided by the art director and linked from
-				// the header. The preview has one inner-page design and every one
-				// of these uses it — that is what the finished theme does too —
-				// so walking to /about shows the template with About as its title
-				// rather than the specimen heading the designer happened to write.
-				var sitePages = Array.isArray(mock.sitePages) ? mock.sitePages : [];
-				var innerTitle = '';
-
-				function esc2(s) {
-					return String(s == null ? '' : s)
-						.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-				}
-
-				function titleForPath(path) {
-					var slug = String(path || '').replace(/^\/+|\/+$/g, '').split('/')[0];
-					if (!slug) { return ''; }
-					for (var ti = 0; ti < sitePages.length; ti++) {
-						var sp = sitePages[ti];
-						if (sp && sp.slug === slug) { return sp.title || ''; }
-					}
-					return '';
-				}
-
-				function retitled(html) {
-					if (curPage !== 'inner' || !innerTitle) { return html; }
-					return String(html).replace(
-						/(<section[^>]*data-part=["']page-hero["'][\s\S]*?<h1[^>]*>)([\s\S]*?)(<\/h1>)/i,
-						function (m, open, body, close) { return open + esc2(innerTitle) + close; }
-					);
-				}
-
 				function paint() {
 					var html = pageCache[curPage];
-					frame.srcdoc = html ? guarded(withWay(retitled(html))) : guarded('<p style="font:14px system-ui;padding:24px">Loading…</p>');
+					frame.srcdoc = html ? guarded(withWay(html)) : guarded('<p style="font:14px system-ui;padding:24px">Loading…</p>');
 				}
 
 				function syncTabs(which) {
@@ -4913,7 +4946,7 @@ final class WPAB_Editor {
 						pageCache[which] = d.html || '';
 						if (curPage === which) { paint(); }
 					}).catch(function () {
-						pageCache[which] = '<p style="font:14px system-ui;padding:24px">This screen could not be loaded.</p>';
+						pageCache[which] = '<p style="font:14px system-ui;padding:24px">This page could not be loaded.</p>';
 						if (curPage === which) { paint(); }
 					});
 				}
@@ -4923,36 +4956,29 @@ final class WPAB_Editor {
 					if (!frame || e.source !== frame.contentWindow) { return; }
 					var data = e.data;
 					if (!data || typeof data.wpabNav !== 'string') { return; }
-					var target = screenForHref(data.wpabNav);
-					if (!target) { return; }
-					innerTitle = target === 'inner'
-						? titleForPath(String(data.wpabNav).replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0])
-						: '';
-					var have = (Array.isArray(mock.pages) && mock.pages.length) ? mock.pages : ['home'];
-					// A link to a screen this run did not produce still has to go
-					// somewhere sensible: an inner page if there is one, otherwise
-					// back to the homepage. Silently doing nothing reads as broken.
-					if (have.indexOf(target) === -1) {
-						target = have.indexOf('inner') !== -1 && target !== 'home' ? 'inner' : 'home';
-					}
-					if (target !== curPage) { openPage(target); return; }
-					// Already on the inner template, but for a different page: the
-					// title is the only thing that changes, and repainting is what
-					// makes the walk read as a site rather than a dead click.
-					if (target === 'inner') { paint(); }
+					var target = targetFor(data.wpabNav);
+					if (!target || target === curPage) { return; }
+					openPage(target);
 				});
 
 				var mtabs = $('wpab-ed-mocktabs');
 				function buildPageTabs() {
 					if (!mtabs) { return; }
-					var pages = (Array.isArray(mock.pages) && mock.pages.length) ? mock.pages : ['home'];
+					var pages = pageList();
 					mtabs.innerHTML = '';
 					for (var pi = 0; pi < pages.length; pi++) {
 						var b = document.createElement('button');
 						b.type = 'button';
-						b.className = 'wpab-ed__mocktab' + (pages[pi] === 'home' ? ' is-on' : '');
-						b.setAttribute('data-mocktab', pages[pi]);
-						b.textContent = PAGE_LABEL[pages[pi]] || pages[pi];
+						b.className = 'wpab-ed__mocktab' + (pages[pi].slug === curPage ? ' is-on' : '');
+						b.setAttribute('data-mocktab', pages[pi].slug);
+						var nm = document.createElement('span');
+						nm.className = 'wpab-ed__mocktabname';
+						nm.textContent = pages[pi].label;
+						var fl = document.createElement('span');
+						fl.className = 'wpab-ed__mocktabfile';
+						fl.textContent = pages[pi].file;
+						b.appendChild(nm);
+						b.appendChild(fl);
 						mtabs.appendChild(b);
 					}
 					mtabs.hidden = pages.length < 2;
@@ -4963,7 +4989,6 @@ final class WPAB_Editor {
 						var t = e.target;
 						while (t && t !== mtabs && !t.getAttribute('data-mocktab')) { t = t.parentNode; }
 						if (!t || t === mtabs) { return; }
-						innerTitle = '';
 						openPage(t.getAttribute('data-mocktab'));
 					};
 				}
@@ -5117,10 +5142,14 @@ final class WPAB_Editor {
 				if (mock.pageHero || mock.innerCss) {
 					ctx.inner = { css: mock.innerCss || '', pageHero: mock.pageHero || '' };
 				}
-				// The design stage produces more than a homepage now. Without
-				// these, the build model invents its own buttons, blog listing
-				// and 404 — and they match nothing that was approved above.
-				if (mock.componentsCss) { ctx.components = { css: mock.componentsCss }; }
+				// The design stage produces a whole site now. Without these, the
+				// build model invents its own buttons, blog listing and 404 — and
+				// they match nothing that was approved above.
+				// The rules every content page adds. These used to come from a
+				// component sheet nobody could reach; they are cut from the real
+				// pages now, and an older design still has its sheet.
+				var extraCss = mock.pagesCss || mock.componentsCss || '';
+				if (extraCss) { ctx.components = { css: extraCss }; }
 				if (mock.archiveBody || mock.archiveCss) {
 					ctx.archive = { css: mock.archiveCss || '', body: mock.archiveBody || '' };
 				}

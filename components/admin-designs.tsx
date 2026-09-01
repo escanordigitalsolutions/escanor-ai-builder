@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { AdminDesignRow } from "@/lib/admin/designs";
 import {
   applyColorway,
-  PAGE_LABEL,
+  type PageEntry,
   type ColorwayCss,
   type DesignPage,
 } from "@/lib/agent/design-pages";
@@ -14,7 +14,7 @@ import { resolveTarget } from "@/lib/agent/design-links";
 type Loaded = {
   html: string;
   which: DesignPage;
-  available: DesignPage[];
+  available: PageEntry[];
   colorways: ColorwayCss[];
   critique: string | null;
 };
@@ -66,7 +66,7 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
   function wireLinks(
     frame: HTMLIFrameElement | null,
     id: string,
-    available: DesignPage[]
+    available: PageEntry[]
   ) {
     if (!frame) return;
 
@@ -88,7 +88,7 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
 
           event.preventDefault();
 
-          const target = resolveTarget(href, available, window.location.host);
+          const target = resolveTarget(href, available.map((p) => p.slug), window.location.host);
 
           if (target) void open(id, target);
         },
@@ -118,7 +118,7 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
       setLoaded({
         html: data.html ?? "",
         which: data.which,
-        available: (data.available ?? ["home"]) as DesignPage[],
+        available: (data.available ?? [{ slug: "home", label: "Homepage" }]) as PageEntry[],
         colorways: (data.colorways ?? []) as ColorwayCss[],
         critique: data.critique ?? null,
       });
@@ -230,17 +230,17 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
                   <div className="mb-3 flex flex-wrap items-center gap-2">
                     {/* Only the screens this design actually has: a generation
                         that ran short of time simply produced fewer. */}
-                    {(loaded?.available ?? ["home"]).map((page) => (
+                    {(loaded?.available ?? [{ slug: "home", label: "Homepage" }]).map((page) => (
                       <button
-                        key={page}
-                        onClick={() => void open(d.id, page)}
+                        key={page.slug}
+                        onClick={() => void open(d.id, page.slug)}
                         className={
-                          which === page
+                          which === page.slug
                             ? "btn-accent px-3 py-1.5 text-xs font-medium"
                             : "btn-ghost px-3 py-1.5 text-xs"
                         }
                       >
-                        {PAGE_LABEL[page]}
+                        {page.label}
                       </button>
                     ))}
 
@@ -314,7 +314,7 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
                             ? applyColorway(loaded.html, loaded.colorways[way].rootCss)
                             : loaded.html
                         }
-                        title={`${d.concept ?? "Design"} — ${PAGE_LABEL[which]}`}
+                        title={`${d.concept ?? "Design"} — ${which}`}
                         className="h-[620px] w-full border-0 bg-white"
                       />
                     ) : (

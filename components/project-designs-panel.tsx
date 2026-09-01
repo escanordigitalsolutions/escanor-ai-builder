@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { PAGE_LABEL, type DesignPage } from "@/lib/agent/design-pages";
+import { type DesignPage, type PageEntry } from "@/lib/agent/design-pages";
 
 type DesignRow = {
   id: string;
@@ -46,7 +46,7 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
   const [openId, setOpenId] = useState<string | null>(null);
   const [openHtml, setOpenHtml] = useState("");
   const [openWhich, setOpenWhich] = useState<DesignPage>("home");
-  const [openPages, setOpenPages] = useState<DesignPage[]>(["home"]);
+  const [openPages, setOpenPages] = useState<PageEntry[]>([{ slug: "home", label: "Homepage" }]);
   const [openNote, setOpenNote] = useState("");
   const [openLoading, setOpenLoading] = useState(false);
 
@@ -93,9 +93,9 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
 
       if (json.success) {
         setOpenHtml(json.design?.html ?? "");
-        setOpenPages((json.available ?? ["home"]) as DesignPage[]);
+        setOpenPages((json.available ?? [{ slug: "home", label: "Homepage" }]) as PageEntry[]);
       } else {
-        if (Array.isArray(json.available)) setOpenPages(json.available as DesignPage[]);
+        if (Array.isArray(json.available)) setOpenPages(json.available as PageEntry[]);
         // A design from before inner pages were archived has only one screen.
         // Saying so beats an empty frame that looks like a bug.
         setOpenNote(json.error ?? "Could not load the preview.");
@@ -195,15 +195,15 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   {openPages.map((page) => (
                     <button
-                      key={page}
-                      onClick={() => void openPreview(d.id, page)}
+                      key={page.slug}
+                      onClick={() => void openPreview(d.id, page.slug)}
                       className={
-                        openWhich === page
+                        openWhich === page.slug
                           ? "btn-accent px-2.5 py-1 text-[11px] font-medium"
                           : "btn-ghost px-2.5 py-1 text-[11px]"
                       }
                     >
-                      {PAGE_LABEL[page]}
+                      {page.label}
                     </button>
                   ))}
                   {openNote ? (

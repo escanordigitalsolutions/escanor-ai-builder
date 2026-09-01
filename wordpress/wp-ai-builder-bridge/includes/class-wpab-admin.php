@@ -25,6 +25,57 @@ final class WPAB_Admin {
 	private const BRIDGE_SLUG    = 'wp-ai-builder-bridge';
 	private const LOG_SLUG       = 'wp-ai-builder-log';
 
+	/**
+	 * The design's pages as JSON for the card, from either shape.
+	 *
+	 * A design's screens used to be a fixed list of six names the browser could
+	 * label from a table it held itself. They are the site's own pages now — the
+	 * labels come with them — and an older job result still sends bare strings,
+	 * so both are normalised to {slug,label} here rather than in three places in
+	 * the JavaScript.
+	 */
+	public static function page_list_json( $available ) {
+		$fallback = array( array( 'slug' => 'home', 'label' => 'Homepage' ) );
+
+		if ( ! is_array( $available ) || ! $available ) {
+			return wp_json_encode( $fallback );
+		}
+
+		$legacy = array(
+			'home'       => 'Homepage',
+			'archive'    => 'Blog',
+			'post'       => 'Blog post',
+			'notfound'   => '404',
+			'inner'      => 'Inner page',
+			'components' => 'Components',
+			'brand'      => 'Brand sheet',
+		);
+
+		$out = array();
+
+		foreach ( $available as $entry ) {
+			if ( is_array( $entry ) ) {
+				$slug  = sanitize_key( isset( $entry['slug'] ) ? $entry['slug'] : '' );
+				$label = isset( $entry['label'] ) ? sanitize_text_field( (string) $entry['label'] ) : '';
+			} else {
+				$slug  = sanitize_key( (string) $entry );
+				$label = '';
+			}
+
+			if ( '' === $slug ) {
+				continue;
+			}
+
+			if ( '' === $label ) {
+				$label = isset( $legacy[ $slug ] ) ? $legacy[ $slug ] : ucfirst( str_replace( '-', ' ', $slug ) );
+			}
+
+			$out[] = array( 'slug' => $slug, 'label' => $label );
+		}
+
+		return wp_json_encode( $out ? $out : $fallback );
+	}
+
 	public static function init(): void {
 		add_action( 'admin_menu', array( __CLASS__, 'register_menu' ) );
 		add_action( 'admin_post_wpab_generate_token', array( __CLASS__, 'handle_generate_token' ) );
@@ -419,7 +470,7 @@ final class WPAB_Admin {
 							<div class="wpabd-dcard"
 								data-design="<?php echo esc_attr( (string) ( $d['id'] ?? '' ) ); ?>"
 								data-title="<?php echo esc_attr( $title ); ?>"
-								data-pages="<?php echo esc_attr( implode( ',', array_map( 'strval', (array) ( $d['available'] ?? array( 'home' ) ) ) ) ); ?>"
+								data-pages="<?php echo esc_attr( WPAB_Admin::page_list_json( $d['available'] ?? null ) ); ?>"
 								data-rebuildable="<?php echo empty( $d['rebuildable'] ) ? '0' : '1'; ?>"
 								title="Open full preview">
 								<div class="wpabd-dshell">
@@ -475,10 +526,10 @@ final class WPAB_Admin {
 						// so the cache is keyed on both. Keying on the id alone would show
 						// whichever was fetched first for the rest of the session.
 						function fetchHtml(id, which) {
-							// Same fix as the editor's proxy: this list stopped at two
-							// screens while the design pipeline grew to six, so every
-							// other tab quietly rendered the homepage.
-							which = ['home','inner','components','archive','notfound','brand'].indexOf(which) === -1 ? 'home' : which;
+							// A design's pages are its own now, so the check is the shape
+							// of a slug rather than a list written in advance — which is
+							// what used to make every unlisted screen render the homepage.
+							which = /^[a-z0-9][a-z0-9-]{0,39}$/.test(String(which || '')) ? which : 'home';
 							var key = id + ':' + which;
 							if (cache[key]) { return Promise.resolve(cache[key]); }
 							return fetch(URL_HTML, {
@@ -584,27 +635,32 @@ final class WPAB_Admin {
 							showPage(id, 'home', wrap, frame, card);
 						});
 
-						var PAGE_LABEL = {
-							home: 'Homepage', inner: 'Inner page', components: 'Components',
-							archive: 'Blog archive', notfound: '404', brand: 'Brand sheet'
-						};
+						// The pages this design has, named the way the site names them.
+						function pagesOf(card) {
+							try {
+								var parsed = JSON.parse(card.getAttribute('data-pages') || '[]');
+								if (parsed && parsed.length) { return parsed; }
+							} catch (err) { /* fall through */ }
+							return [{ slug: 'home', label: 'Homepage' }];
+						}
 
-						// Built per design: any stage after the homepage may have been
-						// skipped when a run was short of time, so the tabs come from
-						// the card rather than being assumed.
+						function slugsOf(card) {
+							return pagesOf(card).map(function (p) { return p.slug; });
+						}
+
+						// Built per design: a page may have failed or been dropped, so
+						// the tabs come from the card rather than being assumed.
 						function buildTabs(card, which) {
 							var host = document.getElementById('wpabd-whichtabs');
 							if (!host) { return; }
-							var list = String(card.getAttribute('data-pages') || 'home').split(',');
+							var list = pagesOf(card);
 							host.innerHTML = '';
 							for (var i = 0; i < list.length; i++) {
-								var key = list[i];
-								if (!key) { continue; }
 								var b = document.createElement('button');
 								b.type = 'button';
-								b.className = 'button wpabd-which' + (key === which ? ' button-primary' : '');
-								b.setAttribute('data-which', key);
-								b.textContent = PAGE_LABEL[key] || key;
+								b.className = 'button wpabd-which' + (list[i].slug === which ? ' button-primary' : '');
+								b.setAttribute('data-which', list[i].slug);
+								b.textContent = list[i].label;
 								host.appendChild(b);
 							}
 							var use = document.getElementById('wpabd-usebtn');
@@ -626,21 +682,34 @@ final class WPAB_Admin {
 							}
 						}
 
-						// Which screen a link in the design leads to. The inner page is
-						// the template every content page uses, so an ordinary internal
-						// link lands there — that is what a visitor would really get.
-						function screenForHref(href) {
+						// Where a link in the design leads. Every page is really designed
+						// now, so a link is answered with the page itself; only the blog
+						// and the 404 are still reached by the shape of the path.
+						function targetFor(href, have) {
 							var h = String(href || '').trim();
 							if (!h || h.charAt(0) === '#') { return null; }
-							if (/^(mailto:|tel:|javascript:)/i.test(h)) { return null; }
+							if (/^(mailto:|tel:|javascript:|data:)/i.test(h)) { return null; }
 							if (/^https?:\/\//i.test(h) && h.indexOf(location.host) === -1) { return null; }
+
+							var has = function (s) { return have.indexOf(s) !== -1; };
+							var home = has('home') ? 'home' : have[0];
 							var path = h.replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0].toLowerCase();
-							if (!path || path === '/' || /^\/?(home|index)(\.html?)?\/?$/.test(path)) { return 'home'; }
-							if (/(blog|news|journal|notes|articles|insights|posts|stories|updates)/.test(path)) { return 'archive'; }
-							if (/(404|not-?found)/.test(path)) { return 'notfound'; }
-							if (/(brand|identity|logo)/.test(path)) { return 'brand'; }
-							if (/(component|style-?guide|pattern|ui-?kit)/.test(path)) { return 'components'; }
-							return 'inner';
+
+							if (!path || path === '/' || /^\/?(home|index)(\.html?)?\/?$/.test(path)) { return home; }
+
+							var parts = path.replace(/^\/+|\/+$/g, '').split('/');
+							var first = parts[0].replace(/\.html?$/, '');
+
+														var deep = parts.length > 1;
+							var blogish = /^(archive|blog|news|journal|notes|articles|insights|posts|stories|updates)$/.test(first);
+
+							if (deep && blogish && has('post')) { return 'post'; }
+							if (has(first)) { return first; }
+							if (deep && has('post')) { return 'post'; }
+							if (/^(404|not-?found)$/.test(first) && has('notfound')) { return 'notfound'; }
+							if (blogish && has('archive')) { return 'archive'; }
+							if (has('notfound')) { return 'notfound'; }
+							return home;
 						}
 
 						// The framed page cannot run a line of its own script, so the
@@ -655,13 +724,8 @@ final class WPAB_Admin {
 								var href = a.getAttribute('href') || '';
 								if (href.charAt(0) === '#') { return; }
 								e.preventDefault();
-								var target = screenForHref(href);
-								if (!target) { return; }
-								var have = (card.getAttribute('data-pages') || 'home').split(',');
-								if (have.indexOf(target) === -1) {
-									target = have.indexOf('inner') !== -1 && target !== 'home' ? 'inner' : 'home';
-								}
-								if (target !== openWhich) { showPage(id, target, wrap, frame, card); }
+								var target = targetFor(href, slugsOf(card));
+								if (target && target !== openWhich) { showPage(id, target, wrap, frame, card); }
 							}, true);
 							doc.addEventListener('submit', function (e) { e.preventDefault(); }, true);
 						}
@@ -678,12 +742,12 @@ final class WPAB_Admin {
 								openWhich = which;
 								wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 							}).catch(function (err) {
-								// A design generated before inner pages were archived simply
-								// has no second screen; that is worth saying rather than
-								// closing the preview the person already had open.
-								if (which === 'inner') {
+								// A design generated before a stage existed simply has no
+								// such screen; that is worth saying rather than closing the
+								// preview the person already had open.
+								if (which !== 'home') {
 									markWhich(openWhich);
-									if (note) { note.textContent = (err && err.message) || 'No inner page was kept for this design.'; }
+									if (note) { note.textContent = (err && err.message) || 'That page was not kept for this design.'; }
 									return;
 								}
 								if (card) { card.classList.remove('is-open'); }

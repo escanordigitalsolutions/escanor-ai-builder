@@ -1,4 +1,4 @@
-import { DESIGN_PAGES, type DesignPage } from "./design-pages";
+import { FIXED_PAGES, isPageSlug, type DesignPage } from "./design-pages";
 
 /**
  * Where a link inside a generated design leads.
@@ -8,11 +8,19 @@ import { DESIGN_PAGES, type DesignPage } from "./design-pages";
  * feel like a screenshot. Routing the click instead lets the whole thing be
  * walked: the nav, the footer, a card, a "read more".
  *
- * The mapping rests on one fact about the theme this design becomes: the inner
- * page is the TEMPLATE every content page uses. So an ordinary internal link
- * does not lead nowhere — it leads to exactly what a visitor would get.
+ * The mapping used to rest on a fact that is no longer true — that one inner
+ * page was the template every content page shared, so any internal link could
+ * be answered with it. Every page is really designed now, so a link is matched
+ * against the pages this design actually holds and answered with the page
+ * itself. Guessing is left for the two screens a visitor reaches by accident
+ * rather than by name.
  */
-export function screenForHref(href: string, host = ""): DesignPage | null {
+
+/** Slugs a blog listing plausibly lives at, plus our own reserved name. */
+const BLOGISH = /^(archive|blog|news|journal|notes|articles|insights|posts|stories|updates)$/;
+
+/** The first path segment: /services/detail -> "services". */
+function firstSegment(href: string, host = ""): string | null {
   const raw = String(href ?? "").trim();
 
   // An in-page anchor is the page's own business, and scrolls where it points.
@@ -28,32 +36,73 @@ export function screenForHref(href: string, host = ""): DesignPage | null {
     .split("#")[0]
     .toLowerCase();
 
-  if (!path || path === "/" || /^\/?(home|index)(\.html?)?\/?$/.test(path)) return "home";
-  if (/(blog|news|journal|notes|articles|insights|posts|stories|updates)/.test(path)) return "archive";
-  if (/(404|not-?found)/.test(path)) return "notfound";
-  if (/(brand|identity|logo)/.test(path)) return "brand";
-  if (/(component|style-?guide|pattern|ui-?kit)/.test(path)) return "components";
+  if (!path || path === "/" || /^\/?(home|index)(\.html?)?\/?$/.test(path)) return "";
 
-  return "inner";
+  return path.replace(/^\/+|\/+$/g, "").split("/")[0].replace(/\.html?$/, "");
 }
 
 /**
- * The same answer, narrowed to what this run actually produced.
+ * The page a link leads to, given the pages this design holds.
  *
- * A generation short of time makes fewer screens. Sending a click to a screen
- * that does not exist would do nothing, and doing nothing reads as broken — so
- * it falls back to the inner page, and then to the homepage.
+ * `available` is the design's own list, so a match is exact: /services leads to
+ * the Services page that was designed, not to a stand-in. Only when nothing
+ * matches does the shape of the path decide, and then only for the blog and the
+ * 404 — the two screens nobody navigates to by name.
  */
 export function resolveTarget(
   href: string,
   available: readonly DesignPage[],
   host = ""
 ): DesignPage | null {
-  const target = screenForHref(href, host);
+  const segment = firstSegment(href, host);
 
-  if (!target) return null;
-  if (available.includes(target)) return target;
-  if (target !== "home" && available.includes("inner")) return "inner";
+  if (segment === null) return null;
 
-  return available.includes("home") ? "home" : (DESIGN_PAGES.find((p) => available.includes(p)) ?? null);
+  const has = (slug: string) => available.includes(slug);
+  const home = has("home") ? "home" : (available[0] ?? null);
+
+  if (segment === "") return home;
+  if (!isPageSlug(segment)) return home;
+
+  const path = String(href ?? "")
+    .replace(/^https?:\/\/[^/]+/i, "")
+    .split("?")[0]
+    .split("#")[0]
+    .replace(/^\/+|\/+$/g, "");
+  const deep = path.includes("/");
+
+  // Something under the blog — /journal/why-onboarding-fails — is one post, and
+  // that has to be decided before the blog's own page matches the first
+  // segment. Otherwise every post link stops at the listing it came from.
+  if (deep && BLOGISH.test(segment) && has("post")) return "post";
+
+  // The page itself, when the design has it. This is the ordinary case now.
+  if (has(segment)) return segment;
+
+  if (deep && has("post")) return "post";
+
+  if (/^(404|not-?found)$/.test(segment) && has("notfound")) return "notfound";
+
+  if (BLOGISH.test(segment) && has("archive")) return "archive";
+
+  // A link to a page this design does not have is what a visitor would meet as
+  // a missing page, and the theme has one designed for exactly that. Falling
+  // back to the homepage instead would quietly pretend the link worked.
+  if (has("notfound")) return "notfound";
+
+  return home;
+}
+
+/** Retained for callers that only want the shape of the path. */
+export function screenForHref(href: string, host = ""): DesignPage | null {
+  const segment = firstSegment(href, host);
+
+  if (segment === null) return null;
+  if (segment === "") return "home";
+  if (/^(404|not-?found)$/.test(segment)) return "notfound";
+  if (BLOGISH.test(segment)) return "archive";
+
+  return isPageSlug(segment) && !(FIXED_PAGES as readonly string[]).includes(segment)
+    ? segment
+    : "home";
 }
