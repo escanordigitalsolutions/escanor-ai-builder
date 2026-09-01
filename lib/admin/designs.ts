@@ -33,6 +33,8 @@ export type AdminDesignRow = {
   signatureMove: string | null;
   fonts: string;
   accent: string;
+  /** Cache-buster for the preview picture; 0 = none, show the accent square. */
+  thumb: number;
   failures: number;
   fatal: number;
   hasInner: boolean;
@@ -99,6 +101,11 @@ export async function loadDesignArchive(limit = 60): Promise<AdminDesignRow[]> {
           : null,
       fonts: readFonts(direction),
       accent: readAccent(direction),
+      thumb:
+        typeof ((row.assets as Record<string, unknown> | null)?.thumb as { version?: unknown } | undefined)
+          ?.version === "number"
+          ? (((row.assets as Record<string, unknown>).thumb as { version: number }).version)
+          : 0,
       failures: failures.length,
       fatal: failures.filter((f: unknown) => (f as { fatal?: boolean })?.fatal).length,
       // Flags, not payloads: the list must stay small.

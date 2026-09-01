@@ -31,18 +31,7 @@ import {
 // Stage 1 — the art director
 // ---------------------------------------------------------------------------
 
-const ART_DIRECTOR = `You are an art director. Decide the visual direction for one website; a designer will execute your decisions literally. Decide — exact typefaces, exact hex values, an exact grid. Never options, never vague adjectives: "warm neutrals" is not a decision, #E8DCC8 is.
-
-RULES
-
-- Root the direction in the most specific true thing in the brief, and name the concept in a word or two. If the brief is thin, take its most concrete reading, not its most general.
-- One structural SIGNATURE MOVE a visitor could describe to someone else afterwards. A structure, not an effect.
-- Two Google Fonts families, paired by contrast. Never Inter, Roboto, Open Sans, Montserrat, Poppins, Lato, Nunito or Space Grotesk unless the brief names them as existing brand fonts. Name only families that exist on Google Fonts.
-- The palette is roles, with ONE accent. Body text reaches 4.5:1 against its ground. Brand colours or typefaces given in the brief are fixed.
-- PAGES: 4 to 7 the business actually needs, kebab-case slugs with a title and a one-line purpose each. Binding: the header links to them, the preview walks to them, the theme builds exactly these.
-- SECTIONS: 4 to 7 for the homepage. Each gets a slug, its job, its structural shape, and a COUNTABLE content line — "four capability blocks, each a title and 30-50 words" — never "explain the services". No two adjacent sections share a shape. The writer will invent plausible specifics, so plan figures, tables and quotes freely; only real company names and quotes attributed to a named person are off limits.
-- Two more complete colourways for the same design, same roles, each holding together on its own.
-- avoid: 4 to 8 concrete moves a tired designer would plausibly make on THIS brief.
+const ART_DIRECTOR = `You are an art director. Decide the visual direction for one website — a designer will execute your decisions literally. Exact typefaces from Google Fonts, exact hex values, an exact grid; body text readable against its ground. Decide the 4-7 pages this site has and the homepage's 4-7 sections, each section with a one-line content brief.
 
 Answer with only JSON in exactly this shape. No markdown, nothing outside the object.
 
@@ -78,7 +67,7 @@ Answer with only JSON in exactly this shape. No markdown, nothing outside the ob
   ]
 }
 
-size runs smallest to largest, seven steps, clamp() allowed. space runs tightest to widest.`;
+size runs smallest to largest, seven steps. space runs tightest to widest.`;
 
 export type StageResult<T> = { data: T; usage: Usage; model: string };
 
@@ -113,22 +102,17 @@ export async function generateArtDirection(
 // Stage 2 — the designer
 // ---------------------------------------------------------------------------
 
-const DESIGNER = `You are a senior web designer building one homepage as a single self-contained HTML file. The art direction is DECIDED, not suggested: the typefaces, palette, grid, signature move and page list are fixed. Your freedom is execution — composition, rhythm, and what the copy says.
-
-The page ships finished: every section fully written, in the brief's language, at the count its content line asked for. Invent whatever specifics the page needs — figures, prices, timeframes, process, a quote attributed to a role — and keep them consistent across the page. Never real company names or logos; never a quote attributed to a named person.
-
-Sections differ STRUCTURALLY from one another, not only in content. Type does the heavy lifting — one or two moments genuinely large. The signature move is unmistakable and visible in the first screen.
+const DESIGNER = `You are a senior web designer building one homepage as a single self-contained HTML file. The art direction is DECIDED: typefaces, palette, grid, signature move and page list are fixed. Everything else — structure, composition, copy — is yours. The page ships finished, written in the brief's language.
 
 TECHNICAL CONTRACT — the splitter is automatic and deviations break the build
 
-- ONE HTML document. All CSS in a single <style> block in <head>, which OPENS with the supplied :root block verbatim. Every colour, size, space, radius and font below it goes through those custom properties — no hard-coded hex below :root. Google Fonts loaded with <link> tags, both families used.
-- Exactly one inline <script> before </body>: vanilla, under ~80 lines — the mobile menu toggle, an IntersectionObserver adding .in-view to [data-reveal] (everything stays visible without JS), and .is-scrolled on the header. Honour prefers-reduced-motion.
+- ONE HTML document. All CSS in a single <style> block in <head>, which OPENS with the supplied :root block verbatim; every value below it goes through those custom properties. Google Fonts loaded with <link> tags, both families used.
+- Exactly one inline <script> before </body>: vanilla — the mobile menu toggle, an IntersectionObserver adding .in-view to [data-reveal] (everything stays visible without JS), and .is-scrolled on the header.
 - <body>: <header data-part="header">, then 4-7 top-level <section data-section="<slug>"> using the plan's slugs, never nested, then <footer data-part="footer">.
-- The header nav links to the site's pages by their slugs as root-relative paths — one link per page, labelled with its title, no in-page anchors in the nav. Every other internal link is also a real root-relative path; never href="#".
-- Photographs only from the supplied PEXELS urls, as <img src width height alt loading="lazy"> — or none, which is often stronger.
-- No horizontal overflow at 320px, 768px or 1440px; hover and focus-visible states on everything interactive.
+- The header nav links to the site's pages by their slugs as root-relative paths; every internal link is a real root-relative path, never href="#".
+- Photographs only from the supplied PEXELS urls, or none.
 
-Output only the complete HTML document, from <!DOCTYPE html> to </html>. No markdown fences, no commentary.`;
+Output only the complete HTML document, from <!DOCTYPE html> to </html>. No markdown fences.`;
 
 export type MockupSection = { slug: string; html: string };
 

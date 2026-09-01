@@ -21,6 +21,7 @@ import { recordUsage } from "@/lib/ai/usage";
 import { refundJobUsage } from "@/lib/billing/credits";
 import { describeError } from "@/lib/debug";
 import { renderThumbnail } from "@/lib/agent/thumbnail";
+import { renderCover } from "@/lib/agent/cover";
 
 // The response returns immediately with a job id; the mockup itself renders in
 // after() and can take a couple of minutes on a strong model.
@@ -340,6 +341,35 @@ export async function POST(request: NextRequest) {
           }
         } catch (thumbError) {
           console.error("thumbnail stage error (continuing without):", thumbError);
+        }
+
+        // The cover: a painted moodboard of the direction's vibe, for the
+        // library cards. Same contract as the thumbnail — any failure leaves
+        // the design coverless, never failed.
+        try {
+          const name =
+            (typeof (brief as Record<string, unknown>)?.name === "string" &&
+              ((brief as Record<string, unknown>).name as string)) ||
+            direction?.concept.name ||
+            "the brand";
+          const cover = await renderCover(direction, name);
+
+          if (cover) {
+            const { data: row } = await db
+              .from("ai_designs")
+              .select("assets")
+              .eq("id", designId)
+              .single();
+
+            await db
+              .from("ai_designs")
+              .update({ assets: { ...((row?.assets ?? {}) as object), cover } })
+              .eq("id", designId);
+
+            done.coverVersion = cover.version;
+          }
+        } catch (coverError) {
+          console.error("cover stage error (continuing without):", coverError);
         }
       }
 

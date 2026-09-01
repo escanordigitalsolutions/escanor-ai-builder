@@ -2044,6 +2044,7 @@ final class WPAB_Editor {
 					}
 					$lb = isset( $row['brief']['name'] ) && $row['brief']['name'] ? $row['brief']['name'] : ( $row['concept'] ?? 'Untitled design' );
 					$tver      = (int) ( $row['thumb'] ?? 0 );
+					$cver      = (int) ( $row['cover'] ?? 0 );
 					$library[] = array(
 						'id'      => (string) $row['id'],
 						'name'    => sanitize_text_field( (string) $lb ),
@@ -2052,6 +2053,11 @@ final class WPAB_Editor {
 						'status'  => sanitize_key( (string) ( $row['status'] ?? 'pending' ) ),
 						'thumb'   => $tver > 0
 							? esc_url_raw( WPAB_Cloud::builder_url() . '/api/agent/design-thumb/' . rawurlencode( (string) $row['id'] ) . '?v=' . $tver )
+							: '',
+						// The painted moodboard — the card's cover art. The
+						// screenshot stays the fallback for designs without one.
+						'cover'   => $cver > 0
+							? esc_url_raw( WPAB_Cloud::builder_url() . '/api/agent/design-cover/' . rawurlencode( (string) $row['id'] ) . '?v=' . $cver )
 							: '',
 					);
 				}
@@ -4285,10 +4291,10 @@ final class WPAB_Editor {
 					it.type = 'button';
 					it.className = 'wpab-ed__wlibitem';
 					it.setAttribute('data-design', d.id);
-					if (d.thumb) {
+					if (d.cover || d.thumb) {
 						var im = document.createElement('img');
 						im.className = 'wpab-ed__wlibthumb';
-						im.src = d.thumb;
+						im.src = d.cover || d.thumb;
 						im.alt = '';
 						im.loading = 'lazy';
 						it.appendChild(im);

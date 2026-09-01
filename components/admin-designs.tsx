@@ -164,11 +164,24 @@ export default function AdminDesigns({ designs }: { designs: AdminDesignRow[] })
                 onClick={() => (isOpen ? close() : void open(d.id, "home"))}
                 className="flex w-full items-start gap-4 px-5 py-4 text-left transition hover:bg-neutral-900/[0.02]"
               >
-                <span
-                  aria-hidden
-                  className="mt-1 h-8 w-8 flex-none rounded-md border border-neutral-900/10"
-                  style={{ background: d.accent || "#e5e5e5" }}
-                />
+                {d.thumb ? (
+                  // The real page, not a swatch: the screenshot taken when the
+                  // design was made, one cached image per row.
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    aria-hidden
+                    alt=""
+                    loading="lazy"
+                    src={`/api/agent/design-thumb/${d.id}?v=${d.thumb}`}
+                    className="mt-1 h-12 w-20 flex-none rounded-md border border-neutral-900/10 object-cover object-top"
+                  />
+                ) : (
+                  <span
+                    aria-hidden
+                    className="mt-1 h-8 w-8 flex-none rounded-md border border-neutral-900/10"
+                    style={{ background: d.accent || "#e5e5e5" }}
+                  />
+                )}
 
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">

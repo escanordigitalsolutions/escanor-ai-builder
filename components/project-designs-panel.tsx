@@ -12,6 +12,7 @@ type DesignRow = {
   input_tokens: number;
   output_tokens: number;
   created_at: string;
+  thumb?: number;
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -159,6 +160,16 @@ export default function ProjectDesignsPanel({ projectId }: { projectId: string }
         {designs.map((d) => (
           <div key={d.id} className="py-2.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {d.thumb ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  aria-hidden
+                  alt=""
+                  loading="lazy"
+                  src={`/api/agent/design-thumb/${d.id}?v=${d.thumb}`}
+                  className="h-10 w-16 flex-none rounded border border-neutral-900/10 object-cover object-top"
+                />
+              ) : null}
               <span
                 className={
                   "rounded-full px-2 py-0.5 text-[10px] font-medium " +

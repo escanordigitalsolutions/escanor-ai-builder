@@ -54,6 +54,10 @@ export async function POST(request: NextRequest) {
       // The preview picture's cache-buster; 0 means no picture, load the old
       // iframe preview instead.
       thumb: typeof thumb?.version === "number" ? thumb.version : 0,
+      cover: (() => {
+        const c = (parts.cover ?? null) as { version?: number } | null;
+        return typeof c?.version === "number" ? c.version : 0;
+      })(),
     };
   });
 

@@ -11,13 +11,18 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.40.0",
+  version: "1.41.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.41.0</h4><ul>" +
+    "<li>Experiment: the art director and homepage designer now run on bare-minimum prompts \u2014 the JSON schema, the technical contract, and nothing else. Compare a few generations against the archive.</li>" +
+    "<li>Every design list \u2014 wp-admin and meikero.com \u2014 now shows the one-time preview picture instead of loading pages.</li>" +
+    "<li>Each new design gets a painted moodboard cover \u2014 its palette, its mood, no fake UI \u2014 shown as the card art in the Wizard's library.</li>" +
+    "</ul>" +
     "<h4>1.40.0</h4><ul>" +
     "<li>Every design now gets a real preview picture, taken from the finished homepage right after it is designed. The dashboard and the Wizard show the picture instead of loading each design's whole page \u2014 the archive opens instantly.</li>" +
     "<li>Editing a design retakes its picture, so the archive always shows the design as it is now.</li>" +

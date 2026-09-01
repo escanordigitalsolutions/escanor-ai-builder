@@ -31,7 +31,7 @@ export async function GET(
 
   const { data: designs, error: designsError } = await createServiceClient()
     .from("ai_designs")
-    .select("id, brief, model, status, input_tokens, output_tokens, created_at")
+    .select("id, brief, model, status, assets, input_tokens, output_tokens, created_at")
     .eq("project_id", id)
     .order("created_at", { ascending: false })
     .limit(60);
@@ -43,5 +43,15 @@ export async function GET(
     );
   }
 
-  return NextResponse.json({ success: true, designs: designs ?? [] });
+  // The picture's cache-buster travels; the JPEG itself never rides a list.
+  const rows = (designs ?? []).map((row) => {
+    const { assets, ...rest } = row as Record<string, unknown>;
+    const thumb = ((assets as Record<string, unknown> | null)?.thumb ?? null) as {
+      version?: unknown;
+    } | null;
+
+    return { ...rest, thumb: typeof thumb?.version === "number" ? thumb.version : 0 };
+  });
+
+  return NextResponse.json({ success: true, designs: rows });
 }
