@@ -62,6 +62,14 @@ Every direction needs one structural idea a visitor would remember and could des
 - section headings set rotated in the left margin while content runs full-bleed beside them
 Yours must come from this brief, not from that list.
 
+THE SITE
+
+A homepage is a page of a site, not a poster. Before the sections, decide what other pages this business has: between 4 and 7 of them, not counting the homepage. For each give a kebab-case slug, the title as it appears in the navigation, and one line on what the page is for.
+
+Decide them the way this business would: the pages it actually needs to sell, explain itself and be contacted, plus whatever its category takes for granted. A studio has work; a SaaS has pricing; a clinic has the treatments it performs. Do not pad the list to reach seven.
+
+This list is binding on everything downstream. The header navigation links to these slugs, the preview walks to them, and the build makes exactly these pages. A homepage whose nav points at its own sections is not a site.
+
 THE SECTION PLAN
 
 Between 4 and 7 sections. For each, give a kebab-case slug, the job it does for the visitor, its structural shape, and — this one matters most — what it actually SAYS.
@@ -118,6 +126,7 @@ Answer with only JSON in exactly this shape. No markdown, no commentary, nothing
     "pairing": ""
   },
   "palette": { "rationale": "", "unusualChoice": "" },
+  "pages": [ { "slug": "", "title": "", "purpose": "" } ],
   "layout": {
     "grid": "",
     "rhythm": "",
@@ -194,6 +203,7 @@ BEFORE YOU OUTPUT, VERIFY
 - Both Google Fonts families are linked AND used. Nothing falls back silently.
 - The signature move is in the markup.
 - Between 4 and 7 top-level sections, each a different structural shape.
+- The header nav lists the site's pages from the direction, as root-relative paths. No section anchors in the nav.
 - Every section carries the content its plan asked for, at the count the plan gave. Read it back as a visitor: nothing is a heading with an empty box under it.
 - Every interactive element has a designed hover AND focus-visible state.
 - No horizontal overflow at 320px, 768px or 1440px.
@@ -205,7 +215,8 @@ TECHNICAL CONTRACT — the splitter is automatic and deviations break the build
 - That <style> block OPENS with the :root rule you were given, verbatim, before any other rule. Every colour, size, space, radius and font reference in the rest of the CSS goes through those custom properties. No hard-coded hex values anywhere below :root.
 - Exactly one inline <script> before </body>. Vanilla, under ~80 lines. It must implement: the mobile menu toggle; an IntersectionObserver adding .in-view to every [data-reveal] element (CSS handles the transition, and elements stay fully visible without JS); and .is-scrolled on the header once the page scrolls. Everything stays readable and usable with JavaScript disabled. Honour prefers-reduced-motion.
 - <body> opens with <header data-part="header">, then 4-7 top-level <section data-section="<kebab-slug>"> elements, never nested, and closes with <footer data-part="footer">. Use the slugs from the section plan.
-- Every link goes somewhere real. An internal link is a root-relative path naming the page it leads to — /about, /services, /journal, /contact — never href="#" standing in for a destination, and the writing on it says where it goes. The design is previewed as a walkable site and built into a theme where these become real routes, so a placeholder href is a dead end in both.
+- The site has pages, and the direction lists them. The header navigation links to THOSE pages, by their slugs as root-relative paths — /about, /services, /journal — one link per page, labelled with the page title. A nav of in-page anchors (#services, #contact) is wrong: it makes the design a one-page site and the preview has nowhere to walk to. In-page anchors are fine for a "skip to content" link or a back-to-top control, and nowhere else.
+- Every other link goes somewhere real too. An internal link is a root-relative path naming the page it leads to — prefer one of the site's own pages; never href="#" standing in for a destination, and the writing on it says where it goes. The design is previewed as a walkable site and built into a theme where these become real routes, so a placeholder href is a dead end in both.
 - Photographs come only from the supplied PEXELS IMAGES urls, written as <img src="<url>" width="<w>" height="<h>" alt="..." loading="lazy">. Designing without photographs is allowed and is often the stronger choice.
 
 Output only the complete HTML document, from <!DOCTYPE html> to </html>. No markdown fences, no explanation, no questions.`;
@@ -337,6 +348,7 @@ function directionForModel(direction: ArtDirection): Record<string, unknown> {
       pairing: direction.typography.pairing,
     },
     palette: direction.palette,
+    pages: direction.pages,
     layout: direction.layout,
     imagery: direction.imagery,
     motion: direction.motion,

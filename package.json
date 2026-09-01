@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:harness": "node --experimental-strip-types --import ./test/harness/hook.mjs test/harness/runall.mts",
     "test:watch": "vitest"
   },
   "dependencies": {

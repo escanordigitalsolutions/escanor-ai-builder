@@ -661,6 +661,11 @@ function payload(
     conceptName: direction?.concept.name ?? null,
     conceptIdea: direction?.concept.thesis ?? null,
     signatureMove: direction?.signatureMove ?? null,
+    // The site's own pages, decided by the art director. Named sitePages
+    // because `pages` on this payload already means the preview's screen tabs.
+    // The build inherits this list instead of inventing a second one, so the
+    // nav a visitor sees in the preview is the nav the theme ships with.
+    sitePages: direction?.pages ?? [],
     critique: null,
     html: mock.html,
     css: mock.css,

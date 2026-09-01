@@ -26,6 +26,34 @@ function between(html: string, pattern: RegExp): string {
   return match ? (match[1] ?? match[0]) : "";
 }
 
+/**
+ * The site pages out of a stored direction.
+ *
+ * Read defensively: the archive holds directions written before pages existed,
+ * and one of those must produce an empty list rather than a crash.
+ */
+function sitePagesOf(direction: unknown): { slug: string; title: string; purpose: string }[] {
+  const raw = (direction as Record<string, unknown> | null)?.pages;
+  if (!Array.isArray(raw)) return [];
+
+  const out: { slug: string; title: string; purpose: string }[] = [];
+
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const slug = String(row.slug ?? "").trim();
+    if (!slug) continue;
+    out.push({
+      slug,
+      title: String(row.title ?? slug).trim(),
+      purpose: String(row.purpose ?? "").trim(),
+    });
+    if (out.length >= 7) break;
+  }
+
+  return out;
+}
+
 export async function POST(request: NextRequest) {
   const auth = await authenticateSiteRequest(request, { credits: false });
 
@@ -117,5 +145,9 @@ export async function POST(request: NextRequest) {
     notfoundCss,
     notfoundBody,
     colorways: colorwayCss(design.direction),
+    // A rebuild inherits the same nav the design was drawn with. Designs made
+    // before the art director planned pages simply have none, and the build
+    // falls back to planning its own — which is what it always did.
+    sitePages: sitePagesOf(design.direction),
   });
 }

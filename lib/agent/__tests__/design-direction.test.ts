@@ -470,3 +470,93 @@ describe("section content briefs", () => {
     expect(direction!.layout.sections[1].content).toHaveLength(400);
   });
 });
+
+/**
+ * The site's page list.
+ *
+ * Added after a generated design turned out to be a one-page site every time:
+ * every href in its header was an in-page anchor, so the preview had nowhere to
+ * walk to and the blueprint invented a second, unrelated set of pages at build
+ * time. The list is decided once, here, and the nav, the preview and the build
+ * all read the same one.
+ */
+describe("site pages", () => {
+  const base = {
+    concept: { name: "Proof", thesis: "t", rootedIn: "r" },
+    signatureMove: "s",
+    typography: {
+      display: { family: "Syne" },
+      text: { family: "Karla" },
+      pairing: "p",
+    },
+    palette: { rationale: "r", unusualChoice: "u" },
+    layout: { grid: "g", rhythm: "r", sections: [] },
+    imagery: { strategy: "typographic", treatment: "", queries: [] },
+    motion: "m",
+    voice: { tone: "t", sample: { h1: "a", sub: "b", cta: "c" } },
+    avoid: [],
+    colorways: [],
+  };
+
+  const withPages = (pages: unknown) =>
+    parseArtDirection(JSON.stringify({ ...base, pages }));
+
+  it("keeps the pages the art director planned", () => {
+    const direction = withPages([
+      { slug: "services", title: "Services", purpose: "what we do" },
+      { slug: "contact", title: "Contact", purpose: "get in touch" },
+    ]);
+
+    expect(direction!.pages).toEqual([
+      { slug: "services", title: "Services", purpose: "what we do" },
+      { slug: "contact", title: "Contact", purpose: "get in touch" },
+    ]);
+  });
+
+  it("slugifies what the model wrote, because the nav links to it", () => {
+    const direction = withPages([
+      { slug: "Our Work", title: "Our work", purpose: "" },
+      { slug: "/case-studies/", title: "Case studies", purpose: "" },
+    ]);
+
+    expect(direction!.pages.map((p) => p.slug)).toEqual([
+      "our-work",
+      "case-studies",
+    ]);
+  });
+
+  it("drops the homepage: it is the page being designed, not a destination", () => {
+    const direction = withPages([
+      { slug: "home", title: "Home", purpose: "" },
+      { slug: "index", title: "Index", purpose: "" },
+      { slug: "about", title: "About", purpose: "" },
+    ]);
+
+    expect(direction!.pages.map((p) => p.slug)).toEqual(["about"]);
+  });
+
+  it("dedupes and caps, so a runaway list cannot become a runaway nav", () => {
+    const direction = withPages([
+      { slug: "about", title: "About", purpose: "" },
+      { slug: "about", title: "About us", purpose: "" },
+      ...Array.from({ length: 12 }, (_, i) => ({
+        slug: `p${i}`,
+        title: `P${i}`,
+        purpose: "",
+      })),
+    ]);
+
+    expect(direction!.pages).toHaveLength(7);
+    expect(direction!.pages.filter((p) => p.slug === "about")).toHaveLength(1);
+  });
+
+  it("falls back to the slug when the title is missing", () => {
+    expect(withPages([{ slug: "pricing" }])!.pages[0].title).toBe("pricing");
+  });
+
+  it("is empty, not broken, for a direction written before pages existed", () => {
+    expect(parseArtDirection(JSON.stringify(base))!.pages).toEqual([]);
+    expect(withPages("nope")!.pages).toEqual([]);
+    expect(withPages([null, 5, { title: "no slug" }])!.pages).toEqual([]);
+  });
+});

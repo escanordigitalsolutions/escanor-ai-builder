@@ -247,6 +247,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/design/edit',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_design_edit' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/design/pack',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -332,6 +341,33 @@ final class WPAB_Editor {
 		$plan_payload = array( 'brief' => $brief );
 		if ( isset( $params['mockupSections'] ) && is_array( $params['mockupSections'] ) ) {
 			$plan_payload['mockupSections'] = array_slice( array_values( array_map( 'sanitize_key', $params['mockupSections'] ) ), 0, 10 );
+		}
+
+		// The site map the art director decided, carried from the design the
+		// person approved. Without it the blueprint plans a second, different
+		// set of pages and every link in the approved header goes nowhere.
+		if ( isset( $params['sitePages'] ) && is_array( $params['sitePages'] ) ) {
+			$clean = array();
+			foreach ( $params['sitePages'] as $page ) {
+				if ( ! is_array( $page ) ) {
+					continue;
+				}
+				$slug = sanitize_key( isset( $page['slug'] ) ? $page['slug'] : '' );
+				if ( '' === $slug ) {
+					continue;
+				}
+				$clean[] = array(
+					'slug'    => $slug,
+					'title'   => sanitize_text_field( isset( $page['title'] ) ? $page['title'] : $slug ),
+					'purpose' => sanitize_text_field( isset( $page['purpose'] ) ? $page['purpose'] : '' ),
+				);
+				if ( count( $clean ) >= 7 ) {
+					break;
+				}
+			}
+			if ( $clean ) {
+				$plan_payload['sitePages'] = $clean;
+			}
 		}
 
 		$result = WPAB_Cloud::request( 'agent/build-plan', $plan_payload, 90 );
@@ -1622,6 +1658,33 @@ final class WPAB_Editor {
 	}
 
 	/**
+	 * POST /editor/design/edit — adjust an approved design before building.
+	 *
+	 * Long timeout, because this reads the whole mockup and writes anchored
+	 * edits against it; short of that it is an ordinary proxy.
+	 */
+	public static function rest_design_edit( WP_REST_Request $request ) {
+		$params      = self::json_params( $request );
+		$design_id   = isset( $params['designId'] ) ? trim( (string) $params['designId'] ) : '';
+		$instruction = isset( $params['instruction'] ) ? trim( (string) $params['instruction'] ) : '';
+
+		if ( '' === $design_id || '' === $instruction ) {
+			return new WP_Error( 'wpab_dedit_bad', 'A design and an instruction are required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request(
+			'agent/design-edit',
+			array(
+				'designId'    => $design_id,
+				'instruction' => substr( $instruction, 0, 2000 ),
+			),
+			240
+		);
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/**
 	 * GET /editor/theme-structure — the active theme, grouped by file role.
 	 *
 	 * Local and free. The same array the plugin ships to the SaaS with every
@@ -1953,6 +2016,7 @@ final class WPAB_Editor {
 			'restDesignStatus' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/status' ) ),
 			'restDesignHtml'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/html' ) ),
 			'restDesignPack'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/pack' ) ),
+			'restDesignEdit'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/edit' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
@@ -2015,6 +2079,12 @@ final class WPAB_Editor {
 						<div id="wpab-ed-mockways" class="wpab-ed__mocktabs" hidden></div>
 						<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-scripts"></iframe>
 						<div id="wpab-ed-mockmeta" class="wpab-ed__mockmeta" hidden></div>
+						<div class="wpab-ed__mockedit" id="wpab-ed-mockedit" hidden>
+							<input type="text" id="wpab-ed-mockeditinput" class="wpab-ed__mockeditinput" placeholder="Change something before we build — e.g. make the hero smaller, or turn the method section into a list" />
+							<button type="button" id="wpab-ed-mockeditgo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Change it</button>
+						</div>
+						<div id="wpab-ed-mockeditnote" class="wpab-ed__mockeditnote"></div>
+
 						<div class="wpab-ed__mockactions">
 							<button type="button" id="wpab-ed-mockuse" class="wpab-ed__wbtn">Use this design</button>
 							<button type="button" id="wpab-ed-mockredo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Try another direction</button>
@@ -2288,6 +2358,10 @@ final class WPAB_Editor {
 			/* Conversation memory: what the chat is carrying, visible rather than
 			   implied. It clears when a new chat starts, because that is what
 			   starting a new chat means. */
+			.wpab-ed__mockedit { display: flex; gap: 8px; align-items: center; margin: 10px 0 0; }
+			.wpab-ed__mockeditinput { flex: 1 1 auto; min-width: 0; padding: 9px 12px; font: inherit; font-size: 13px; border: 1px solid var(--ed-border); border-radius: 9px; background: #fff; color: var(--ed-text); }
+			.wpab-ed__mockeditinput:focus { outline: 2px solid var(--ed-blue); outline-offset: 1px; }
+			.wpab-ed__mockeditnote { margin: 7px 2px 0; font-size: 12.5px; line-height: 1.5; color: var(--ed-muted); min-height: 1em; }
 			.wpab-ed__steps { margin-top: 8px; font-size: 11.5px; color: var(--ed-faint); }
 			.wpab-ed__steps summary { cursor: pointer; letter-spacing: .04em; text-transform: uppercase; font-size: 10.5px; }
 			.wpab-ed__steps ol { margin: 6px 0 0; padding-left: 18px; }
@@ -4641,10 +4715,10 @@ final class WPAB_Editor {
 				}).catch(genFail(myRun));
 			}
 
-			function runPlan(myRun, sig, brief, mockupSections, mockCtx) {
+			function runPlan(myRun, sig, brief, mockupSections, mockCtx, sitePages) {
 				phaseProgress('plan');
 				setBuildDetail('Planning the pages…');
-				wpost(cfg.restBuildPlan, { brief: brief, mockupSections: mockupSections || [] }, sig).then(function (out) {
+				wpost(cfg.restBuildPlan, { brief: brief, mockupSections: mockupSections || [], sitePages: sitePages || [] }, sig).then(function (out) {
 					if (!alive(myRun)) { return; }
 					if (!out.ok || !out.data || out.data.success === false || !out.data.blueprint) {
 						throw new Error(errText(out, 'Could not plan the theme.'));
@@ -4783,9 +4857,40 @@ final class WPAB_Editor {
 					return String(html).replace(/:root\s*\{[\s\S]*?\}/, function () { return ways[curWay].rootCss; });
 				}
 
+				// The site's own pages, decided by the art director and linked from
+				// the header. The preview has one inner-page design and every one
+				// of these uses it — that is what the finished theme does too —
+				// so walking to /about shows the template with About as its title
+				// rather than the specimen heading the designer happened to write.
+				var sitePages = Array.isArray(mock.sitePages) ? mock.sitePages : [];
+				var innerTitle = '';
+
+				function esc2(s) {
+					return String(s == null ? '' : s)
+						.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+				}
+
+				function titleForPath(path) {
+					var slug = String(path || '').replace(/^\/+|\/+$/g, '').split('/')[0];
+					if (!slug) { return ''; }
+					for (var ti = 0; ti < sitePages.length; ti++) {
+						var sp = sitePages[ti];
+						if (sp && sp.slug === slug) { return sp.title || ''; }
+					}
+					return '';
+				}
+
+				function retitled(html) {
+					if (curPage !== 'inner' || !innerTitle) { return html; }
+					return String(html).replace(
+						/(<section[^>]*data-part=["']page-hero["'][\s\S]*?<h1[^>]*>)([\s\S]*?)(<\/h1>)/i,
+						function (m, open, body, close) { return open + esc2(innerTitle) + close; }
+					);
+				}
+
 				function paint() {
 					var html = pageCache[curPage];
-					frame.srcdoc = html ? guarded(withWay(html)) : guarded('<p style="font:14px system-ui;padding:24px">Loading…</p>');
+					frame.srcdoc = html ? guarded(withWay(retitled(html))) : guarded('<p style="font:14px system-ui;padding:24px">Loading…</p>');
 				}
 
 				function syncTabs(which) {
@@ -4820,6 +4925,9 @@ final class WPAB_Editor {
 					if (!data || typeof data.wpabNav !== 'string') { return; }
 					var target = screenForHref(data.wpabNav);
 					if (!target) { return; }
+					innerTitle = target === 'inner'
+						? titleForPath(String(data.wpabNav).replace(/^https?:\/\/[^/]+/i, '').split('?')[0].split('#')[0])
+						: '';
 					var have = (Array.isArray(mock.pages) && mock.pages.length) ? mock.pages : ['home'];
 					// A link to a screen this run did not produce still has to go
 					// somewhere sensible: an inner page if there is one, otherwise
@@ -4827,11 +4935,16 @@ final class WPAB_Editor {
 					if (have.indexOf(target) === -1) {
 						target = have.indexOf('inner') !== -1 && target !== 'home' ? 'inner' : 'home';
 					}
-					if (target !== curPage) { openPage(target); }
+					if (target !== curPage) { openPage(target); return; }
+					// Already on the inner template, but for a different page: the
+					// title is the only thing that changes, and repainting is what
+					// makes the walk read as a site rather than a dead click.
+					if (target === 'inner') { paint(); }
 				});
 
 				var mtabs = $('wpab-ed-mocktabs');
-				if (mtabs) {
+				function buildPageTabs() {
+					if (!mtabs) { return; }
 					var pages = (Array.isArray(mock.pages) && mock.pages.length) ? mock.pages : ['home'];
 					mtabs.innerHTML = '';
 					for (var pi = 0; pi < pages.length; pi++) {
@@ -4843,12 +4956,77 @@ final class WPAB_Editor {
 						mtabs.appendChild(b);
 					}
 					mtabs.hidden = pages.length < 2;
+				}
+				buildPageTabs();
+				if (mtabs) {
 					mtabs.onclick = function (e) {
 						var t = e.target;
 						while (t && t !== mtabs && !t.getAttribute('data-mocktab')) { t = t.parentNode; }
 						if (!t || t === mtabs) { return; }
+						innerTitle = '';
 						openPage(t.getAttribute('data-mocktab'));
 					};
+				}
+
+				// Adjusting the design before committing to it.
+				//
+				// The only way to change a design used to be generating another
+				// one — a different design, at full price, rather than this one
+				// with the hero made smaller. One cheap anchored edit keeps what
+				// was approved and changes the part that was wrong.
+				var editRow = $('wpab-ed-mockedit');
+				var editInput = $('wpab-ed-mockeditinput');
+				var editBtn = $('wpab-ed-mockeditgo');
+				var editNote = $('wpab-ed-mockeditnote');
+				if (editRow && mock.designId && cfg.restDesignEdit) { editRow.hidden = false; }
+
+				function runDesignEdit() {
+					var instruction = editInput ? (editInput.value || '').trim() : '';
+					if (!instruction || !mock.designId || !cfg.restDesignEdit) { return; }
+					if (editBtn) { editBtn.disabled = true; editBtn.textContent = 'Changing…'; }
+					if (editInput) { editInput.disabled = true; }
+					if (editNote) { editNote.textContent = 'Reading the design and making the change…'; }
+
+					wpost(cfg.restDesignEdit, { designId: mock.designId, instruction: instruction })
+						.then(function (out) {
+							var d = (out && out.data) || {};
+							if (!out.ok || !d.success || !d.html) {
+								if (editNote) { editNote.textContent = d.error || d.message || 'That change could not be made.'; }
+								return;
+							}
+							addTok(d);
+							mock.html = d.html;
+							// Every other screen borrows the homepage stylesheet, and
+							// the server has just rewritten theirs too — so the cached
+							// copies here are stale and must be fetched again.
+							pageCache = { home: d.html };
+							mock.innerHtml = '';
+							if (Array.isArray(d.available) && d.available.length) { mock.pages = d.available; buildPageTabs(); }
+							curPage = 'home';
+							syncTabs('home');
+							paint();
+							if (editInput) { editInput.value = ''; }
+							var said = d.summary || 'Done.';
+							if (d.untouched && d.untouched.length) {
+								said += ' (' + d.untouched.join(', ') + ' is drawn by us and was left as it is.)';
+							}
+							if (d.notes && d.notes.length) { said += ' ' + d.notes.join(' '); }
+							if (editNote) { editNote.textContent = said; }
+						})
+						.catch(function () {
+							if (editNote) { editNote.textContent = 'The change could not be sent. Try again.'; }
+						})
+						.then(function () {
+							if (editBtn) { editBtn.disabled = false; editBtn.textContent = 'Change it'; }
+							if (editInput) { editInput.disabled = false; editInput.focus(); }
+						});
+				}
+
+				if (editBtn) { editBtn.addEventListener('click', runDesignEdit); }
+				if (editInput) {
+					editInput.addEventListener('keydown', function (e) {
+						if (e.key === 'Enter') { e.preventDefault(); runDesignEdit(); }
+					});
 				}
 
 				var mways = $('wpab-ed-mockways');
@@ -4956,7 +5134,7 @@ final class WPAB_Editor {
 				var slugs = [];
 				var secs = mock.sections || [];
 				for (var si3 = 0; si3 < secs.length; si3++) { if (secs[si3] && secs[si3].slug) { slugs.push(secs[si3].slug); } }
-				runPlan(myRun, sig, brief, slugs, buildMockCtx(mock));
+				runPlan(myRun, sig, brief, slugs, buildMockCtx(mock), mock.sitePages || []);
 			}
 
 			function resumeRun(st) {

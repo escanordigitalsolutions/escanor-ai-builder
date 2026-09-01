@@ -389,6 +389,20 @@ export function sanitiseSvg(value: unknown, maxLength = 4000): string {
   return svg.length > maxLength ? "" : svg;
 }
 
+/**
+ * A page the site has.
+ *
+ * Added because the design had no idea what site it belonged to. The designer
+ * built a homepage in isolation, so its nav could only ever point at the
+ * homepage's own sections — every link in a generated design was an in-page
+ * anchor, and a preview could not be walked because there was nowhere to walk
+ * to. The blueprint decided the real pages later, at build time, from nothing
+ * the design had seen.
+ *
+ * One list, decided here, used by the nav, by the preview, and by the build.
+ */
+export type SitePage = { slug: string; title: string; purpose: string };
+
 export type SectionPlan = {
   slug: string;
   job: string;
@@ -417,6 +431,7 @@ export type ArtDirection = {
   };
   palette: { rationale: string; unusualChoice: string };
   layout: { grid: string; rhythm: string; sections: SectionPlan[] };
+  pages: SitePage[];
   imagery: {
     strategy: "photography" | "typographic" | "css-illustration" | "mixed";
     treatment: string;
@@ -461,6 +476,38 @@ export function googleFontUrl(family: string, weights: number[] = [400, 600]): s
   const name = family.trim().replace(/\s+/g, "+");
   const list = (weights.length ? weights : [400, 600]).sort((a, b) => a - b).join(";");
   return `https://fonts.googleapis.com/css2?family=${name}:wght@${list}&display=swap`;
+}
+
+function sitePages(value: unknown): SitePage[] {
+  if (!Array.isArray(value)) return [];
+
+  const out: SitePage[] = [];
+  const seen = new Set<string>();
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+
+    const row = item as Record<string, unknown>;
+    const slug = str(row.slug, "", 40)
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+
+    // The homepage is not a nav destination the design has to plan; it is the
+    // page being designed.
+    if (!slug || slug === "home" || slug === "index" || seen.has(slug)) continue;
+
+    seen.add(slug);
+    out.push({
+      slug,
+      title: str(row.title, slug, 60),
+      purpose: str(row.purpose, "", 200),
+    });
+
+    if (out.length >= 7) break;
+  }
+
+  return out;
 }
 
 function sectionPlans(value: unknown): SectionPlan[] {
@@ -568,6 +615,7 @@ export function parseArtDirection(text: string): ArtDirection | null {
       rhythm: str(layout.rhythm, "", 300),
       sections: sectionPlans(layout.sections),
     },
+    pages: sitePages(raw.pages),
     imagery: {
       strategy: (STRATEGIES as readonly string[]).includes(strategy)
         ? (strategy as ArtDirection["imagery"]["strategy"])

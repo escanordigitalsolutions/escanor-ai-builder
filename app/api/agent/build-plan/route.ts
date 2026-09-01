@@ -5,6 +5,11 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { pickModel } from "@/lib/ai/resolve";
 import { generateText } from "@/lib/ai/provider";
 import { logUsage } from "@/lib/ai/usage";
+import {
+  normalizeBlueprint,
+  type Json,
+  type SitePage,
+} from "@/lib/agent/blueprint";
 
 // Blueprint generation can take a while on some models; don't let Vercel's
 // plan-default duration kill the function mid-generation.
@@ -55,8 +60,6 @@ Reply with ONLY this JSON — first character {, last }:
   "sections": [ { "slug": string, "type": string, "layout": string, "copy": string } ]
 }`;
 
-type Json = Record<string, unknown>;
-
 function extractJson(text: string): Json | null {
   let t = text.trim();
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -78,126 +81,6 @@ function extractJson(text: string): Json | null {
 
 // Componentized layout: CSS is split per component so every file stays small
 // and later edits touch one small file instead of one giant stylesheet.
-const CORE_FILES = [
-  "style.css",
-  "functions.php",
-  "header.php",
-  "footer.php",
-  "index.php",
-  "page.php",
-  "single.php",
-  "404.php",
-  "archive.php",
-  "searchform.php",
-  "front-page.php",
-  "assets/css/base.css",
-  // The component sheet the design stage derives from the finished homepage.
-  // Without it the buttons, forms and tables on every inner page are invented
-  // by the build model and match nothing.
-  "assets/css/components.css",
-  "assets/css/header.css",
-  "assets/css/footer.css",
-  "assets/css/inner.css",
-  // Archive and 404 rules together: two small sheets would cost two more build
-  // batches for a few dozen rules.
-  "assets/css/pages.css",
-  "assets/js/main.js",
-];
-
-/**
- * Make the blueprint internally consistent, whatever the model returned:
- * dedupe and cap sections/pages, keep only section references that exist,
- * keep only menu entries that point at real pages, and DERIVE the file list
- * from pages + sections. The model's own "files" (if any) are ignored, so a
- * template can never call a template-part that is missing from the build.
- */
-function normalizeBlueprint(bp: Json, mockupSections: string[] = []): void {
-  type Section = { slug: string } & Json;
-  type Page = { slug: string; sections?: unknown } & Json;
-
-  const rawSections = Array.isArray(bp.sections) ? (bp.sections as unknown[]) : [];
-  const seen = new Set<string>();
-  const sections: Section[] = [];
-  for (const s of rawSections) {
-    if (!s || typeof s !== "object") continue;
-    const slug = String((s as Json).slug ?? "").trim();
-    if (!slug || seen.has(slug)) continue;
-    seen.add(slug);
-    sections.push({ ...(s as Json), slug } as Section);
-    if (sections.length >= 10) break;
-  }
-
-  // Design-first mode: the homepage mockup fixes the section universe. Every
-  // mockup section exists (add a stub when the model forgot it) and nothing
-  // outside the mockup survives.
-  if (mockupSections.length) {
-    const bySlug = new Map(sections.map((x) => [x.slug, x]));
-    sections.length = 0;
-    seen.clear();
-    for (const slug of mockupSections) {
-      seen.add(slug);
-      sections.push(
-        (bySlug.get(slug) as Section) ??
-          ({ slug, type: "custom", layout: "", look: "", copy: "" } as Section)
-      );
-    }
-  }
-
-  const front = typeof bp.frontPage === "string" ? bp.frontPage : "";
-  const rawPages = Array.isArray(bp.pages) ? (bp.pages as unknown[]) : [];
-  const pages: Page[] = [];
-  const pageSlugs = new Set<string>();
-  for (const p of rawPages) {
-    if (!p || typeof p !== "object") continue;
-    const slug = String((p as Json).slug ?? "").trim();
-    if (!slug || pageSlugs.has(slug)) continue;
-    pageSlugs.add(slug);
-    const secs = Array.isArray((p as Json).sections)
-      ? ((p as Json).sections as unknown[])
-          .filter((s): s is string => typeof s === "string" && seen.has(s))
-          .slice(0, 6)
-      : [];
-    pages.push({ ...(p as Json), slug, sections: secs } as Page);
-    if (pages.length >= 6) break;
-  }
-
-  if (mockupSections.length) {
-    for (const p of pages) {
-      const isFront =
-        p.slug === front || (p as Json).template === "front-page.php";
-      if (isFront) {
-        (p as Json).sections = [...mockupSections];
-      }
-    }
-  }
-
-  // Only keep sections that some page actually uses.
-  const used = new Set<string>();
-  for (const p of pages) {
-    for (const s of p.sections as string[]) used.add(s);
-  }
-  bp.sections = sections.filter((s) => used.has(s.slug));
-  bp.pages = pages;
-
-  bp.menu = Array.isArray(bp.menu)
-    ? (bp.menu as unknown[]).filter(
-        (m) =>
-          m &&
-          typeof m === "object" &&
-          pageSlugs.has(String((m as Json).slug ?? ""))
-      )
-    : [];
-
-  const files = [...CORE_FILES];
-  for (const p of pages) {
-    if (p.slug !== front) files.push(`page-${p.slug}.php`);
-  }
-  for (const s of bp.sections as Section[]) {
-    files.push(`template-parts/section-${s.slug}.php`);
-    files.push(`assets/css/sections/${s.slug}.css`);
-  }
-  bp.files = files;
-}
 
 export async function POST(request: NextRequest) {
   const auth = await authenticateSiteRequest(request);
@@ -222,6 +105,24 @@ export async function POST(request: NextRequest) {
         .filter((x): x is string => typeof x === "string" && /^[a-z0-9-]+$/.test(x))
         .slice(0, 10)
     : [];
+
+  // The pages the art director planned, carried through the design stage. When
+  // they are here the blueprint does not get to invent its own site map.
+  const sitePages: SitePage[] = (Array.isArray(body.sitePages) ? body.sitePages : [])
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Json;
+      const slug = String(row.slug ?? "").trim().toLowerCase();
+      if (!/^[a-z0-9-]+$/.test(slug) || slug === "home") return [];
+      return [
+        {
+          slug,
+          title: String(row.title ?? slug).trim().slice(0, 60) || slug,
+          purpose: String(row.purpose ?? "").trim().slice(0, 200),
+        },
+      ];
+    })
+    .slice(0, 7);
 
   let modelConfig: unknown = {};
   try {
@@ -249,6 +150,11 @@ export async function POST(request: NextRequest) {
           ? `\n\nThe homepage is ALREADY DESIGNED and approved with these sections, in this order: ${mockupSections.join(
               ", "
             )}. Use ONLY these section slugs across all pages — do not invent new sections. The front page uses all of them in this exact order. Plan the other pages by reusing the most fitting of these sections.`
+          : "") +
+        (sitePages.length
+          ? `\n\nThe SITE MAP is already decided and the approved design's navigation links to it. Plan exactly these pages besides the front page — same slugs, same titles, no additions and no omissions:\n${sitePages
+              .map((p) => `- /${p.slug} — ${p.title}: ${p.purpose}`)
+              .join("\n")}\nThe menu is these pages in this order.`
           : ""),
       maxTokens: 8000,
     });
@@ -276,7 +182,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  normalizeBlueprint(blueprint, mockupSections);
+  normalizeBlueprint(blueprint, mockupSections, sitePages);
 
   if (
     !Array.isArray(blueprint.files) ||

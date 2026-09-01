@@ -42,7 +42,11 @@ export function describeError(error: unknown, depth = 3): string {
   if (typeof error === "string") return error;
 
   try {
-    return JSON.stringify(error);
+    // JSON.stringify returns undefined — not a string — for undefined, a
+    // function and a symbol. This function's whole job is producing something
+    // storable that says what went wrong, so handing back undefined turns a
+    // failure into a blank record. Found by a test the runner could not run.
+    return JSON.stringify(error) ?? String(error);
   } catch {
     return String(error);
   }

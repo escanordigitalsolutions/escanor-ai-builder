@@ -11,13 +11,18 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.34.0",
+  version: "1.35.0",
   file: "/plugin/meikero-bridge.zip",
-  released: "2026-08-31",
+  released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.35.0</h4><ul>" +
+    "<li>A design can now be changed before you build from it. Say what you want different — a darker header, more room between sections, a different tone in the hero — and the design is edited in place, keeping everything you already approved.</li>" +
+    "<li>The design decides what pages the site has, and its menu links to them. Until now every generated design was a one-page site whose menu pointed at its own sections, and the theme was later built around a different set of pages.</li>" +
+    "<li>Walking to a page in the preview now shows that page's title, so the preview reads as the site it is going to become.</li>" +
+    "</ul>" +
     "<h4>1.34.0</h4><ul>" +
     "<li>The design preview is now a site you can walk through. Click the menu, a card, a footer link or a post title and the preview moves to that screen, so a new design can be judged the way a visitor would meet it.</li>" +
     "<li>Designs are generated with real links between their pages rather than placeholders.</li>" +
