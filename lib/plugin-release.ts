@@ -11,13 +11,18 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.39.0",
+  version: "1.40.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.40.0</h4><ul>" +
+    "<li>Every design now gets a real preview picture, taken from the finished homepage right after it is designed. The dashboard and the Wizard show the picture instead of loading each design's whole page \u2014 the archive opens instantly.</li>" +
+    "<li>Editing a design retakes its picture, so the archive always shows the design as it is now.</li>" +
+    "<li>New theme is called the Wizard everywhere, which is what everyone called it anyway.</li>" +
+    "</ul>" +
     "<h4>1.39.0</h4><ul>" +
     "<li>The design studio: a Meikero-branded wizard with your design library right in it \u2014 any saved design is one click from being previewed, edited or built.</li>" +
     "<li>You choose which pages get designed. After approving the homepage, the planned pages appear as toggles \u2014 leave out the blog, keep the pricing page, your call.</li>" +

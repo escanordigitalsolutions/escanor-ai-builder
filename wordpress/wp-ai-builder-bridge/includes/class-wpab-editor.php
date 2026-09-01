@@ -2043,12 +2043,16 @@ final class WPAB_Editor {
 						continue;
 					}
 					$lb = isset( $row['brief']['name'] ) && $row['brief']['name'] ? $row['brief']['name'] : ( $row['concept'] ?? 'Untitled design' );
+					$tver      = (int) ( $row['thumb'] ?? 0 );
 					$library[] = array(
 						'id'      => (string) $row['id'],
 						'name'    => sanitize_text_field( (string) $lb ),
 						'concept' => sanitize_text_field( (string) ( $row['concept'] ?? '' ) ),
 						'when'    => isset( $row['created_at'] ) ? mysql2date( 'M j', (string) $row['created_at'] ) : '',
 						'status'  => sanitize_key( (string) ( $row['status'] ?? 'pending' ) ),
+						'thumb'   => $tver > 0
+							? esc_url_raw( WPAB_Cloud::builder_url() . '/api/agent/design-thumb/' . rawurlencode( (string) $row['id'] ) . '?v=' . $tver )
+							: '',
 					);
 				}
 			}
@@ -2237,7 +2241,7 @@ final class WPAB_Editor {
 					<textarea id="wpab-ed-input" class="wpab-ed__input" rows="1" placeholder="Ask about this site…"></textarea>
 					<div class="wpab-ed__formrow">
 						<span class="wpab-ed__formtools">
-							<button type="button" id="wpab-ed-newtheme" class="wpab-ed__newtheme wpab-ed__newtheme--dock">✨ New theme</button>
+							<button type="button" id="wpab-ed-newtheme" class="wpab-ed__newtheme wpab-ed__newtheme--dock">✨ Wizard</button>
 							<button type="button" id="wpab-ed-new" class="wpab-ed__new">New chat</button>
 							<button type="button" id="wpab-ed-history" class="wpab-ed__new" title="Chat history">History</button>
 							<button type="button" id="wpab-ed-expand" class="wpab-ed__expand" aria-expanded="false" title="Expand the chat to full screen">⤢</button>
@@ -2595,6 +2599,8 @@ final class WPAB_Editor {
 		.wpab-ed__wlibitem b { font-size: 12.5px; color: #141312; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 		.wpab-ed__wlibitem small { font-size: 11px; color: #8a8783; }
 		.wpab-ed__wlibitem .used { color: #116450; font-weight: 600; }
+		.wpab-ed__wlibthumb { width: 100%; height: 84px; object-fit: cover; object-position: top; border-radius: 6px; border: 1px solid rgba(20,19,18,.08); margin-bottom: 4px; }
+		.wpab-ed__wlibitem { width: 196px; }
 		.wpab-ed__mockrail { display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: rgba(20,19,18,.02); max-height: 68vh; overflow-y: auto; }
 		.wpab-ed__mockrail[hidden] { display: none !important; }
 		.wpab-ed__mockrail .wpab-ed__mocktab { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 7px 10px; background: transparent; }
@@ -4279,6 +4285,14 @@ final class WPAB_Editor {
 					it.type = 'button';
 					it.className = 'wpab-ed__wlibitem';
 					it.setAttribute('data-design', d.id);
+					if (d.thumb) {
+						var im = document.createElement('img');
+						im.className = 'wpab-ed__wlibthumb';
+						im.src = d.thumb;
+						im.alt = '';
+						im.loading = 'lazy';
+						it.appendChild(im);
+					}
 					var b = document.createElement('b');
 					b.textContent = d.name || d.concept || 'Untitled design';
 					var sm = document.createElement('small');
@@ -4420,7 +4434,7 @@ final class WPAB_Editor {
 					wResult.className = 'wpab-ed__wresult is-err';
 					wResult.textContent = themeWritten
 						? 'Stopped. The theme was already written and stays active — only the remaining polish was skipped' + tokLabel() + '. Reloading…'
-						: 'Generation stopped' + tokLabel() + (st ? '. Progress (' + st.built.length + ' files) is saved — reopen “New theme” to continue.' : '.');
+						: 'Generation stopped' + tokLabel() + (st ? '. Progress (' + st.built.length + ' files) is saved — reopen the Wizard to continue.' : '.');
 				}
 				if (wProgress) { wProgress.hidden = true; }
 				if (wForm) { wForm.style.display = ''; }
@@ -4476,7 +4490,7 @@ final class WPAB_Editor {
 					var st = loadGenState();
 					if (wResult) {
 						wResult.className = 'wpab-ed__wresult is-err';
-						wResult.textContent = ((err && err.message) || 'Theme generation failed.') + tokLabel() + (st ? ' Progress (' + st.built.length + ' files) is saved — reopen “New theme” to continue.' : '');
+						wResult.textContent = ((err && err.message) || 'Theme generation failed.') + tokLabel() + (st ? ' Progress (' + st.built.length + ' files) is saved — reopen the Wizard to continue.' : '');
 					}
 					if (wForm) { wForm.style.display = ''; }
 					if (wProgress) { wProgress.hidden = true; }

@@ -20,6 +20,7 @@ import {
 import { recordUsage } from "@/lib/ai/usage";
 import { refundJobUsage } from "@/lib/billing/credits";
 import { describeError } from "@/lib/debug";
+import { renderThumbnail } from "@/lib/agent/thumbnail";
 
 // The response returns immediately with a job id; the mockup itself renders in
 // after() and can take a couple of minutes on a strong model.
@@ -312,6 +313,34 @@ export async function POST(request: NextRequest) {
           `design retry skipped: ${Math.round(msLeft() / 1000)}s left, ` +
             `the first attempt took ${Math.round(designMs / 1000)}s`
         );
+      }
+
+      // ---- The picture every list shows instead of loading the page ----
+      //
+      // Non-fatal by design: a run whose screenshot failed still delivered a
+      // design, and the previews fall back to the old iframe for it.
+      if (designId && msLeft() > 60_000) {
+        await setProgress("thumb", "Taking the preview picture…");
+        try {
+          const thumb = await renderThumbnail(mock.html);
+
+          if (thumb) {
+            const { data: row } = await db
+              .from("ai_designs")
+              .select("assets")
+              .eq("id", designId)
+              .single();
+
+            await db
+              .from("ai_designs")
+              .update({ assets: { ...((row?.assets ?? {}) as object), thumb } })
+              .eq("id", designId);
+
+            done.thumbVersion = thumb.version;
+          }
+        } catch (thumbError) {
+          console.error("thumbnail stage error (continuing without):", thumbError);
+        }
       }
 
       // ---- The rest of the site is NOT drawn here ----

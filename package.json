@@ -21,7 +21,9 @@
     "react-dom": "19.2.8",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "stripe": "^22.6.0"
+    "stripe": "^22.6.0",
+    "@sparticuz/chromium": "131.0.1",
+    "puppeteer-core": "23.11.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

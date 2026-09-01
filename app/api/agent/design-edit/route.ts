@@ -7,6 +7,7 @@ import { errorDetail } from "@/lib/debug";
 import { borrowsBaseCss, editDesign, syncBaseCss } from "@/lib/agent/design-edit";
 import { splitMockup } from "@/lib/agent/mockup-core";
 import { availablePages, colorwayCss, titleFromSlug } from "@/lib/agent/design-pages";
+import { renderThumbnail } from "@/lib/agent/thumbnail";
 
 export const maxDuration = 300;
 
@@ -126,13 +127,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const freshThumb = await renderThumbnail(result.html);
+
     const { error: saveError } = await db
       .from("ai_designs")
       .update({
         html: result.html,
         inner_html: inner,
         pages,
-        assets: { ...((data.assets ?? {}) as Record<string, unknown>), css: split.css },
+        assets: {
+          ...((data.assets ?? {}) as Record<string, unknown>),
+          css: split.css,
+          // The picture shows the homepage, and the homepage just changed.
+          ...(freshThumb ? { thumb: freshThumb } : {}),
+        },
       })
       .eq("id", designId);
 

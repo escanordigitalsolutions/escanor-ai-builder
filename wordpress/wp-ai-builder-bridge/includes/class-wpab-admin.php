@@ -130,8 +130,8 @@ final class WPAB_Admin {
 		// Designing a theme comes before editing one, and reads first.
 		add_submenu_page(
 			self::MENU_SLUG,
-			'Meikero — New theme',
-			'New theme',
+			'Meikero — Wizard',
+			'Wizard',
 			'manage_options',
 			self::DESIGN_SLUG,
 			array( 'WPAB_Editor', 'render_design_page' )
@@ -462,6 +462,8 @@ final class WPAB_Admin {
 						.wpabd-dbar { display:flex; gap:4px; padding:0 2px 6px; }
 						.wpabd-dbar i { width:7px; height:7px; border-radius:50%; background:#cfccc7; }
 						.wpabd-dthumb { position:relative; height:160px; overflow:hidden; background:#fff; border-radius:6px 6px 0 0; }
+						.wpabd-dthumb.is-img { height:auto; }
+						.wpabd-dthumb.is-img img { display:block; width:100%; height:160px; object-fit:cover; object-position:top; }
 						.wpabd-dthumb iframe { width:1280px; height:1024px; border:0; transform-origin:0 0; pointer-events:none; background:#fff; display:block; }
 						.wpabd-dthumb .wpabd-dload { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#8a8783; background:#faf9f7; }
 						.wpabd-dmeta { padding:10px 12px; }
@@ -486,10 +488,17 @@ final class WPAB_Admin {
 								title="Open full preview">
 								<div class="wpabd-dshell">
 									<div class="wpabd-dbar"><i></i><i></i><i></i></div>
-									<div class="wpabd-dthumb">
-										<div class="wpabd-dload">Loading…</div>
-										<iframe sandbox="" scrolling="no" tabindex="-1" aria-hidden="true"></iframe>
-									</div>
+									<?php $tver = (int) ( $d['thumb'] ?? 0 ); ?>
+									<?php if ( $tver > 0 ) : ?>
+										<div class="wpabd-dthumb is-img">
+											<img src="<?php echo esc_url( WPAB_Cloud::builder_url() . '/api/agent/design-thumb/' . rawurlencode( (string) ( $d['id'] ?? '' ) ) . '?v=' . $tver ); ?>" alt="" loading="lazy" />
+										</div>
+									<?php else : ?>
+										<div class="wpabd-dthumb">
+											<div class="wpabd-dload">Loading…</div>
+											<iframe sandbox="" scrolling="no" tabindex="-1" aria-hidden="true"></iframe>
+										</div>
+									<?php endif; ?>
 								</div>
 								<div class="wpabd-dmeta">
 									<div class="t"><?php echo esc_html( $title ); ?></div>
@@ -557,8 +566,9 @@ final class WPAB_Admin {
 
 						function fitThumb(card) {
 							var thumb = card.querySelector('.wpabd-dthumb');
-							var frame = thumb && thumb.querySelector('iframe');
-							if (!thumb || !frame) { return; }
+							if (!thumb || thumb.classList.contains('is-img')) { return; }
+							var frame = thumb.querySelector('iframe');
+							if (!frame) { return; }
 							var w = thumb.clientWidth || 230;
 							var scale = w / 1280;
 							frame.style.transform = 'scale(' + scale + ')';
@@ -587,6 +597,8 @@ final class WPAB_Admin {
 							if (!card) { return; }
 							var id = card.getAttribute('data-design');
 							var thumb = card.querySelector('.wpabd-dthumb');
+							// A card with a picture needs nothing fetched — that is the point.
+							if (!thumb || thumb.classList.contains('is-img')) { return next(); }
 							var frame = thumb.querySelector('iframe');
 							var load = thumb.querySelector('.wpabd-dload');
 							fitThumb(card);
