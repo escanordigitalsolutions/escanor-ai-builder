@@ -490,6 +490,19 @@ CONTENT
 
 Fully written, in the brief's language, as if the site went live tomorrow. Invent whatever the page needs — figures, timeframes, plan names, process detail, prices, opening hours, the questions customers actually ask, a quote attributed to a role. Keep it consistent with the rest of the site: a number here must not contradict a number on the homepage. Two things stay off limits, because they do not become true when the owner edits them: no real company names or logos, and no quote attributed to a named individual.
 
+THE PAGE'S EDGES ARE NOT YOURS TO SET
+
+This is the one thing that goes wrong, so read it twice. The site's horizontal gutter is set ONCE, by the homepage, on the bare element:
+
+    section { padding: <vertical> <horizontal> }
+
+Every page inherits it, and that is what makes the left edge hold still while a visitor walks the site. So on this page:
+
+- Wrap each section's content in the homepage's own content wrapper, named below. Do not invent another one.
+- NEVER set padding, margin, max-width or width on a <section> in a way that touches its left or right edge. Writing "padding: 4rem 0" for your own vertical rhythm is the mistake: the shorthand's second value replaces the gutter with zero, and this page alone starts at the window edge while every other page does not.
+- For vertical rhythm use "padding-block", which cannot touch the sides.
+- When this page is finished, its first line of text must begin at exactly the same distance from the left of the window as the homepage's does.
+
 TECHNICAL CONTRACT (required by the automatic splitter):
 - ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim and nothing else inside), then <style data-part="page"> holding ONLY the rules this page adds.
 - <body>: the given header markup verbatim; then <section data-part="page-hero"> carrying this page's title; then <main data-part="page-body"> holding the rest of the page; then the given footer markup verbatim.
@@ -508,6 +521,8 @@ export type PageSpec = {
   title: string;
   brief: string;
   maxTokens: number;
+  /** Below this the page is headings with empty boxes under them. */
+  minWords: number;
 };
 
 export type SitePageResult = {
@@ -552,6 +567,7 @@ export function sitePageSpecs(direction: ArtDirection | null): PageSpec[] {
         (page.purpose ? ` What it is for: ${page.purpose}` : "") +
         `\n\nWork out what somebody who clicked "${page.title}" came here to find, and put it in front of them — in full, not as an outline.`,
       maxTokens: 16000,
+      minWords: 260,
     });
   }
 
@@ -563,15 +579,28 @@ export function sitePageSpecs(direction: ArtDirection | null): PageSpec[] {
       ?.slug ?? "archive";
 
   if (blogSlug === "archive") {
-    specs.push({ slug: "archive", title: "Blog", brief: ARCHIVE_BRIEF("blog"), maxTokens: 14000 });
+    specs.push({
+      slug: "archive",
+      title: "Blog",
+      brief: ARCHIVE_BRIEF("blog"),
+      maxTokens: 14000,
+      minWords: 260,
+    });
   } else {
     // Replace the generic page spec with the archive brief: it IS the blog.
     const at = specs.findIndex((s) => s.slug === blogSlug);
-    specs[at] = { ...specs[at], brief: ARCHIVE_BRIEF(blogSlug), maxTokens: 14000 };
+    specs[at] = { ...specs[at], brief: ARCHIVE_BRIEF(blogSlug), maxTokens: 14000, minWords: 260 };
   }
 
-  specs.push({ slug: "post", title: "Blog post", brief: POST_BRIEF(`${blogSlug}/a-post`), maxTokens: 16000 });
-  specs.push({ slug: "notfound", title: "404", brief: NOTFOUND_BRIEF, maxTokens: 7000 });
+  specs.push({
+    slug: "post",
+    title: "Blog post",
+    brief: POST_BRIEF(`${blogSlug}/a-post`),
+    maxTokens: 16000,
+    minWords: 450,
+  });
+  // A 404 is short on purpose, so it is held to a floor it can actually meet.
+  specs.push({ slug: "notfound", title: "404", brief: NOTFOUND_BRIEF, maxTokens: 7000, minWords: 35 });
 
   return specs;
 }
@@ -582,16 +611,24 @@ export async function generateSitePage(
   direction: ArtDirection | null,
   home: { css: string; header: string; footer: string; fonts: string[] },
   spec: PageSpec,
-  timeoutMs?: number
+  timeoutMs?: number,
+  options?: { container?: string | null; retry?: string }
 ): Promise<SitePageResult> {
   const model = pickModel(modelConfig, "cheap");
+  const container = options?.container ?? null;
 
   const gen = await generateText({
     model,
     system: SITE_PAGE_RULES,
     maxTokens: spec.maxTokens,
     timeoutMs,
-    input: `THE PAGE YOU ARE DESIGNING\n${spec.brief}\n\n` + contextBlock(brief, direction, home),
+    input:
+      `THE PAGE YOU ARE DESIGNING\n${spec.brief}\n\n` +
+      contextBlock(brief, direction, home) +
+      (container
+        ? `\n\nTHE HOMEPAGE'S CONTENT WRAPPER — every section's content goes inside one of these, and nothing else sets the page's side margins\n<div class="${container}">`
+        : "") +
+      (options?.retry ? `\n\n${options.retry}` : ""),
   });
 
   const html = cleanDocument(gen.text, home.css);

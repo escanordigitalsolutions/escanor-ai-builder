@@ -10,7 +10,14 @@ import {
   critiqueMockup,
   splitMockup,
   type MockupResult,
+  type SitePageResult,
 } from "@/lib/agent/mockup-core";
+import {
+  detectContainer,
+  pageRetryNote,
+  validateSitePage,
+  type PageFailure,
+} from "@/lib/agent/page-shell";
 import { availablePages, colorwayCss } from "@/lib/agent/design-pages";
 import { resolveShape, type ArtDirection } from "@/lib/agent/art-direction";
 import {
@@ -353,6 +360,12 @@ export async function POST(request: NextRequest) {
 
       const specs = sitePageSpecs(direction);
 
+      // The wrapper the homepage holds its content in. Every derived page has
+      // to use it, and until this was passed down four pages out of seven put
+      // their content on a different left edge from the homepage — one of them
+      // against the window.
+      const container = detectContainer(mock.html, mock.css);
+
       if (specs.length && msLeft() > 90_000) {
         await setProgress(
           "pages",
@@ -364,37 +377,110 @@ export async function POST(request: NextRequest) {
         const pageTimeout = Math.max(45_000, msLeft() - 45_000);
         let finished = 0;
 
-        const results = await inParallel(specs, PAGE_CONCURRENCY, async (spec) => {
-          try {
-            const page = await generateSitePage(
-              modelConfig,
-              brief,
-              direction,
-              home,
-              spec,
-              pageTimeout
-            );
+        const draw = async (spec: (typeof specs)[number], retry?: string) => {
+          const page = await generateSitePage(
+            modelConfig,
+            brief,
+            direction,
+            home,
+            spec,
+            pageTimeout,
+            { container, retry }
+          );
 
-            await recordUsage(projectId, "inner", page.model, page.usage, {
-              kind: spec.slug,
-              chars: page.html.length,
-              bodyFound: Boolean(page.body),
-              heroFound: Boolean(page.pageHero),
-              truncated: page.truncated,
-            }, jobId);
+          await recordUsage(projectId, "inner", page.model, page.usage, {
+            kind: spec.slug,
+            chars: page.html.length,
+            bodyFound: Boolean(page.body),
+            heroFound: Boolean(page.pageHero),
+            truncated: page.truncated,
+            retry: Boolean(retry),
+          }, jobId);
+
+          return page;
+        };
+
+        // A truncated page is half a page, and a page that fails the shell
+        // checks is one that walks differently from the rest of the site.
+        // Both are worth one more attempt each, which is cheap here.
+        const judge = (page: SitePageResult, spec: (typeof specs)[number]) =>
+          page.truncated || !page.body
+            ? [{ code: "page.truncated", detail: "The page did not finish.", fatal: true }]
+            : validateSitePage(
+                { slug: spec.slug, body: page.body, css: page.css },
+                { container, minWords: spec.minWords }
+              );
+
+        type Drawn = { spec: (typeof specs)[number]; page: SitePageResult | null; failures: PageFailure[] };
+
+        const first: Drawn[] = await inParallel(specs, PAGE_CONCURRENCY, async (spec) => {
+          try {
+            const page = await draw(spec);
+            const failures = judge(page, spec);
 
             finished += 1;
             void setProgress("pages", `Stage 3/4 — ${finished} of ${specs.length} pages designed…`);
 
-            // A truncated page is half a page. Storing it would put a screen in
-            // the rail that stops mid-sentence, which reads as a broken product
-            // rather than a stage that ran out of room.
-            return !page.truncated && page.body ? page : null;
+            return { spec, page, failures };
           } catch (pageError) {
             console.error(`page ${spec.slug} failed (continuing without):`, pageError);
-            return null;
+            return { spec, page: null, failures: [] };
           }
         });
+
+        const fatal = (rows: PageFailure[]) => rows.filter((f) => f.fatal).length;
+        const needsWork = first.filter((row) => row.page && fatal(row.failures) > 0);
+
+        if (needsWork.length && msLeft() > 80_000) {
+          console.log(
+            `redrawing ${needsWork.length} page(s): ` +
+              needsWork.map((r) => `${r.spec.slug}[${r.failures.filter((f) => f.fatal).map((f) => f.code).join(",")}]`).join(" ")
+          );
+          await setProgress(
+            "pages",
+            `Stage 3/4 — redrawing ${needsWork.length} page${needsWork.length === 1 ? "" : "s"} that drifted…`
+          );
+
+          await inParallel(needsWork, PAGE_CONCURRENCY, async (row) => {
+            try {
+              const page = await draw(row.spec, pageRetryNote(row.failures, container));
+              const failures = judge(page, row.spec);
+
+              // Keep the retry only when it is genuinely better. A second
+              // attempt that breaks more than the first is worse than the page
+              // already in hand.
+              if (fatal(failures) < fatal(row.failures)) {
+                row.page = page;
+                row.failures = failures;
+              }
+            } catch (retryError) {
+              console.error(`page ${row.spec.slug} retry failed (keeping first):`, retryError);
+            }
+            return null;
+          });
+        }
+
+        // A page that still fails every check after a second attempt is kept
+        // anyway: a site missing its Services page is worse than one whose
+        // Services page sits slightly wide, and the log says which it was.
+        const results = first.map((row) => row.page);
+
+        for (const row of first) {
+          if (row.page && fatal(row.failures)) {
+            console.log(
+              `page ${row.spec.slug} shipped with ${fatal(row.failures)} fault(s): ` +
+                row.failures.filter((f) => f.fatal).map((f) => f.code).join(", ")
+            );
+          }
+        }
+
+        done.pageFaults = first
+          .filter((row) => row.page && fatal(row.failures))
+          .map((row) => ({
+            slug: row.spec.slug,
+            title: row.spec.title,
+            codes: row.failures.filter((f) => f.fatal).map((f) => f.code),
+          }));
 
         for (const page of results) {
           if (!page) continue;

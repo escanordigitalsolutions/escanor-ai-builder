@@ -11,13 +11,18 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.36.0",
+  version: "1.37.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.37.0</h4><ul>" +
+    "<li>Pages now keep the site's own left edge. A page that set its own margins used to start in a different place from the homepage \u2014 on one generation, four pages out of seven did, and one ran to the window edge. Every page is checked against the homepage now and redrawn once if it drifted.</li>" +
+    "<li>A page that comes back too thin \u2014 headings with empty boxes under them \u2014 is redrawn rather than shipped.</li>" +
+    "<li>If a page still does not match after the second attempt it is kept, and the preview says which one, instead of leaving you to find it.</li>" +
+    "</ul>" +
     "<h4>1.36.0</h4><ul>" +
     "<li>A design is now a whole site you can walk through: the homepage, every page in the menu, the blog, a blog post and the 404 are each really designed, and clicking a link in the preview takes you to that page.</li>" +
     "<li>The preview lists the pages down the left, by name and by file, instead of a row of tabs.</li>" +

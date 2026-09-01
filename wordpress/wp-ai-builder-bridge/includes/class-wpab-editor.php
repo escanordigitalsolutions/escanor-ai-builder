@@ -4800,6 +4800,22 @@ final class WPAB_Editor {
 					var parts = [];
 					if (mock.conceptName) { parts.push('<b>Concept: \u201c' + String(mock.conceptName).replace(/[<>&]/g, '') + '\u201d</b>' + (mock.conceptIdea ? ' \u2014 ' + String(mock.conceptIdea).replace(/[<>&]/g, '') : '')); }
 					if (mock.critique) { parts.push('AI review: ' + String(mock.critique).replace(/[<>&]/g, '')); }
+					// A page that still failed its checks after a second attempt is
+					// shipped anyway — a site missing Services is worse than one
+					// whose Services page sits slightly wide — but saying so beats
+					// letting the person find it themselves.
+					if (Array.isArray(mock.pageFaults) && mock.pageFaults.length) {
+						var names = [];
+						for (var pf = 0; pf < mock.pageFaults.length; pf++) {
+							var f = mock.pageFaults[pf];
+							if (f && f.title) { names.push(String(f.title).replace(/[<>&]/g, '')); }
+						}
+						if (names.length) {
+							parts.push('Worth a look: ' + names.join(', ')
+								+ (names.length === 1 ? ' did not' : ' did not')
+								+ ' come back matching the rest of the site. You can adjust it below, or rebuild.');
+						}
+					}
 					if (parts.length) { meta.innerHTML = parts.join('<br>'); meta.hidden = false; } else { meta.hidden = true; }
 				}
 				if (!wrap || !frame) { return proceedFromMockup(myRun, sig, brief, mock); }
