@@ -62,6 +62,14 @@ export async function POST(request: NextRequest) {
 
   const designId = typeof body.designId === "string" ? body.designId.trim() : "";
 
+  // Which pages to draw, chosen by the person at the homepage gate. An empty
+  // or missing list means everything the direction planned — the choice is an
+  // opt-out, not a requirement.
+  const only = new Set(
+    (Array.isArray(body.only) ? body.only : [])
+      .filter((v): v is string => typeof v === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(v))
+  );
+
   if (!designId) {
     return NextResponse.json(
       { success: false, error: "A designId is required." },
@@ -157,7 +165,9 @@ export async function POST(request: NextRequest) {
         fonts: Array.isArray(assets.fonts) ? (assets.fonts as string[]) : [],
       };
 
-      const specs = sitePageSpecs(direction);
+      const specs = sitePageSpecs(direction).filter(
+        (spec) => only.size === 0 || only.has(spec.slug)
+      );
       const container = detectContainer(String(design.html), home.css);
 
       if (!specs.length) {

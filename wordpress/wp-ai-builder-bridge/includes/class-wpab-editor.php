@@ -1709,7 +1709,15 @@ final class WPAB_Editor {
 			return new WP_Error( 'wpab_dpages_bad', 'A design is required.', array( 'status' => 400 ) );
 		}
 
-		$result = WPAB_Cloud::request( 'agent/design-pages-start', array( 'designId' => $design_id ), 60 );
+		$payload = array( 'designId' => $design_id );
+		if ( isset( $params['only'] ) && is_array( $params['only'] ) ) {
+			$only = array_values( array_filter( array_map( 'sanitize_key', $params['only'] ) ) );
+			if ( $only ) {
+				$payload['only'] = array_slice( $only, 0, 12 );
+			}
+		}
+
+		$result = WPAB_Cloud::request( 'agent/design-pages-start', $payload, 60 );
 
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
@@ -2023,6 +2031,29 @@ final class WPAB_Editor {
 
 		$is_design = ( 'design' === $mode );
 
+		// The studio's library: recent designs, fetched here so the page opens
+		// with them rather than after a round-trip. Only the design page pays
+		// for the request — the editor never shows the library.
+		$library = array();
+		if ( $is_design ) {
+			$archive = WPAB_Cloud::request( 'agent/designs', array(), 15 );
+			if ( ! is_wp_error( $archive ) && isset( $archive['designs'] ) && is_array( $archive['designs'] ) ) {
+				foreach ( array_slice( $archive['designs'], 0, 8 ) as $row ) {
+					if ( ! is_array( $row ) || empty( $row['id'] ) ) {
+						continue;
+					}
+					$lb = isset( $row['brief']['name'] ) && $row['brief']['name'] ? $row['brief']['name'] : ( $row['concept'] ?? 'Untitled design' );
+					$library[] = array(
+						'id'      => (string) $row['id'],
+						'name'    => sanitize_text_field( (string) $lb ),
+						'concept' => sanitize_text_field( (string) ( $row['concept'] ?? '' ) ),
+						'when'    => isset( $row['created_at'] ) ? mysql2date( 'M j', (string) $row['created_at'] ) : '',
+						'status'  => sanitize_key( (string) ( $row['status'] ?? 'pending' ) ),
+					);
+				}
+			}
+		}
+
 		// Deep link from the Pages list / manual-edit guard: preload the
 		// preview on the specific page someone was trying to open, instead of
 		// always landing on the homepage.
@@ -2058,6 +2089,7 @@ final class WPAB_Editor {
 			'restBuildFilesStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files-start' ) ),
 			'restBuildJob'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/job' ) ),
 			'mode'            => $is_design ? 'design' : 'editor',
+			'library'         => $library,
 			'dashboardUrl'    => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
 			'editorUrl'       => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-editor' ) ),
 			'designUrl'       => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-design' ) ),
@@ -2094,7 +2126,8 @@ final class WPAB_Editor {
 			<div id="wpab-ed-wizard" class="wpab-ed__wizard" hidden>
 				<div class="wpab-ed__wcard">
 					<div class="wpab-ed__whead">
-						<h2 class="wpab-ed__wtitle">Generate a custom theme</h2>
+						<span class="wpab-ed__wmark">Meikero<i>.</i></span>
+						<h2 class="wpab-ed__wtitle">Design studio</h2>
 					</div>
 
 					<div id="wpab-ed-wform">
@@ -2105,10 +2138,19 @@ final class WPAB_Editor {
 						<input type="text" id="wpab-ed-name" class="wpab-ed__winput" placeholder="e.g. Aurora Studio" />
 						<label class="wpab-ed__wlabel">Design style</label>
 						<div class="wpab-ed__wstyles" id="wpab-ed-wstyles">
-							<button type="button" class="wpab-ed__wstyle is-on" data-style="concept"><b>Concept</b><span>Surprising — brand becomes the layout</span></button>
-							<button type="button" class="wpab-ed__wstyle" data-style="minimal"><b>Minimal</b><span>Editorial luxury, whitespace, calm</span></button>
-							<button type="button" class="wpab-ed__wstyle" data-style="bold"><b>Bold</b><span>Loud, experimental, art-led</span></button>
-							<button type="button" class="wpab-ed__wstyle" data-style="business"><b>Business</b><span>Clean, credible, conversion-first</span></button>
+							<button type="button" class="wpab-ed__wstyle is-on" data-style="concept"><b>Concept</b><span>One surprising structural idea carries the page — shapes, colour and type do the work photos usually do. Pick this when the brand itself is the story.</span></button>
+							<button type="button" class="wpab-ed__wstyle" data-style="minimal"><b>Minimal</b><span>Type-led and calm: asymmetric layouts, generous margins, few or no photographs. Reads like a printed spread. For studios, consultancies, premium services.</span></button>
+							<button type="button" class="wpab-ed__wstyle" data-style="bold"><b>Bold</b><span>Image-led and loud: full-bleed photography, oversized type, text set against imagery. For brands that want to be felt before they are read.</span></button>
+							<button type="button" class="wpab-ed__wstyle" data-style="business"><b>Business</b><span>A visible, deliberate grid — information-forward, dense, credible. For SaaS, clinics, firms: pages built to answer questions and convert.</span></button>
+						</div>
+						<label class="wpab-ed__wlabel">Worth adding to the brief <span class="wpab-ed__wopt">— click to append</span></label>
+						<div class="wpab-ed__whints" id="wpab-ed-whints">
+							<button type="button" class="wpab-ed__whint-chip" data-hint="Brand colours: ">Brand colours</button>
+							<button type="button" class="wpab-ed__whint-chip" data-hint="Pages: Home, Services, Pricing, About, Contact. ">Pages you need</button>
+							<button type="button" class="wpab-ed__whint-chip" data-hint="Audience: ">Who it is for</button>
+							<button type="button" class="wpab-ed__whint-chip" data-hint="Voice: confident and plain. ">Tone of voice</button>
+							<button type="button" class="wpab-ed__whint-chip" data-hint="Write all copy in Lithuanian. ">Copy language</button>
+							<button type="button" class="wpab-ed__whint-chip" data-hint="Must have: a pricing table, an FAQ, a contact form. ">Must-haves</button>
 						</div>
 					</div>
 
@@ -2131,6 +2173,10 @@ final class WPAB_Editor {
 							<iframe id="wpab-ed-mockframe" class="wpab-ed__mockframe" title="Design preview" sandbox="allow-scripts"></iframe>
 						</div>
 						<div id="wpab-ed-mockmeta" class="wpab-ed__mockmeta" hidden></div>
+						<div id="wpab-ed-mockpages" class="wpab-ed__mockpages" hidden>
+							<span class="wpab-ed__mockpages-label">Pages to design next</span>
+							<span id="wpab-ed-mockpageslist" class="wpab-ed__mockpages-list"></span>
+						</div>
 						<div class="wpab-ed__mockedit" id="wpab-ed-mockedit" hidden>
 							<input type="text" id="wpab-ed-mockeditinput" class="wpab-ed__mockeditinput" placeholder="Change something first — e.g. make the hero smaller, or turn the method section into a list" />
 							<button type="button" id="wpab-ed-mockeditgo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Change it</button>
@@ -2146,6 +2192,14 @@ final class WPAB_Editor {
 					</div>
 
 					<div id="wpab-ed-wresult" class="wpab-ed__wresult"></div>
+
+					<div id="wpab-ed-wlibrary" class="wpab-ed__wlibrary" hidden>
+						<div class="wpab-ed__wlibhead">
+							<span>Design library</span>
+							<a id="wpab-ed-wlibmore" href="#">Open the archive</a>
+						</div>
+						<div id="wpab-ed-wliblist" class="wpab-ed__wliblist"></div>
+					</div>
 
 					<div class="wpab-ed__wactions">
 						<button type="button" id="wpab-ed-wcancel" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Cancel</button>
@@ -2509,7 +2563,38 @@ final class WPAB_Editor {
 		.wpab-ed__mockframe { width: 100%; height: 440px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: #fff; display: block; }
 		/* The pages of the site down the left, the page itself on the right — so
 		   the preview reads as a site with a shape rather than a strip of tabs. */
-		.wpab-ed__mockstage { display: grid; grid-template-columns: 196px minmax(0, 1fr); gap: 12px; align-items: start; }
+		/* One column by default: with only the homepage designed the rail is
+		   hidden, and a grid that still reserved its 196px put the whole preview
+		   inside that sliver — the iframe fell into the rail's column. */
+		.wpab-ed__mockstage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
+		.wpab-ed__mockstage.has-rail { grid-template-columns: 196px minmax(0, 1fr); }
+		.wpab-ed__mockpages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-top: 12px; }
+		.wpab-ed__mockpages[hidden] { display: none !important; }
+		.wpab-ed__mockpages-label { font-size: 12px; font-weight: 600; color: #5c5955; letter-spacing: .02em; }
+		.wpab-ed__mockpages-list { display: flex; flex-wrap: wrap; gap: 6px; }
+		.wpab-ed__mockpage { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid rgba(20,19,18,.16); border-radius: 999px; font-size: 12.5px; color: #37342f; cursor: pointer; user-select: none; background: #fff; transition: all .15s ease; }
+		.wpab-ed__mockpage input { position: absolute; opacity: 0; pointer-events: none; }
+		.wpab-ed__mockpage.is-on { background: #141312; border-color: #141312; color: #fff; }
+		.wpab-ed__mockpage:focus-within { outline: 2px solid #6366f1; outline-offset: 1px; }
+		/* The studio's own face: Meikero ink on warm paper, one indigo accent. */
+		.wpab-ed__whead { display: flex; align-items: baseline; gap: 12px; }
+		.wpab-ed__wmark { font-size: 13px; font-weight: 800; letter-spacing: .01em; color: #141312; text-transform: lowercase; }
+		.wpab-ed__wmark i { font-style: normal; color: #6366f1; }
+		.wpab-ed__whints { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 14px; }
+		.wpab-ed__whint-chip { appearance: none; border: 1px dashed rgba(20,19,18,.28); background: transparent; color: #5c5955; border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; transition: all .15s ease; }
+		.wpab-ed__whint-chip:hover { border-style: solid; border-color: #6366f1; color: #141312; }
+		.wpab-ed__wstyle span { line-height: 1.45; }
+		.wpab-ed__wlibrary { margin-top: 18px; border-top: 1px solid rgba(20,19,18,.1); padding-top: 14px; }
+		.wpab-ed__wlibrary[hidden] { display: none !important; }
+		.wpab-ed__wlibhead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+		.wpab-ed__wlibhead span { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #5c5955; }
+		.wpab-ed__wlibhead a { font-size: 12px; color: #6366f1; text-decoration: none; }
+		.wpab-ed__wliblist { display: flex; flex-wrap: wrap; gap: 8px; }
+		.wpab-ed__wlibitem { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 13px; border: 1px solid rgba(20,19,18,.12); border-radius: 10px; background: #fff; cursor: pointer; transition: all .15s ease; max-width: 220px; }
+		.wpab-ed__wlibitem:hover { border-color: #141312; box-shadow: 0 3px 12px rgba(20,19,18,.08); }
+		.wpab-ed__wlibitem b { font-size: 12.5px; color: #141312; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+		.wpab-ed__wlibitem small { font-size: 11px; color: #8a8783; }
+		.wpab-ed__wlibitem .used { color: #116450; font-weight: 600; }
 		.wpab-ed__mockrail { display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: rgba(20,19,18,.02); max-height: 68vh; overflow-y: auto; }
 		.wpab-ed__mockrail[hidden] { display: none !important; }
 		.wpab-ed__mockrail .wpab-ed__mocktab { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; border: 0; border-radius: 8px; padding: 7px 10px; background: transparent; }
@@ -4162,6 +4247,54 @@ final class WPAB_Editor {
 				});
 			}
 
+			// A chip is a sentence the person forgot to write, one click away.
+			(function () {
+				var hints = $('wpab-ed-whints');
+				if (!hints) { return; }
+				hints.addEventListener('click', function (e) {
+					var chip = e.target && e.target.closest ? e.target.closest('[data-hint]') : null;
+					var box = $('wpab-ed-prompt');
+					if (!chip || !box) { return; }
+					var add = chip.getAttribute('data-hint') || '';
+					box.value = (box.value ? box.value.replace(/\s*$/, '') + '\n' : '') + add;
+					box.focus();
+					try { box.setSelectionRange(box.value.length, box.value.length); } catch (err) { /* old Safari */ }
+				});
+			})();
+
+			// The studio remembers what it has made. Every design ever generated
+			// is one click from being continued — previewed, edited, built —
+			// instead of living only in a dashboard panel elsewhere.
+			(function () {
+				var lib = $('wpab-ed-wlibrary');
+				var list = $('wpab-ed-wliblist');
+				var rows = (cfg && Array.isArray(cfg.library)) ? cfg.library : [];
+				if (!lib || !list || cfg.mode !== 'design' || !rows.length) { return; }
+				var more = $('wpab-ed-wlibmore');
+				if (more && cfg.dashboardUrl) { more.href = cfg.dashboardUrl; }
+				for (var i = 0; i < rows.length; i++) {
+					var d = rows[i];
+					if (!d || !d.id) { continue; }
+					var it = document.createElement('button');
+					it.type = 'button';
+					it.className = 'wpab-ed__wlibitem';
+					it.setAttribute('data-design', d.id);
+					var b = document.createElement('b');
+					b.textContent = d.name || d.concept || 'Untitled design';
+					var sm = document.createElement('small');
+					sm.innerHTML = (d.when ? d.when + ' \u00b7 ' : '') + (d.status === 'used' ? '<span class="used">built</span>' : (d.concept || ''));
+					it.appendChild(b);
+					it.appendChild(sm);
+					list.appendChild(it);
+				}
+				list.addEventListener('click', function (e) {
+					var it = e.target && e.target.closest ? e.target.closest('[data-design]') : null;
+					if (!it || busy) { return; }
+					startFromDesign(it.getAttribute('data-design'));
+				});
+				lib.hidden = false;
+			})();
+
 			function openWizard() {
 				if (!wizard) { return; }
 				busy = false;
@@ -4959,6 +5092,61 @@ final class WPAB_Editor {
 					return false;
 				}
 
+				// What can be designed next, as toggles. The site's own pages come
+				// from the direction; the blog, one post and the 404 every theme
+				// needs. Everything starts on — the choice is an opt-out for the
+				// person who knows they will not want a blog, not a form to fill.
+				function pickerOptions() {
+					var opts = [];
+					var blogish = /^(blog|news|journal|notes|articles|insights|posts|stories|updates)$/;
+					var hasOwnBlog = false;
+					var site = Array.isArray(mock.sitePages) ? mock.sitePages : [];
+					for (var i = 0; i < site.length; i++) {
+						var sp = site[i];
+						if (!sp || !sp.slug) { continue; }
+						if (blogish.test(sp.slug)) { hasOwnBlog = true; }
+						opts.push({ slug: sp.slug, label: sp.title || sp.slug });
+					}
+					if (!hasOwnBlog) { opts.push({ slug: 'archive', label: 'Blog' }); }
+					opts.push({ slug: 'post', label: 'Blog post' });
+					opts.push({ slug: 'notfound', label: '404' });
+					return opts;
+				}
+
+				function buildPagePicker(show) {
+					var row = $('wpab-ed-mockpages');
+					var list = $('wpab-ed-mockpageslist');
+					if (!row || !list) { return; }
+					if (!show) { row.hidden = true; return; }
+					var opts = pickerOptions();
+					list.innerHTML = '';
+					for (var i = 0; i < opts.length; i++) {
+						var lab = document.createElement('label');
+						lab.className = 'wpab-ed__mockpage is-on';
+						var cb = document.createElement('input');
+						cb.type = 'checkbox';
+						cb.checked = true;
+						cb.value = opts[i].slug;
+						cb.addEventListener('change', function (e) {
+							var host = e.target && e.target.parentNode;
+							if (host && host.classList) { host.classList.toggle('is-on', e.target.checked); }
+						});
+						lab.appendChild(cb);
+						lab.appendChild(document.createTextNode(opts[i].label));
+						list.appendChild(lab);
+					}
+					row.hidden = opts.length === 0;
+				}
+
+				function pickedPages() {
+					var list = $('wpab-ed-mockpageslist');
+					if (!list) { return []; }
+					var out = [];
+					var boxes = list.querySelectorAll('input[type=checkbox]');
+					for (var i = 0; i < boxes.length; i++) { if (boxes[i].checked) { out.push(boxes[i].value); } }
+					return out;
+				}
+
 				// Where a link leads.
 				//
 				// Every page is really designed now, so a link is answered with
@@ -5071,6 +5259,10 @@ final class WPAB_Editor {
 						mtabs.appendChild(b);
 					}
 					mtabs.hidden = pages.length < 2;
+					// The stage only reserves the rail's column while the rail is
+					// really there — otherwise the iframe inherits its 196px.
+					var stage = mtabs.parentNode;
+					if (stage && stage.classList) { stage.classList.toggle('has-rail', pages.length >= 2); }
 				}
 				buildPageTabs();
 				if (mtabs) {
@@ -5203,6 +5395,7 @@ final class WPAB_Editor {
 
 				if (useBtn) { useBtn.hidden = !hasPages; }
 				if (goBtn) { goBtn.hidden = hasPages; }
+				buildPagePicker(!hasPages);
 				// Going back to the brief once other pages exist would throw them
 				// away without saying so; at that point the way back is a new run.
 				if (briefBtn) { briefBtn.hidden = hasPages; }
@@ -5215,6 +5408,7 @@ final class WPAB_Editor {
 
 				function leaveReview() {
 					if (wizard) { wizard.classList.remove('is-design'); }
+					buildPagePicker(false);
 					wrap.hidden = true;
 					if (meta) { meta.hidden = true; }
 					if (wProgress) { wProgress.hidden = false; }
@@ -5224,8 +5418,10 @@ final class WPAB_Editor {
 				if (goBtn) {
 					goBtn.onclick = function () {
 						if (!alive(myRun) || !mock.designId || !cfg.restDesignPages) { return; }
+						var chosen = pickedPages();
+						if (!chosen.length) { return; }
 						leaveReview();
-						runPages(myRun, sig, brief, mock);
+						runPages(myRun, sig, brief, mock, chosen);
 					};
 				}
 
@@ -5276,12 +5472,12 @@ final class WPAB_Editor {
 			// The rest of the site, drawn only once somebody has said the homepage
 			// is right. It used to run inside the homepage job, which meant paying
 			// for eight pages before seeing whether the direction was even close.
-			function runPages(myRun, sig, brief, mock) {
+			function runPages(myRun, sig, brief, mock, only) {
 				phaseProgress('design');
 				setBuildDetail('Designing the rest of the site…');
 				var started = Date.now();
 
-				wpost(cfg.restDesignPages, { designId: mock.designId }, sig).then(function (sOut) {
+				wpost(cfg.restDesignPages, { designId: mock.designId, only: only || [] }, sig).then(function (sOut) {
 					if (!alive(myRun)) { return; }
 					var jobId = sOut && sOut.data && sOut.data.jobId;
 					if (!jobId) { throw new Error(errText(sOut, 'Could not start the page step.')); }

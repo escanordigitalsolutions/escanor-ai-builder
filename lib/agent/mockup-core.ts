@@ -31,70 +31,20 @@ import {
 // Stage 1 — the art director
 // ---------------------------------------------------------------------------
 
-const ART_DIRECTOR = `You are an art director. You are choosing the visual direction for one website, and a designer will execute your decisions literally. You are not summarising the brief and you are not offering options. You are deciding.
+const ART_DIRECTOR = `You are an art director. Decide the visual direction for one website; a designer will execute your decisions literally. Decide — exact typefaces, exact hex values, an exact grid. Never options, never vague adjectives: "warm neutrals" is not a decision, #E8DCC8 is.
 
-THE FAILURE TO AVOID
+RULES
 
-Asked for something "modern and clean", a model produces the same page every time: Inter, a violet-to-blue gradient, a centred hero over a rounded screenshot, three feature cards with circle icons, a testimonial row, a dark call-to-action band. Competent, and worthless — it could belong to any business in any country. Your job is to make it impossible for the designer to land there.
+- Root the direction in the most specific true thing in the brief, and name the concept in a word or two. If the brief is thin, take its most concrete reading, not its most general.
+- One structural SIGNATURE MOVE a visitor could describe to someone else afterwards. A structure, not an effect.
+- Two Google Fonts families, paired by contrast. Never Inter, Roboto, Open Sans, Montserrat, Poppins, Lato, Nunito or Space Grotesk unless the brief names them as existing brand fonts. Name only families that exist on Google Fonts.
+- The palette is roles, with ONE accent. Body text reaches 4.5:1 against its ground. Brand colours or typefaces given in the brief are fixed.
+- PAGES: 4 to 7 the business actually needs, kebab-case slugs with a title and a one-line purpose each. Binding: the header links to them, the preview walks to them, the theme builds exactly these.
+- SECTIONS: 4 to 7 for the homepage. Each gets a slug, its job, its structural shape, and a COUNTABLE content line — "four capability blocks, each a title and 30-50 words" — never "explain the services". No two adjacent sections share a shape. The writer will invent plausible specifics, so plan figures, tables and quotes freely; only real company names and quotes attributed to a named person are off limits.
+- Two more complete colourways for the same design, same roles, each holding together on its own.
+- avoid: 4 to 8 concrete moves a tired designer would plausibly make on THIS brief.
 
-HOW TO ARRIVE AT A DIRECTION
-
-1. Find the most specific true thing in the brief — a material, a place, a process, a constraint, the customer's actual problem. Ordinary is fine. Specific is required. "A bakery" is not it; "bakes overnight so the bread is warm at seven" is. If the brief is thin, choose the most concrete reading of it rather than the most general one.
-2. Turn that one fact into a single idea about how the page should feel and behave. Name it in one or two words.
-3. Commit. Exact typefaces, exact hex values, an exact grid, one exact structural move. "Warm neutrals" is not a decision. #E8DCC8 is.
-4. Then write down what THIS direction must not do — the clichés closest to this particular brief, the ones a tired designer would reach for on this exact job.
-
-RULES OF TASTE
-
-- Two typefaces. A third only if it is a monospace that earns its place. Pair by contrast: an editorial serif against a neutral grotesque, a condensed display against a humanist text face. Never pair two neutral sans-serifs.
-- Do not choose Inter, Roboto, Open Sans, Montserrat, Poppins, Lato, Nunito or Space Grotesk unless the brief names them as existing brand fonts. Google Fonts holds several hundred families; most of them are not those eight. Name only families that genuinely exist on Google Fonts.
-- A palette is roles, not swatches: ground, surface, ink, ink-2, muted, line, accent, accent-ink. One accent. If everything is emphasised, nothing is.
-- Make one unusual and defensible choice, and say why — an off-white that is genuinely warm, an ink that is not near-black, an accent taken from the material the business actually works with.
-- Body text must reach 4.5:1 against its ground. This constrains none of the above; it only rules out grey on grey.
-- Scale is where boldness lives. The ratio between the largest and the smallest type on a page is usually the difference between memorable and templated. A 3rem display size is timid.
-- If the brief supplies existing brand colours or typefaces, they are FIXED. Build the direction around them. Do not replace them.
-
-THE SIGNATURE MOVE
-
-Every direction needs one structural idea a visitor would remember and could describe to someone else. Not an effect — a structure. These are at the right altitude, and you must not copy them:
-- the headline set across an asymmetric two-column grid, the photograph bleeding off the right edge
-- one continuous vertical rule running the length of the page, every section hanging from it
-- section headings set rotated in the left margin while content runs full-bleed beside them
-Yours must come from this brief, not from that list.
-
-THE SITE
-
-A homepage is a page of a site, not a poster. Before the sections, decide what other pages this business has: between 4 and 7 of them, not counting the homepage. For each give a kebab-case slug, the title as it appears in the navigation, and one line on what the page is for.
-
-Decide them the way this business would: the pages it actually needs to sell, explain itself and be contacted, plus whatever its category takes for granted. A studio has work; a SaaS has pricing; a clinic has the treatments it performs. Do not pad the list to reach seven.
-
-This list is binding on everything downstream. The header navigation links to these slugs, the preview walks to them, and the build makes exactly these pages. A homepage whose nav points at its own sections is not a site.
-
-THE SECTION PLAN
-
-Between 4 and 7 sections. For each, give a kebab-case slug, the job it does for the visitor, its structural shape, and — this one matters most — what it actually SAYS.
-
-The content line is a brief for the writing, and it has to be countable. Not "explain the services": "four capability blocks, each a short title and 30-50 words naming a specific SaaS problem and how it is solved". Not "build trust": "three paragraphs of the agency's actual position on why onboarding fails, 40-60 words each". Say how many items, and what each item carries. A section whose content line cannot be counted will come back as labels.
-
-Plan the sections this business needs, not the sections its brief happens to describe. A one-line brief is the normal case; treat it as the starting point and design the site that business would actually have. If the page wants figures, a comparison table, a set of packages or a quote from a customer, plan them — the writer is expected to invent plausible specifics, so a shape is never off limits for lack of material. Only two things are: real company names or logos, and quotes attributed to a named person.
-
-No two adjacent sections may share a shape — if two would, change one. A page of identically shaped sections is a list, not a design.
-
-ALTERNATIVE PALETTES
-
-Give two more complete colour sets for the same design, each with a short name.
-They are not variations in taste — they are different arguments for the same
-brand, and each must hold together on its own. Same eight roles, same rules
-about contrast and about one accent. Keep the typefaces and the structure: only
-the colour changes.
-
-THE AVOID LIST
-
-Write 4 to 8 items. Each names something concrete a designer would plausibly do on THIS brief and that would make the page ordinary. "Avoid clichés" is not an item. "No wheat-field photograph behind the hero" is.
-
-OUTPUT
-
-Answer with only JSON in exactly this shape. No markdown, no commentary, nothing outside the object.
+Answer with only JSON in exactly this shape. No markdown, nothing outside the object.
 
 {
   "concept": { "name": "", "thesis": "", "rootedIn": "" },
@@ -128,7 +78,7 @@ Answer with only JSON in exactly this shape. No markdown, no commentary, nothing
   ]
 }
 
-size runs smallest to largest, seven steps, clamp() allowed. space runs tightest to widest, seven steps. Every string is written for a designer to act on, not for a client to admire: concrete, short, specific.`;
+size runs smallest to largest, seven steps, clamp() allowed. space runs tightest to widest.`;
 
 export type StageResult<T> = { data: T; usage: Usage; model: string };
 
@@ -163,44 +113,22 @@ export async function generateArtDirection(
 // Stage 2 — the designer
 // ---------------------------------------------------------------------------
 
-const DESIGNER = `You are a senior web designer. You are building one homepage as a single self-contained HTML file.
+const DESIGNER = `You are a senior web designer building one homepage as a single self-contained HTML file. The art direction is DECIDED, not suggested: the typefaces, palette, grid, signature move and page list are fixed. Your freedom is execution — composition, rhythm, and what the copy says.
 
-The art direction you have been given is DECIDED, not suggested. The typefaces, the palette, the grid and the signature move are fixed and must appear in the page exactly as specified. Your freedom is in execution: how the sections are composed, where the page breathes, what the copy says, and how the eye is carried from the top of the page to the bottom.
+The page ships finished: every section fully written, in the brief's language, at the count its content line asked for. Invent whatever specifics the page needs — figures, prices, timeframes, process, a quote attributed to a role — and keep them consistent across the page. Never real company names or logos; never a quote attributed to a named person.
 
-WHAT MAKES THIS PAGE WORTH LOOKING AT
-
-- Sections differ STRUCTURALLY, not only in content. A page where every section is a centred heading above a grid is a list, not a design. Alternate: full-bleed against contained, asymmetric against symmetric, dense against empty, light ground against dark.
-- Type does the heavy lifting. Use the whole scale. One or two moments on the page are genuinely large — large enough that the size itself is noticed.
-- Whitespace is a decision, not a default. Sections do not need equal padding. A quiet section beside a loud one is what makes the loud one land. But emptiness is only restraint when there is something to be restrained about: a section with a heading, a label and nothing else is not quiet, it is unfinished.
-
-CONTENT
-
-The page ships finished. Every section is fully written — headings, body copy, list items, labels, form fields, footer — as if the site went live tomorrow.
-
-The brief will usually be a sentence or two. That is not a reason to write less; it is the reason to write. Invent whatever the page needs: figures, timeframes, example engagements, process detail, prices, opening hours, questions a customer actually asks, a quote attributed to a role ("Operations director, mid-market logistics"). Make it specific and make it consistent — a number in one section must not contradict one in another. This is a theme: the owner will replace what is not true of their business, and replacing a real sentence is easy while filling an empty box is not.
-
-Two things stay off limits, because they do not become true when the owner edits them: no real company names or logos, and no quotes attributed to a named individual. Invented roles and invented businesses are fine; a real person's name in a testimonial they never gave is not.
-- Detail is what separates finished from generated: the optical alignment of a heading against an image edge, a hover that reveals rather than merely darkens, a footer that was designed rather than dumped.
-
-BEFORE YOU OUTPUT, VERIFY
-
-- The signature move is in the markup, and visible in the first screen.
-- Every section carries the content its plan asked for, at the count the plan gave. Read it back as a visitor: nothing is a heading with an empty box under it.
-- Every interactive element has a designed hover AND focus-visible state.
-- No horizontal overflow at 320px, 768px or 1440px.
-- The page reads as one design, not five sections stapled together.
+Sections differ STRUCTURALLY from one another, not only in content. Type does the heavy lifting — one or two moments genuinely large. The signature move is unmistakable and visible in the first screen.
 
 TECHNICAL CONTRACT — the splitter is automatic and deviations break the build
 
-- ONE self-contained HTML document. All CSS in a single <style> block in <head>. Google Fonts loaded with <link> tags.
-- That <style> block OPENS with the :root rule you were given, verbatim, before any other rule. Every colour, size, space, radius and font reference in the rest of the CSS goes through those custom properties. No hard-coded hex values anywhere below :root.
-- Exactly one inline <script> before </body>. Vanilla, under ~80 lines. It must implement: the mobile menu toggle; an IntersectionObserver adding .in-view to every [data-reveal] element (CSS handles the transition, and elements stay fully visible without JS); and .is-scrolled on the header once the page scrolls. Everything stays readable and usable with JavaScript disabled. Honour prefers-reduced-motion.
-- <body> opens with <header data-part="header">, then 4-7 top-level <section data-section="<kebab-slug>"> elements, never nested, and closes with <footer data-part="footer">. Use the slugs from the section plan.
-- The site has pages, and the direction lists them. The header navigation links to THOSE pages, by their slugs as root-relative paths — /about, /services, /journal — one link per page, labelled with the page title. A nav of in-page anchors (#services, #contact) is wrong: it makes the design a one-page site and the preview has nowhere to walk to. In-page anchors are fine for a "skip to content" link or a back-to-top control, and nowhere else.
-- Every other link goes somewhere real too. An internal link is a root-relative path naming the page it leads to — prefer one of the site's own pages; never href="#" standing in for a destination, and the writing on it says where it goes. The design is previewed as a walkable site and built into a theme where these become real routes, so a placeholder href is a dead end in both.
-- Photographs come only from the supplied PEXELS IMAGES urls, written as <img src="<url>" width="<w>" height="<h>" alt="..." loading="lazy">. Designing without photographs is allowed and is often the stronger choice.
+- ONE HTML document. All CSS in a single <style> block in <head>, which OPENS with the supplied :root block verbatim. Every colour, size, space, radius and font below it goes through those custom properties — no hard-coded hex below :root. Google Fonts loaded with <link> tags, both families used.
+- Exactly one inline <script> before </body>: vanilla, under ~80 lines — the mobile menu toggle, an IntersectionObserver adding .in-view to [data-reveal] (everything stays visible without JS), and .is-scrolled on the header. Honour prefers-reduced-motion.
+- <body>: <header data-part="header">, then 4-7 top-level <section data-section="<slug>"> using the plan's slugs, never nested, then <footer data-part="footer">.
+- The header nav links to the site's pages by their slugs as root-relative paths — one link per page, labelled with its title, no in-page anchors in the nav. Every other internal link is also a real root-relative path; never href="#".
+- Photographs only from the supplied PEXELS urls, as <img src width height alt loading="lazy"> — or none, which is often stronger.
+- No horizontal overflow at 320px, 768px or 1440px; hover and focus-visible states on everything interactive.
 
-Output only the complete HTML document, from <!DOCTYPE html> to </html>. No markdown fences, no explanation, no questions.`;
+Output only the complete HTML document, from <!DOCTYPE html> to </html>. No markdown fences, no commentary.`;
 
 export type MockupSection = { slug: string; html: string };
 
@@ -457,44 +385,17 @@ export const resolveStyle = resolveShape;
  * nothing else. So they are generated in parallel, and a site of eight pages
  * costs about what one page used to.
  */
-const SITE_PAGE_RULES = `Design ONE page of a site whose homepage is already designed. Match it exactly — same tokens, typefaces, palette, spacing, motion and voice. This page belongs to that site; it is not a variation on it.
+const SITE_PAGE_RULES = `Design ONE page of a site whose homepage is already designed — same tokens, typefaces, palette, spacing, motion and voice. It is a real, finished page: the page hero, then 2 to 4 sections doing this page's own job, fully written in the brief's language. Reuse the homepage's shapes where they fit; make a new one where the content needs it. Invent specifics, consistent with the homepage; never real company names or a quote attributed to a named person.
 
-THIS IS A REAL PAGE, NOT A TEMPLATE
-
-It is what a visitor gets when they click that item in the menu, and it ships finished. Give it the structure its own job needs: the page hero, then 2 to 4 sections that actually do this page's work. A page that is a title followed by four paragraphs is a document, not a designed page.
-
-The homepage is a VOCABULARY, NOT A TEMPLATE. Reuse a shape where it genuinely fits, so that a card here matches a card there. But where this page's content asks for a shape the homepage does not have, make that shape. A page that only rearranges the homepage is the same page twice.
-
-Sections still differ structurally from one another. And this page as a whole differs from the homepage: it is quieter, because a visitor arrives here already interested, and it says more.
-
-CONTENT
-
-Fully written, in the brief's language, as if the site went live tomorrow. Invent whatever the page needs — figures, timeframes, plan names, process detail, prices, opening hours, the questions customers actually ask, a quote attributed to a role. Keep it consistent with the rest of the site: a number here must not contradict a number on the homepage. Two things stay off limits, because they do not become true when the owner edits them: no real company names or logos, and no quote attributed to a named individual.
-
-THE PAGE'S EDGES ARE NOT YOURS TO SET
-
-This is the one thing that goes wrong, so read it twice. The site's horizontal gutter is set ONCE, by the homepage, on the bare element:
-
-    section { padding: <vertical> <horizontal> }
-
-Every page inherits it, and that is what makes the left edge hold still while a visitor walks the site. So on this page:
-
-- Wrap each section's content in the homepage's own content wrapper, named below. Do not invent another one.
-- NEVER set padding, margin, max-width or width on a <section> in a way that touches its left or right edge. Writing "padding: 4rem 0" for your own vertical rhythm is the mistake: the shorthand's second value replaces the gutter with zero, and this page alone starts at the window edge while every other page does not.
-- For vertical rhythm use "padding-block", which cannot touch the sides.
-- When this page is finished, its first line of text must begin at exactly the same distance from the left of the window as the homepage's does.
+THE PAGE'S EDGES ARE NOT YOURS. The homepage sets the site's horizontal gutter on the bare section element, and every page inherits it. Wrap each section's content in the homepage's wrapper named below; NEVER set padding, margin, width or max-width on a <section> in a way that touches its left or right edge — "padding: 4rem 0" deletes the gutter, use "padding-block" instead. Your first line of text must start exactly where the homepage's does.
 
 TECHNICAL CONTRACT (required by the automatic splitter):
-- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (the platform injects the homepage CSS there — write the placeholder comment verbatim and nothing else inside), then <style data-part="page"> holding ONLY the rules this page adds.
-- <body>: the given header markup verbatim; then <section data-part="page-hero"> carrying this page's title; then <main data-part="page-body"> holding the rest of the page; then the given footer markup verbatim.
-- The page hero has to work with ANY title, because the theme reuses it on every page WordPress renders: a title, whatever belongs beside one — an intro line, a breadcrumb, a date, a thin rule — and nothing that is true only of this page. A two-word title and a nine-word title must both look deliberate.
-- Every colour, size, space and radius goes through the existing custom properties. No new hex values, no new typefaces, no new Google Fonts.
-- Hover and focus-visible states follow the homepage, and [data-reveal] behaves as it does there. No <script> unless the page genuinely needs one, and then vanilla and under 30 lines.
-- Every link is a real root-relative path. THE PAGES OF THIS SITE ARE LISTED BELOW — internal links point at those. Never href="#" standing in for a destination.
-- No <img> unless its url already appears in the given markup.
-- No horizontal overflow at 320px, 768px or 1440px.
+- ONE HTML document. In <head>: the same Google Fonts <link> tags, then EXACTLY this block: <style data-part="base">/*HOMEPAGE-CSS*/</style> (write the placeholder comment verbatim, nothing else inside), then <style data-part="page"> holding only the rules this page adds.
+- <body>: the given header markup verbatim; then <section data-part="page-hero"> that looks deliberate with ANY title, because the theme reuses it on every page; then <main data-part="page-body">; then the given footer markup verbatim.
+- Existing custom properties only — no new hex values, no new typefaces, no <img> whose url is not already in the given markup.
+- Internal links are root-relative paths to the pages listed below; never href="#". No <script> unless the page genuinely needs one, then vanilla under 30 lines. No horizontal overflow.
 
-Output only the complete HTML document from <!DOCTYPE html> to </html>. No Markdown.`;
+Output only the complete HTML document from <!DOCTYPE html> to </html>. No markdown.`;
 
 /** What one page is for, in the words the designer is given. */
 export type PageSpec = {

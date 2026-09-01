@@ -11,13 +11,20 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.38.0",
+  version: "1.39.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.39.0</h4><ul>" +
+    "<li>The design studio: a Meikero-branded wizard with your design library right in it \u2014 any saved design is one click from being previewed, edited or built.</li>" +
+    "<li>You choose which pages get designed. After approving the homepage, the planned pages appear as toggles \u2014 leave out the blog, keep the pricing page, your call.</li>" +
+    "<li>The style cards now say what each direction actually produces, and one-click chips add the things worth having in a brief: colours, pages, audience, voice, language.</li>" +
+    "<li>Fixed: with only the homepage designed, the preview rendered inside the hidden page rail's narrow column.</li>" +
+    "<li>The design prompts were cut to the bare minimum \u2014 the JSON schema, the technical contract, and the rules with measured evidence behind them. Roughly half the total prompt volume, and over 80% of the instructional prose, is gone.</li>" +
+    "</ul>" +
     "<h4>1.38.0</h4><ul>" +
     "<li>Designing a theme now has its own page \u2014 Meikero \u2192 New theme. The AI Editor is for editing a theme that exists, and no longer opens a wizard over a chat you cannot use yet.</li>" +
     "<li>The homepage arrives on its own, in about a minute, and stops there. You decide what happens next: design the rest of the site, change something, rewrite the brief, or take a different direction. Nothing else is spent until you do.</li>" +
