@@ -22,6 +22,7 @@ final class WPAB_Admin {
 
 	private const MENU_SLUG      = 'wp-ai-builder';
 	private const EDITOR_SLUG    = 'wp-ai-builder-editor';
+	private const DESIGN_SLUG    = 'wp-ai-builder-design';
 	private const BRIDGE_SLUG    = 'wp-ai-builder-bridge';
 	private const LOG_SLUG       = 'wp-ai-builder-log';
 
@@ -124,6 +125,16 @@ final class WPAB_Admin {
 			'manage_options',
 			self::MENU_SLUG,
 			array( __CLASS__, 'render_dashboard' )
+		);
+
+		// Designing a theme comes before editing one, and reads first.
+		add_submenu_page(
+			self::MENU_SLUG,
+			'Meikero — New theme',
+			'New theme',
+			'manage_options',
+			self::DESIGN_SLUG,
+			array( 'WPAB_Editor', 'render_design_page' )
 		);
 
 		add_submenu_page(

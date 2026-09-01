@@ -11,13 +11,18 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.37.0",
+  version: "1.38.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.38.0</h4><ul>" +
+    "<li>Designing a theme now has its own page \u2014 Meikero \u2192 New theme. The AI Editor is for editing a theme that exists, and no longer opens a wizard over a chat you cannot use yet.</li>" +
+    "<li>The homepage arrives on its own, in about a minute, and stops there. You decide what happens next: design the rest of the site, change something, rewrite the brief, or take a different direction. Nothing else is spent until you do.</li>" +
+    "<li>Because the pages are drawn after that, a change you make to the homepage now reaches every page \u2014 previously they had already been drawn from the version you were replacing.</li>" +
+    "</ul>" +
     "<h4>1.37.0</h4><ul>" +
     "<li>Pages now keep the site's own left edge. A page that set its own margins used to start in a different place from the homepage \u2014 on one generation, four pages out of seven did, and one ran to the window edge. Every page is checked against the homepage now and redrawn once if it drifted.</li>" +
     "<li>A page that comes back too thin \u2014 headings with empty boxes under them \u2014 is redrawn rather than shipped.</li>" +

@@ -5,19 +5,10 @@ import { createServiceClient } from "@/lib/supabase/service";
 import {
   generateArtDirection,
   generateMockup,
-  generateSitePage,
-  sitePageSpecs,
   critiqueMockup,
   splitMockup,
   type MockupResult,
-  type SitePageResult,
 } from "@/lib/agent/mockup-core";
-import {
-  detectContainer,
-  pageRetryNote,
-  validateSitePage,
-  type PageFailure,
-} from "@/lib/agent/page-shell";
 import { availablePages, colorwayCss } from "@/lib/agent/design-pages";
 import { resolveShape, type ArtDirection } from "@/lib/agent/art-direction";
 import {
@@ -29,7 +20,6 @@ import {
 import { recordUsage } from "@/lib/ai/usage";
 import { refundJobUsage } from "@/lib/billing/credits";
 import { describeError } from "@/lib/debug";
-import { inParallel } from "@/lib/parallel";
 
 // The response returns immediately with a job id; the mockup itself renders in
 // after() and can take a couple of minutes on a strong model.
@@ -49,16 +39,6 @@ export const maxDuration = 800;
 
 const BUDGET_MS = maxDuration * 1000;
 
-/**
- * How many pages are designed at the same time.
- *
- * Three rather than all of them: the pages are independent, but the provider is
- * not, and eight simultaneous long streams is where a rate limit turns a whole
- * successful generation into a failed one. Three finishes a site of eight pages
- * in three waves, which fits the budget with room to spare, and a wave that
- * fails takes one page with it rather than the set.
- */
-const PAGE_CONCURRENCY = 3;
 
 
 /**
@@ -334,195 +314,22 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // ---- Every other page of the site, all at once ----
+      // ---- The rest of the site is NOT drawn here ----
       //
-      // These used to run one after another — components, then an inner-page
-      // template, then the archive, then the 404 — and each was gated on having
-      // two minutes left, so a slow homepage silently cost the site its blog.
-      // The order was never necessary: every one of them needs the direction
-      // and the finished homepage, and none of them needs another. Running them
-      // together is what makes a site of eight real pages cost about what one
-      // template used to.
+      // It used to be, and that was the wrong shape for the person using it:
+      // they waited four minutes for eight pages before seeing whether the
+      // homepage was even the right direction, and paid for all of them if it
+      // was not. Worse, editing the homepage afterwards meant the pages had
+      // already been drawn from the version being edited.
+      //
+      // So this job ends at one approved homepage. design-pages-start draws
+      // the rest, once somebody has looked at it and said yes.
       const pages: Record<string, string> = {};
 
       if (direction) {
         // The CSS, not just the names: a colourway nobody can apply is a
         // label. One :root block is the whole re-skin.
         done.colorways = colorwayCss(direction);
-      }
-
-      const home = {
-        css: mock.css,
-        header: mock.header,
-        footer: mock.footer,
-        fonts: mock.fonts,
-      };
-
-      const specs = sitePageSpecs(direction);
-
-      // The wrapper the homepage holds its content in. Every derived page has
-      // to use it, and until this was passed down four pages out of seven put
-      // their content on a different left edge from the homepage — one of them
-      // against the window.
-      const container = detectContainer(mock.html, mock.css);
-
-      if (specs.length && msLeft() > 90_000) {
-        await setProgress(
-          "pages",
-          `Stage 3/4 — designing ${specs.length} more page${specs.length === 1 ? "" : "s"}…`
-        );
-
-        // Enough room for the slowest page plus the writes that follow it. Each
-        // call gets the same deadline because they are running together.
-        const pageTimeout = Math.max(45_000, msLeft() - 45_000);
-        let finished = 0;
-
-        const draw = async (spec: (typeof specs)[number], retry?: string) => {
-          const page = await generateSitePage(
-            modelConfig,
-            brief,
-            direction,
-            home,
-            spec,
-            pageTimeout,
-            { container, retry }
-          );
-
-          await recordUsage(projectId, "inner", page.model, page.usage, {
-            kind: spec.slug,
-            chars: page.html.length,
-            bodyFound: Boolean(page.body),
-            heroFound: Boolean(page.pageHero),
-            truncated: page.truncated,
-            retry: Boolean(retry),
-          }, jobId);
-
-          return page;
-        };
-
-        // A truncated page is half a page, and a page that fails the shell
-        // checks is one that walks differently from the rest of the site.
-        // Both are worth one more attempt each, which is cheap here.
-        const judge = (page: SitePageResult, spec: (typeof specs)[number]) =>
-          page.truncated || !page.body
-            ? [{ code: "page.truncated", detail: "The page did not finish.", fatal: true }]
-            : validateSitePage(
-                { slug: spec.slug, body: page.body, css: page.css },
-                { container, minWords: spec.minWords }
-              );
-
-        type Drawn = { spec: (typeof specs)[number]; page: SitePageResult | null; failures: PageFailure[] };
-
-        const first: Drawn[] = await inParallel(specs, PAGE_CONCURRENCY, async (spec) => {
-          try {
-            const page = await draw(spec);
-            const failures = judge(page, spec);
-
-            finished += 1;
-            void setProgress("pages", `Stage 3/4 — ${finished} of ${specs.length} pages designed…`);
-
-            return { spec, page, failures };
-          } catch (pageError) {
-            console.error(`page ${spec.slug} failed (continuing without):`, pageError);
-            return { spec, page: null, failures: [] };
-          }
-        });
-
-        const fatal = (rows: PageFailure[]) => rows.filter((f) => f.fatal).length;
-        const needsWork = first.filter((row) => row.page && fatal(row.failures) > 0);
-
-        if (needsWork.length && msLeft() > 80_000) {
-          console.log(
-            `redrawing ${needsWork.length} page(s): ` +
-              needsWork.map((r) => `${r.spec.slug}[${r.failures.filter((f) => f.fatal).map((f) => f.code).join(",")}]`).join(" ")
-          );
-          await setProgress(
-            "pages",
-            `Stage 3/4 — redrawing ${needsWork.length} page${needsWork.length === 1 ? "" : "s"} that drifted…`
-          );
-
-          await inParallel(needsWork, PAGE_CONCURRENCY, async (row) => {
-            try {
-              const page = await draw(row.spec, pageRetryNote(row.failures, container));
-              const failures = judge(page, row.spec);
-
-              // Keep the retry only when it is genuinely better. A second
-              // attempt that breaks more than the first is worse than the page
-              // already in hand.
-              if (fatal(failures) < fatal(row.failures)) {
-                row.page = page;
-                row.failures = failures;
-              }
-            } catch (retryError) {
-              console.error(`page ${row.spec.slug} retry failed (keeping first):`, retryError);
-            }
-            return null;
-          });
-        }
-
-        // A page that still fails every check after a second attempt is kept
-        // anyway: a site missing its Services page is worse than one whose
-        // Services page sits slightly wide, and the log says which it was.
-        const results = first.map((row) => row.page);
-
-        for (const row of first) {
-          if (row.page && fatal(row.failures)) {
-            console.log(
-              `page ${row.spec.slug} shipped with ${fatal(row.failures)} fault(s): ` +
-                row.failures.filter((f) => f.fatal).map((f) => f.code).join(", ")
-            );
-          }
-        }
-
-        done.pageFaults = first
-          .filter((row) => row.page && fatal(row.failures))
-          .map((row) => ({
-            slug: row.spec.slug,
-            title: row.spec.title,
-            codes: row.failures.filter((f) => f.fatal).map((f) => f.code),
-          }));
-
-        for (const page of results) {
-          if (!page) continue;
-
-          pages[page.slug] = page.html;
-
-          // The build reads these two by name for the archive and the 404.
-          if (page.slug === "archive" || page.slug === "notfound") {
-            (done as Record<string, unknown>)[`${page.slug}Css`] = page.css;
-            (done as Record<string, unknown>)[`${page.slug}Body`] = page.body;
-          }
-        }
-
-        // Every content template in the theme — page.php, page-<slug>.php,
-        // single.php — is built around one page hero and one set of .entry
-        // rules. The blog post is where both are demonstrated in full, so it is
-        // the page they come from; any other designed page will do if the post
-        // did not survive, since they all carry the same hero.
-        const forTemplate =
-          results.find((p) => p && p.slug === "post" && p.pageHero) ??
-          results.find((p) => p && p.pageHero) ??
-          null;
-
-        if (forTemplate) {
-          done.innerHtml = forTemplate.html;
-          done.innerCss = forTemplate.css;
-          done.pageHero = forTemplate.pageHero;
-        }
-
-        // Each page's stylesheet holds only the rules that page adds on top of
-        // the homepage, so the rules every content page needs — forms, entry
-        // typography, whatever a page invented — are all of them together. This
-        // is what the component sheet used to supply, now cut from real pages
-        // instead of from a catalogue. The archive and the 404 are left out:
-        // they have their own stylesheet in the theme.
-        done.pagesCss = results
-          .filter((p): p is NonNullable<typeof p> =>
-            Boolean(p?.css) && p!.slug !== "archive" && p!.slug !== "notfound")
-          .map((p) => `/* ${p.slug} */\n${p.css}`)
-          .join("\n\n");
-      } else if (specs.length) {
-        console.log(`derived pages skipped: only ${Math.round(msLeft() / 1000)}s left`);
       }
 
       // ---- The review the person reads ----

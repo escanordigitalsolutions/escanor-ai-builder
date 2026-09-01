@@ -256,6 +256,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/design/pages',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_design_pages' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/design/pack',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -1685,6 +1694,27 @@ final class WPAB_Editor {
 	}
 
 	/**
+	 * Draw the rest of the site, once the homepage has been approved.
+	 *
+	 * Starts a job rather than waiting: eight pages take minutes, and a host
+	 * that cuts long requests would otherwise lose a generation that had
+	 * already succeeded on the SaaS side.
+	 */
+	public static function rest_design_pages( WP_REST_Request $request ) {
+		if ( function_exists( 'set_time_limit' ) ) { @set_time_limit( 120 ); }
+		$params    = self::json_params( $request );
+		$design_id = isset( $params['designId'] ) ? trim( (string) $params['designId'] ) : '';
+
+		if ( '' === $design_id ) {
+			return new WP_Error( 'wpab_dpages_bad', 'A design is required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/design-pages-start', array( 'designId' => $design_id ), 60 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
+	/**
 	 * GET /editor/theme-structure — the active theme, grouped by file role.
 	 *
 	 * Local and free. The same array the plugin ships to the SaaS with every
@@ -1973,10 +2003,25 @@ final class WPAB_Editor {
 	}
 
 
-	public static function render_page(): void {
+	/**
+	 * The design flow on its own page.
+	 *
+	 * Generating a theme and editing one are different jobs done at different
+	 * times, and putting the first inside the second meant the AI Editor opened
+	 * onto a wizard covering a chat that could not be used yet. They share this
+	 * renderer because they share the wizard itself; what differs is that the
+	 * design page has no chat behind it and cannot be dismissed into one.
+	 */
+	public static function render_design_page(): void {
+		self::render_page( 'design' );
+	}
+
+	public static function render_page( string $mode = 'editor' ): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
+
+		$is_design = ( 'design' === $mode );
 
 		// Deep link from the Pages list / manual-edit guard: preload the
 		// preview on the specific page someone was trying to open, instead of
@@ -2012,11 +2057,16 @@ final class WPAB_Editor {
 			'restBuildFiles'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files' ) ),
 			'restBuildFilesStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/files-start' ) ),
 			'restBuildJob'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/build/job' ) ),
+			'mode'            => $is_design ? 'design' : 'editor',
+			'dashboardUrl'    => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder' ) ),
+			'editorUrl'       => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-editor' ) ),
+			'designUrl'       => esc_url_raw( admin_url( 'admin.php?page=wp-ai-builder-design' ) ),
 			'restMockupStart' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/mockup-start' ) ),
 			'restDesignStatus' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/status' ) ),
 			'restDesignHtml'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/html' ) ),
 			'restDesignPack'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/pack' ) ),
 			'restDesignEdit'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/edit' ) ),
+			'restDesignPages' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/pages' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
@@ -2029,7 +2079,7 @@ final class WPAB_Editor {
 			'connected'   => (bool) WPAB_Cloud::has_key(),
 		);
 		?>
-		<div class="wpab-ed" id="wpab-ed">
+		<div class="wpab-ed<?php echo $is_design ? ' wpab-ed--design' : ''; ?>" id="wpab-ed">
 			<div class="wpab-ed__float">
 				<a href="<?php echo esc_url( admin_url() ); ?>" class="wpab-ed__wpbtn" title="Back to wp-admin">
 					<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 8.6l2.8 7.6 2.1-5.5 2.1 5.5L15.8 8.6" fill="none"/></svg>
@@ -2082,13 +2132,15 @@ final class WPAB_Editor {
 						</div>
 						<div id="wpab-ed-mockmeta" class="wpab-ed__mockmeta" hidden></div>
 						<div class="wpab-ed__mockedit" id="wpab-ed-mockedit" hidden>
-							<input type="text" id="wpab-ed-mockeditinput" class="wpab-ed__mockeditinput" placeholder="Change something before we build — e.g. make the hero smaller, or turn the method section into a list" />
+							<input type="text" id="wpab-ed-mockeditinput" class="wpab-ed__mockeditinput" placeholder="Change something first — e.g. make the hero smaller, or turn the method section into a list" />
 							<button type="button" id="wpab-ed-mockeditgo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Change it</button>
 						</div>
 						<div id="wpab-ed-mockeditnote" class="wpab-ed__mockeditnote"></div>
 
 						<div class="wpab-ed__mockactions">
-							<button type="button" id="wpab-ed-mockuse" class="wpab-ed__wbtn">Use this design</button>
+							<button type="button" id="wpab-ed-mockgo" class="wpab-ed__wbtn">Design the rest of the site</button>
+							<button type="button" id="wpab-ed-mockuse" class="wpab-ed__wbtn" hidden>Build the theme</button>
+							<button type="button" id="wpab-ed-mockbrief" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Edit the brief</button>
 							<button type="button" id="wpab-ed-mockredo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Try another direction</button>
 						</div>
 					</div>
@@ -2197,7 +2249,12 @@ final class WPAB_Editor {
 			.wpab-ed__newtheme { background: var(--ed-accent); color: #fff; border: 0; border-radius: 9px; padding: 8px 15px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px rgba(20,19,18,.22); }
 			.wpab-ed__newtheme:hover { background: #000; }
 			.wpab-ed__newtheme--dock { padding: 6px 12px; font-size: 12px; box-shadow: none; white-space: nowrap; }
-			.wpab-ed__wizard { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 620px at 50% -12%, rgba(99,102,241,.14), transparent 60%), rgba(28,26,22,.32); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 24px; }
+			/* The design page is the wizard. Everything the editor puts behind it —
+		   the preview, the chat, the dock — belongs to a theme that does not exist
+		   yet, so it is not rendered as a backdrop for one. */
+		.wpab-ed--design > *:not(.wpab-ed__wizard) { display: none !important; }
+		.wpab-ed--design .wpab-ed__wizard { background: #f6f5f2; -webkit-backdrop-filter: none; backdrop-filter: none; }
+		.wpab-ed__wizard { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 620px at 50% -12%, rgba(99,102,241,.14), transparent 60%), rgba(28,26,22,.32); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 24px; }
 			.wpab-ed__wizard[hidden] { display: none !important; }
 			.wpab-ed__wcard { position: relative; width: 100%; max-width: 500px; max-height: 88vh; overflow-y: auto; background: rgba(255,255,255,.86); border: 1px solid rgba(20,18,16,.08); border-radius: 20px; padding: 28px; box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); animation: wpab-ed-cardin .45s cubic-bezier(.2,.75,.25,1); }
 			.wpab-ed__wcard::before { content: ""; position: absolute; inset: 0; border-radius: 20px; padding: 1px; background: linear-gradient(135deg, rgba(20,19,18,.28), rgba(20,19,18,.08) 42%, transparent 72%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
@@ -4117,7 +4174,7 @@ final class WPAB_Editor {
 				offerResume();
 				var p = $('wpab-ed-prompt'); if (p) { p.focus(); }
 			}
-			function closeWizard() { if (wizard && !busy) { wizard.hidden = true; } }
+			var closeWizard = function () { if (wizard && !busy) { wizard.hidden = true; } };
 
 			var wOpen = $('wpab-ed-newtheme');
 			var wOpen2 = $('wpab-ed-newtheme2');
@@ -4236,7 +4293,13 @@ final class WPAB_Editor {
 				if (wForm) { wForm.style.display = ''; }
 				if (wGo) { wGo.disabled = false; wGo.textContent = 'Generate theme'; }
 				if (wCancel) { wCancel.textContent = 'Cancel'; }
-				if (themeWritten) { clearGenState(); setTimeout(function () { location.reload(); }, 1800); }
+				if (themeWritten) {
+					clearGenState();
+					var back = (cfg.mode === 'design' && cfg.editorUrl) ? cfg.editorUrl : '';
+					setTimeout(function () {
+						if (back) { window.location.href = back; } else { location.reload(); }
+					}, 1800);
+				}
 			}
 
 			function offerResume() {
@@ -4638,8 +4701,18 @@ final class WPAB_Editor {
 							return reviewPass(myRun, sig, 'check', 'any invisible or hidden content, header/nav or mobile-menu selector mismatches, PHP errors, horizontal overflow, empty image placeholders, page/single templates not rendering the_content(), or an enqueued stylesheet whose file is missing').then(function () {
 								if (!alive(myRun)) { return; }
 								finishAllSteps();
-								if (wResult) { wResult.className = 'wpab-ed__wresult is-ok'; wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + tokLabel() + '), designed and activated. Reloading…'; }
-								setTimeout(function () { location.reload(); }, 1500);
+								// The theme exists now, so the next thing anybody wants is
+								// the editor. Reloading the design page would put them back
+								// in front of an empty wizard.
+								var next = (cfg.mode === 'design' && cfg.editorUrl) ? cfg.editorUrl : '';
+								if (wResult) {
+									wResult.className = 'wpab-ed__wresult is-ok';
+									wResult.textContent = '✓ “' + themeName + '” is ready (' + extra + tokLabel() + '), designed and activated. '
+										+ (next ? 'Opening the editor…' : 'Reloading…');
+								}
+								setTimeout(function () {
+									if (next) { window.location.href = next; } else { location.reload(); }
+								}, 1500);
 							});
 						});
 					}
@@ -5109,38 +5182,140 @@ final class WPAB_Editor {
 
 				paint();
 				setBuildDetail('');
-				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = 'Review the design' + tokLabel() + ' — use it, or try another direction.'; }
+
+				// Two moments, one screen. Before the rest of the site exists the
+				// only question is whether this direction is right — and answering
+				// it costs one page, not eight. Once the pages are drawn the
+				// question becomes whether to build.
+				var hasPages = pageList().length > 1;
+
+				if (wResult) {
+					wResult.className = 'wpab-ed__wresult';
+					wResult.textContent = hasPages
+						? 'The site is designed' + tokLabel() + ' — walk through it on the left, then build.'
+						: 'Here is the homepage' + tokLabel() + '. If the direction is right, we design the rest of the site from it.';
+				}
+
 				var useBtn = $('wpab-ed-mockuse');
+				var goBtn = $('wpab-ed-mockgo');
+				var briefBtn = $('wpab-ed-mockbrief');
 				var redoBtn = $('wpab-ed-mockredo');
+
+				if (useBtn) { useBtn.hidden = !hasPages; }
+				if (goBtn) { goBtn.hidden = hasPages; }
+				// Going back to the brief once other pages exist would throw them
+				// away without saying so; at that point the way back is a new run.
+				if (briefBtn) { briefBtn.hidden = hasPages; }
+
 				function markDesign(status) {
 					if (cfg.restDesignStatus && mock && mock.designId) {
 						wpost(cfg.restDesignStatus, { designId: mock.designId, status: status }).catch(function () {});
 					}
 				}
+
+				function leaveReview() {
+					if (wizard) { wizard.classList.remove('is-design'); }
+					wrap.hidden = true;
+					if (meta) { meta.hidden = true; }
+					if (wProgress) { wProgress.hidden = false; }
+					if (wResult) { wResult.textContent = ''; }
+				}
+
+				if (goBtn) {
+					goBtn.onclick = function () {
+						if (!alive(myRun) || !mock.designId || !cfg.restDesignPages) { return; }
+						leaveReview();
+						runPages(myRun, sig, brief, mock);
+					};
+				}
+
 				if (useBtn) {
 					useBtn.onclick = function () {
 						if (!alive(myRun)) { return; }
 						markDesign('used');
-						if (wizard) { wizard.classList.remove('is-design'); }
-						wrap.hidden = true;
-						if (meta) { meta.hidden = true; }
-						if (wProgress) { wProgress.hidden = false; }
-						if (wResult) { wResult.textContent = ''; }
+						leaveReview();
 						proceedFromMockup(myRun, sig, brief, mock);
 					};
 				}
+
+				// Back to the words that produced this, with them still in the box.
+				// Rewriting the brief is the cheapest fix available at this point,
+				// and until now the only way to it was cancelling the whole run.
+				if (briefBtn) {
+					briefBtn.onclick = function () {
+						if (!alive(myRun)) { return; }
+						markDesign('rejected');
+						genToken++;
+						busy = false;
+						if (wizard) { wizard.classList.remove('is-design'); }
+						wrap.hidden = true;
+						if (meta) { meta.hidden = true; }
+						if (wProgress) { wProgress.hidden = true; }
+						if (wForm) { wForm.style.display = ''; }
+						if (wGo) { wGo.hidden = false; wGo.disabled = false; wGo.textContent = 'Generate theme'; }
+						if (wCancel) { wCancel.textContent = 'Cancel'; }
+						if (wResult) {
+							wResult.className = 'wpab-ed__wresult';
+							wResult.textContent = 'Change the brief and generate again.';
+						}
+						var box = $('wpab-ed-prompt');
+						if (box) { box.focus(); }
+					};
+				}
+
 				if (redoBtn) {
 					redoBtn.onclick = function () {
 						if (!alive(myRun)) { return; }
 						markDesign('rejected');
-						if (wizard) { wizard.classList.remove('is-design'); }
-						wrap.hidden = true;
-						if (meta) { meta.hidden = true; }
-						if (wProgress) { wProgress.hidden = false; }
-						if (wResult) { wResult.textContent = ''; }
+						leaveReview();
 						startDesignPhase(myRun, sig, brief, 'The previous design direction was rejected. Take a clearly different visual direction: a different palette family, a different typography feel, a different hero structure.');
 					};
 				}
+			}
+
+			// The rest of the site, drawn only once somebody has said the homepage
+			// is right. It used to run inside the homepage job, which meant paying
+			// for eight pages before seeing whether the direction was even close.
+			function runPages(myRun, sig, brief, mock) {
+				phaseProgress('design');
+				setBuildDetail('Designing the rest of the site…');
+				var started = Date.now();
+
+				wpost(cfg.restDesignPages, { designId: mock.designId }, sig).then(function (sOut) {
+					if (!alive(myRun)) { return; }
+					var jobId = sOut && sOut.data && sOut.data.jobId;
+					if (!jobId) { throw new Error(errText(sOut, 'Could not start the page step.')); }
+					function poll() {
+						if (!alive(myRun)) { throw new Error('Stopped.'); }
+						if (Date.now() - started > 900000) { throw new Error('The page step timed out.'); }
+						return delay(3500).then(function () {
+							if (!alive(myRun)) { throw new Error('Stopped.'); }
+							return wpost(cfg.restBuildJob, { jobId: jobId }, sig);
+						}).then(function (jOut) {
+							var d = (jOut && jOut.data) || {};
+							if (d.status === 'done') { return d.result || {}; }
+							if (d.status === 'error') { throw new Error(d.error || 'The page step failed.'); }
+							if (!jOut.ok) { throw new Error(errText(jOut, 'The page step failed.')); }
+							var prog = d.result && d.result.progress;
+							setBuildDetail((prog && prog.note ? prog.note : 'Designing the rest of the site…')
+								+ ' ' + Math.round((Date.now() - started) / 1000) + 's');
+							return poll();
+						});
+					}
+					return poll();
+				}).then(function (out) {
+					if (!alive(myRun) || !out) { return; }
+					addTok(out);
+					// The homepage object gains the rest of the site. Same object, so
+					// everything downstream — the build context, the rail, the edit
+					// loop — sees one design rather than two halves.
+					var carry = ['pages', 'innerHtml', 'innerCss', 'pageHero', 'pagesCss',
+						'archiveCss', 'archiveBody', 'notfoundCss', 'notfoundBody', 'pageFaults'];
+					for (var i = 0; i < carry.length; i++) {
+						if (out[carry[i]] !== undefined) { mock[carry[i]] = out[carry[i]]; }
+					}
+					showMockup(myRun, sig, brief, mock);
+				}).catch(genFail(myRun));
 			}
 
 			function buildMockCtx(mock) {
@@ -5208,6 +5383,18 @@ final class WPAB_Editor {
 					picked = new URLSearchParams(window.location.search).get('design') || '';
 				} catch (e) { picked = ''; }
 
+				// The design page IS the wizard: it opens straight away, and there
+				// is nothing behind it to close back onto.
+				if (cfg && cfg.mode === 'design') {
+					closeWizard = function () {
+						if (busy) { return; }
+						window.location.href = cfg.dashboardUrl || cfg.editorUrl || '';
+					};
+					if (picked) { setTimeout(function () { startFromDesign(picked); }, 60); }
+					else { setTimeout(openWizard, 40); }
+					return;
+				}
+
 				// Arriving from the design archive with a design chosen: that IS the
 				// intent, so it wins over the empty wizard.
 				if (picked) {
@@ -5216,11 +5403,13 @@ final class WPAB_Editor {
 				}
 
 				// Nothing here can be edited until a theme has been generated — the
-				// writer refuses any theme this plugin did not make — so an editor
-				// that opens onto an empty chat is a dead end.
+				// writer refuses any theme this plugin did not make. The editor
+				// used to answer that by opening the wizard over itself; making a
+				// theme is its own job now, so it sends you there instead of
+				// pretending the chat behind the overlay is usable.
 				var t = (cfg && cfg.theme) || {};
-				if (!t.generated && wizard) {
-					setTimeout(function () { if (!busy && wizard.hidden) { openWizard(); } }, 120);
+				if (!t.generated && cfg.designUrl) {
+					window.location.replace(cfg.designUrl);
 				}
 			})();
 		})();
