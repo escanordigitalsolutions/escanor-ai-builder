@@ -256,6 +256,15 @@ final class WPAB_Editor {
 		);
 		register_rest_route(
 			self::NAMESPACE,
+			'/editor/design/oneshot',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( __CLASS__, 'rest_design_oneshot' ),
+				'permission_callback' => $permission,
+			)
+		);
+		register_rest_route(
+			self::NAMESPACE,
 			'/editor/design/pages',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -1693,6 +1702,21 @@ final class WPAB_Editor {
 		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
 	}
 
+	/** The experiment: one prompt, three pages, straight from the brief. */
+	public static function rest_design_oneshot( WP_REST_Request $request ) {
+		if ( function_exists( 'set_time_limit' ) ) { @set_time_limit( 120 ); }
+		$params = self::json_params( $request );
+		$brief  = isset( $params['brief'] ) && is_array( $params['brief'] ) ? $params['brief'] : array();
+
+		if ( empty( $brief['prompt'] ) ) {
+			return new WP_Error( 'wpab_oneshot_bad', 'A brief is required.', array( 'status' => 400 ) );
+		}
+
+		$result = WPAB_Cloud::request( 'agent/design-oneshot-start', array( 'brief' => $brief ), 60 );
+
+		return is_wp_error( $result ) ? $result : new WP_REST_Response( $result, 200 );
+	}
+
 	/**
 	 * Draw the rest of the site, once the homepage has been approved.
 	 *
@@ -2109,6 +2133,7 @@ final class WPAB_Editor {
 			'restDesignPack'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/pack' ) ),
 			'restDesignEdit'  => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/edit' ) ),
 			'restDesignPages' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/pages' ) ),
+			'restDesignOneshot' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/design/oneshot' ) ),
 			'restEditTheme'   => esc_url_raw( rest_url( self::NAMESPACE . '/editor/edit-theme' ) ),
 			'restUndoEdit'    => esc_url_raw( rest_url( self::NAMESPACE . '/editor/undo-edit' ) ),
 			'restReviewTheme' => esc_url_raw( rest_url( self::NAMESPACE . '/editor/review-theme' ) ),
@@ -2153,6 +2178,10 @@ final class WPAB_Editor {
 							<button type="button" class="wpab-ed__wstyle" data-style="bold"><b>Bold</b><span>Image-led and loud: full-bleed photography, oversized type, text set against imagery. For brands that want to be felt before they are read.</span></button>
 							<button type="button" class="wpab-ed__wstyle" data-style="business"><b>Business</b><span>A visible, deliberate grid — information-forward, dense, credible. For SaaS, clinics, firms: pages built to answer questions and convert.</span></button>
 						</div>
+						<label class="wpab-ed__woneshot">
+							<input type="checkbox" id="wpab-ed-oneshot" />
+							<span><b>One-shot</b> — experiment: one prompt designs three pages at once (home, an inner page, contact). No direction stage, no checks; pure model cohesion.</span>
+						</label>
 						<label class="wpab-ed__wlabel">Worth adding to the brief <span class="wpab-ed__wopt">— click to append</span></label>
 						<div class="wpab-ed__whints" id="wpab-ed-whints">
 							<button type="button" class="wpab-ed__whint-chip" data-hint="Brand colours: ">Brand colours</button>
@@ -2317,7 +2346,41 @@ final class WPAB_Editor {
 		   the preview, the chat, the dock — belongs to a theme that does not exist
 		   yet, so it is not rendered as a backdrop for one. */
 		.wpab-ed--design > *:not(.wpab-ed__wizard) { display: none !important; }
-		.wpab-ed--design .wpab-ed__wizard { background: #f6f5f2; -webkit-backdrop-filter: none; backdrop-filter: none; }
+		/* The studio is a page, not a modal: full width, the form on the left,
+		   the library breathing on the right, the review stage spanning both. */
+		.wpab-ed--design .wpab-ed__wizard { position: static; display: block; padding: 0; background: #f6f5f2; -webkit-backdrop-filter: none; backdrop-filter: none; }
+		.wpab-ed--design .wpab-ed__wcard {
+			max-width: none; width: auto; min-height: calc(100vh - 64px); margin: 0;
+			border: 0; border-radius: 0; box-shadow: none; background: transparent;
+			padding: 30px 44px 70px;
+			display: grid; align-content: start; gap: 6px 56px;
+			grid-template-columns: minmax(400px, 540px) minmax(0, 1fr);
+			grid-template-areas:
+				"head head"
+				"form lib"
+				"progress lib"
+				"result lib"
+				"actions lib"
+				"mock mock";
+		}
+		.wpab-ed--design .wpab-ed__whead { grid-area: head; margin-bottom: 16px; }
+		.wpab-ed--design .wpab-ed__wtitle { font-size: 22px; }
+		.wpab-ed--design #wpab-ed-wform { grid-area: form; }
+		.wpab-ed--design #wpab-ed-wprogress { grid-area: progress; }
+		.wpab-ed--design #wpab-ed-wresult { grid-area: result; }
+		.wpab-ed--design .wpab-ed__wactions { grid-area: actions; justify-content: flex-start; }
+		.wpab-ed--design #wpab-ed-mockwrap { grid-area: mock; }
+		.wpab-ed--design .wpab-ed__wlibrary { grid-area: lib; margin-top: 0; padding-top: 0; border-top: 0; border-left: 1px solid rgba(20,19,18,.08); padding-left: 44px; }
+		.wpab-ed--design .wpab-ed__wliblist { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+		.wpab-ed--design .wpab-ed__wlibitem { width: auto; max-width: none; }
+		.wpab-ed--design .wpab-ed__wlibthumb { height: 128px; margin-bottom: 6px; }
+		/* Reviewing a design takes the whole floor; the library steps aside. */
+		.wpab-ed--design .wpab-ed__wizard.is-design .wpab-ed__wlibrary { display: none; }
+		.wpab-ed--design .wpab-ed__wizard.is-design .wpab-ed__mockframe { height: 76vh; }
+		@media (max-width: 1100px) {
+			.wpab-ed--design .wpab-ed__wcard { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "form" "progress" "result" "actions" "mock" "lib"; }
+			.wpab-ed--design .wpab-ed__wlibrary { border-left: 0; padding-left: 0; border-top: 1px solid rgba(20,19,18,.08); padding-top: 16px; margin-top: 20px; }
+		}
 		.wpab-ed__wizard { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 620px at 50% -12%, rgba(99,102,241,.14), transparent 60%), rgba(28,26,22,.32); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); padding: 24px; }
 			.wpab-ed__wizard[hidden] { display: none !important; }
 			.wpab-ed__wcard { position: relative; width: 100%; max-width: 500px; max-height: 88vh; overflow-y: auto; background: rgba(255,255,255,.86); border: 1px solid rgba(20,18,16,.08); border-radius: 20px; padding: 28px; box-shadow: var(--ed-shadow-lg); -webkit-backdrop-filter: blur(22px) saturate(1.3); backdrop-filter: blur(22px) saturate(1.3); animation: wpab-ed-cardin .45s cubic-bezier(.2,.75,.25,1); }
@@ -2590,6 +2653,9 @@ final class WPAB_Editor {
 		.wpab-ed__whead { display: flex; align-items: baseline; gap: 12px; }
 		.wpab-ed__wmark { font-size: 13px; font-weight: 800; letter-spacing: .01em; color: #141312; text-transform: lowercase; }
 		.wpab-ed__wmark i { font-style: normal; color: #6366f1; }
+		.wpab-ed__woneshot { display: flex; gap: 9px; align-items: flex-start; margin: 4px 0 14px; padding: 10px 12px; border: 1px dashed rgba(99,102,241,.5); border-radius: 10px; font-size: 12.5px; color: #37342f; cursor: pointer; }
+		.wpab-ed__woneshot input { margin-top: 2px; accent-color: #6366f1; }
+		.wpab-ed__woneshot b { color: #141312; }
 		.wpab-ed__whints { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 14px; }
 		.wpab-ed__whint-chip { appearance: none; border: 1px dashed rgba(20,19,18,.28); background: transparent; color: #5c5955; border-radius: 999px; padding: 4px 11px; font-size: 12px; cursor: pointer; transition: all .15s ease; }
 		.wpab-ed__whint-chip:hover { border-style: solid; border-color: #6366f1; color: #141312; }
@@ -4334,7 +4400,7 @@ final class WPAB_Editor {
 			if (wOpen) { wOpen.addEventListener('click', openWizard); }
 			if (wOpen2) { wOpen2.addEventListener('click', openWizard); }
 			if (wCancel) { wCancel.addEventListener('click', function () { cancelGeneration(); }); }
-			if (wizard) { wizard.addEventListener('click', function (e) { if (e.target === wizard) { closeWizard(); } }); }
+			if (wizard && cfg.mode !== 'design') { wizard.addEventListener('click', function (e) { if (e.target === wizard) { closeWizard(); } }); }
 
 			function wpost(url, payload, signal) {
 				return fetch(url, {
@@ -4899,6 +4965,15 @@ final class WPAB_Editor {
 				clearGenState();
 				beginBusyUI();
 
+				// The experiment lane: one prompt, three pages, straight to the
+				// full review — pages already exist, so the homepage gate never
+				// shows and the primary action is Build.
+				var oneshotBox = $('wpab-ed-oneshot');
+				if (oneshotBox && oneshotBox.checked && cfg.restDesignOneshot && cfg.restBuildJob) {
+					startOneshotPhase(myRun, sig, brief);
+					return;
+				}
+
 				// Design-first: compose and approve the homepage BEFORE building.
 				if (cfg.restMockupStart && cfg.restBuildJob) {
 					startDesignPhase(myRun, sig, brief, '');
@@ -4979,6 +5054,39 @@ final class WPAB_Editor {
 			// Design phase: one strong-model job composes the whole homepage as a
 			// single HTML file; the user reviews it in an iframe and approves it
 			// before a single theme file is written.
+			function startOneshotPhase(myRun, sig, brief) {
+				phaseProgress('design');
+				setBuildDetail('One prompt, three pages…');
+				var started = Date.now();
+				wpost(cfg.restDesignOneshot, { brief: brief }, sig).then(function (sOut) {
+					if (!alive(myRun)) { return; }
+					var jobId = sOut && sOut.data && sOut.data.jobId;
+					if (!jobId) { throw new Error(errText(sOut, 'Could not start the design step.')); }
+					function poll() {
+						if (!alive(myRun)) { throw new Error('Stopped.'); }
+						if (Date.now() - started > 900000) { throw new Error('The design step timed out.'); }
+						return delay(3500).then(function () {
+							if (!alive(myRun)) { throw new Error('Stopped.'); }
+							return wpost(cfg.restBuildJob, { jobId: jobId }, sig);
+						}).then(function (jOut) {
+							var d = (jOut && jOut.data) || {};
+							if (d.status === 'done') { return d.result || {}; }
+							if (d.status === 'error') { throw new Error(d.error || 'The design step failed.'); }
+							if (!jOut.ok) { throw new Error(errText(jOut, 'The design step failed.')); }
+							var prog = d.result && d.result.progress;
+							setBuildDetail(((prog && prog.note) ? prog.note : 'One prompt, three pages…')
+								+ ' ' + Math.round((Date.now() - started) / 1000) + 's');
+							return poll();
+						});
+					}
+					return poll();
+				}).then(function (mock) {
+					if (!alive(myRun) || !mock) { return; }
+					addTok(mock);
+					showMockup(myRun, sig, brief, mock);
+				}).catch(genFail(myRun));
+			}
+
 			function startDesignPhase(myRun, sig, brief, variation) {
 				phaseProgress('design');
 				setBuildDetail(variation ? 'Designing a different direction…' : 'Designing the homepage…');

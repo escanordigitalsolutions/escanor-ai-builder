@@ -28,14 +28,16 @@ export function coverPrompt(direction: ArtDirection, brandName: string): string 
   const palette = [c.ground, c.surface, c.ink, c.accent].filter(Boolean).join(", ");
 
   return (
-    `An abstract editorial moodboard painting for a brand called "${brandName}". ` +
+    `A modern minimal brand poster for "${brandName}". ` +
     `Concept: ${direction.concept.name} — ${direction.concept.thesis} ` +
-    `Palette, used faithfully: ${palette}. ` +
-    `Typography mood: ${direction.typography.pairing || direction.tokens.font.display}. ` +
+    `Palette, used faithfully and nothing else: ${palette}. ` +
+    `Flat vector-style composition on a sharp underlying grid: two or three large, ` +
+    `confident geometric colour fields, one bold focal shape echoing this structure: ` +
+    `${direction.signatureMove || "a strong vertical rhythm"}, generous negative space, ` +
+    `crisp edges, subtle grain. Contemporary Swiss / international graphic design, ` +
+    `premium and current — not retro, not painterly, no paper texture, no gradients mush. ` +
     `Overall feel: ${direction.voice.tone || "confident, considered"}. ` +
-    `Layered paper textures, colour fields, a few large abstract shapes echoing this structure: ${direction.signatureMove || "a strong vertical rhythm"}. ` +
-    `No text, no letters, no words, no logos, no user interface, no screenshots, no devices. ` +
-    `Flat, printable, gallery-quality composition.`
+    `No text, no letters, no words, no logos, no user interface, no screenshots, no devices.`
   );
 }
 
