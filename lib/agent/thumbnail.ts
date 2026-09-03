@@ -12,16 +12,18 @@
  * colours. The design is real HTML; the only truthful image of it is a render
  * of it.
  *
- * The imports are resolved at run time from names held in variables, which is
- * deliberate: the two packages are heavy, Vercel installs them at build, and
- * the local environment cannot (its registry proxy refuses new packages). A
- * variable specifier keeps the type-checker from requiring them to exist here,
- * and next.config's outputFileTracingIncludes ships them to the functions that
- * call this, since a traced import this dynamic cannot be followed.
+ * The imports are static on purpose — the second time around. They began as
+ * variable-specifier dynamic imports so the local type-check could pass before
+ * the packages were installable here, with outputFileTracingIncludes meant to
+ * ship the files. It did not: the first production render died with
+ * "libnss3.so: cannot open shared object file" — the chromium binary made it
+ * into the function, its bundled shared libraries did not. Static imports plus
+ * serverExternalPackages is the documented pattern: the tracer sees the
+ * packages and copies them whole, .br archives and all.
  */
 
-const CHROMIUM_PKG = "@sparticuz/chromium";
-const PUPPETEER_PKG = "puppeteer-core";
+import chromium from "@sparticuz/chromium";
+import puppeteer from "puppeteer-core";
 
 /** What a stored thumbnail looks like inside ai_designs.assets. */
 export type Thumb = {
@@ -38,21 +40,18 @@ export type Thumb = {
  * a picture falls back to the old iframe preview, which is slower, not broken.
  */
 export async function renderThumbnail(html: string): Promise<Thumb | null> {
-  let browser: { newPage(): Promise<unknown>; close(): Promise<void> } | null = null;
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | null = null;
 
   try {
-    const chromium = (await import(CHROMIUM_PKG)).default;
-    const puppeteer = (await import(PUPPETEER_PKG)).default;
-
     browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: { width: 1280, height: 800, deviceScaleFactor: 1 },
       executablePath: await chromium.executablePath(),
-      headless: true,
+      // The package ships headless_shell; its own flag names the right mode.
+      headless: chromium.headless,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const page = (await browser!.newPage()) as any;
+    const page = await browser.newPage();
 
     // networkidle0 waits for the Google Fonts; the cap keeps a hung request
     // from spending the design job's budget on a picture.
@@ -70,11 +69,11 @@ export async function renderThumbnail(html: string): Promise<Thumb | null> {
     });
     await new Promise((resolve) => setTimeout(resolve, 400));
 
-    const buffer: Buffer = await page.screenshot({
+    const buffer = (await page.screenshot({
       type: "jpeg",
       quality: 72,
       clip: { x: 0, y: 0, width: 1280, height: 800 },
-    });
+    })) as Buffer;
 
     return {
       jpeg: buffer.toString("base64"),

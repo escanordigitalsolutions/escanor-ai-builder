@@ -4,11 +4,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
-  // The thumbnail renderer resolves these two at run time from names held in
-  // variables (the local registry proxy refuses to install them, so a static
-  // import would break the local type-check). A dynamic import like that is
-  // invisible to output tracing, so the functions that screenshot a design
-  // declare their cargo explicitly.
+  // Chromium ships as a package of brotli archives that must arrive in the
+  // function whole — the first production render failed with a missing
+  // libnss3.so because tracing saw only part of it. serverExternalPackages
+  // keeps both out of the bundle and copies them complete; the explicit
+  // includes below are belt and braces for the same files.
+  serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
   outputFileTracingIncludes: {
     "/api/agent/design-mockup-start": [
       "./node_modules/@sparticuz/chromium/**",
