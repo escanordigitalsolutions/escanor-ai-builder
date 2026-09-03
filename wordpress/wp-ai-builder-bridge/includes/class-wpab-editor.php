@@ -2075,9 +2075,11 @@ final class WPAB_Editor {
 						'concept' => sanitize_text_field( (string) ( $row['concept'] ?? '' ) ),
 						'when'    => isset( $row['created_at'] ) ? mysql2date( 'M j', (string) $row['created_at'] ) : '',
 						'status'  => sanitize_key( (string) ( $row['status'] ?? 'pending' ) ),
-						'thumb'   => $tver > 0
-							? esc_url_raw( WPAB_Cloud::builder_url() . '/api/agent/design-thumb/' . rawurlencode( (string) $row['id'] ) . '?v=' . $tver )
-							: '',
+						// Version 0 is not "no image": the thumb route renders a
+						// missing picture on first request, so the URL is always
+						// worth trying. Only a design with no homepage 404s, and
+						// the card handles that with its placeholder.
+						'thumb'   => esc_url_raw( WPAB_Cloud::builder_url() . '/api/agent/design-thumb/' . rawurlencode( (string) $row['id'] ) . '?v=' . $tver ),
 						// The painted moodboard — the card's cover art. The
 						// screenshot stays the fallback for designs without one.
 						'cover'   => $cver > 0
@@ -2227,6 +2229,7 @@ final class WPAB_Editor {
 							<button type="button" id="wpab-ed-mockuse" class="wpab-ed__wbtn" hidden>Build the theme</button>
 							<button type="button" id="wpab-ed-mockbrief" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Edit the brief</button>
 							<button type="button" id="wpab-ed-mockredo" class="wpab-ed__wbtn wpab-ed__wbtn--ghost">Try another direction</button>
+							<button type="button" id="wpab-ed-mockback" class="wpab-ed__wbtn wpab-ed__wbtn--ghost" hidden>&larr; Back to studio</button>
 						</div>
 					</div>
 
@@ -2671,6 +2674,9 @@ final class WPAB_Editor {
 		.wpab-ed__wlibitem b { font-size: 12.5px; color: #141312; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 		.wpab-ed__wlibitem small { font-size: 11px; color: #8a8783; }
 		.wpab-ed__wlibitem .used { color: #116450; font-weight: 600; }
+		.wpab-ed__wlibitem .off { color: #8a8783; }
+		.wpab-ed__wlibthumb--none { background: repeating-linear-gradient(45deg, #f0eeea, #f0eeea 10px, #eae7e2 10px, #eae7e2 20px); }
+		.wpab-ed__wlibitem b { line-height: 1.3; }
 		.wpab-ed__wlibthumb { width: 100%; height: 84px; object-fit: cover; object-position: top; border-radius: 6px; border: 1px solid rgba(20,19,18,.08); margin-bottom: 4px; }
 		.wpab-ed__wlibitem { width: 196px; }
 		.wpab-ed__mockrail { display: flex; flex-direction: column; gap: 2px; padding: 6px; border: 1px solid rgba(20,18,16,0.1); border-radius: 12px; background: rgba(20,19,18,.02); max-height: 68vh; overflow-y: auto; }
@@ -4357,18 +4363,26 @@ final class WPAB_Editor {
 					it.type = 'button';
 					it.className = 'wpab-ed__wlibitem';
 					it.setAttribute('data-design', d.id);
-					if (d.cover || d.thumb) {
-						var im = document.createElement('img');
-						im.className = 'wpab-ed__wlibthumb';
-						im.src = d.cover || d.thumb;
-						im.alt = '';
-						im.loading = 'lazy';
-						it.appendChild(im);
-					}
+					var im = document.createElement('img');
+					im.className = 'wpab-ed__wlibthumb';
+					im.src = d.cover || d.thumb;
+					im.alt = '';
+					im.loading = 'lazy';
+					im.onerror = function () {
+						// No picture could be made (a stopped run with no
+						// homepage). A flat pattern keeps the grid's rhythm; a
+						// blank white card read as a bug.
+						var ph = document.createElement('div');
+						ph.className = 'wpab-ed__wlibthumb wpab-ed__wlibthumb--none';
+						if (im.parentNode) { im.parentNode.replaceChild(ph, im); }
+					};
+					it.appendChild(im);
 					var b = document.createElement('b');
 					b.textContent = d.name || d.concept || 'Untitled design';
 					var sm = document.createElement('small');
-					sm.innerHTML = (d.when ? d.when + ' \u00b7 ' : '') + (d.status === 'used' ? '<span class="used">built</span>' : (d.concept || ''));
+					sm.innerHTML = (d.when ? d.when + ' \u00b7 ' : '')
+						+ (d.status === 'used' ? '<span class="used">built</span>'
+							: (d.status === 'rejected' ? '<span class="off">rejected</span>' : (d.concept || 'not used')));
 					it.appendChild(b);
 					it.appendChild(sm);
 					list.appendChild(it);
@@ -4380,6 +4394,26 @@ final class WPAB_Editor {
 				});
 				lib.hidden = false;
 			})();
+
+			/**
+			 * Leave a review and land back on the studio — form, library, no
+			 * charge made, nothing marked rejected. The review's counterpart to
+			 * openWizard.
+			 */
+			function backToStudio() {
+				genToken++;
+				busy = false;
+				if (wizard) { wizard.classList.remove('is-design'); }
+				var wrap2 = $('wpab-ed-mockwrap'); if (wrap2) { wrap2.hidden = true; }
+				var meta2 = $('wpab-ed-mockmeta'); if (meta2) { meta2.hidden = true; }
+				var pick2 = $('wpab-ed-mockpages'); if (pick2) { pick2.hidden = true; }
+				var edit2 = $('wpab-ed-mockedit'); if (edit2) { edit2.hidden = true; }
+				var note2 = $('wpab-ed-mockeditnote'); if (note2) { note2.textContent = ''; }
+				if (wProgress) { wProgress.hidden = true; }
+				if (wForm) { wForm.style.display = ''; }
+				if (wGo) { wGo.hidden = false; wGo.disabled = false; wGo.textContent = 'Generate theme'; }
+				if (wResult) { wResult.className = 'wpab-ed__wresult'; wResult.textContent = ''; }
+			}
 
 			function openWizard() {
 				if (!wizard) { return; }
@@ -4994,23 +5028,27 @@ final class WPAB_Editor {
 			 * generation produces, which is why nothing below this point has to
 			 * know where the design came from.
 			 */
+			/**
+			 * Open a saved design for REVIEW — never straight into a build.
+			 *
+			 * Clicking a library card used to start the whole theme build on the
+			 * spot, which turned browsing into spending. Now it loads the design
+			 * free of charge into the same review the wizard shows after a
+			 * generation: the walkable rail, the edit box, the page picker, and
+			 * Build as a button the person presses on purpose.
+			 */
 			function startFromDesign(designId) {
-				if (!designId || busy || !cfg.restBuildPlan) { return; }
+				if (!designId || busy) { return; }
 
-				if (!cfg.restDesignPack) {
-					// The plugin is older than the endpoint. Say so rather than
-					// doing nothing, which is what a silent return looked like.
+				if (!cfg.restDesignPack || !cfg.restDesignHtml) {
 					if (wResult) {
 						wResult.className = 'wpab-ed__wresult is-err';
-						wResult.textContent = 'Update the Meikero plugin to build from a saved design.';
+						wResult.textContent = 'Update the Meikero plugin to open saved designs.';
 					}
 					openWizard();
 					return;
 				}
 
-				// The wizard is where every step, progress line and error appears.
-				// Starting a run without opening it first ran the whole build behind
-				// a hidden overlay: the page simply sat there.
 				openWizard();
 
 				genToken++;
@@ -5018,20 +5056,39 @@ final class WPAB_Editor {
 				genAbort = (typeof AbortController !== 'undefined') ? new AbortController() : null;
 				var sig = genAbort ? genAbort.signal : undefined;
 				tokIn = 0; tokOut = 0;
-				clearGenState();
 				beginBusyUI();
-				stepState('design', 'done', 'from archive');
-				setBuildDetail('Loading the approved design…');
+				stepState('design', 'run', 'opening');
+				setBuildDetail('Opening the design…');
 
-				wpost(cfg.restDesignPack, { designId: designId }, sig).then(function (out) {
+				Promise.all([
+					wpost(cfg.restDesignPack, { designId: designId }, sig),
+					wpost(cfg.restDesignHtml, { designId: designId, which: 'home' }, sig)
+				]).then(function (outs) {
 					if (!alive(myRun)) { return; }
-					var pack = (out && out.data) || {};
-					if (!pack.success) { throw new Error(errText(out, 'That design could not be loaded.')); }
+					var pack = (outs[0] && outs[0].data) || {};
+					var page = (outs[1] && outs[1].data) || {};
+					if (!pack.success) { throw new Error(errText(outs[0], 'That design could not be loaded.')); }
+					if (!page.html) { throw new Error(errText(outs[1], 'That design has no homepage stored.')); }
 
-					var brief = (pack.brief && typeof pack.brief === 'object') ? pack.brief : {};
+					// The stored brief wraps the real one; unwrap it so a redo or
+					// a rebuild speaks with the person's own words.
+					var wrapped = (pack.brief && typeof pack.brief === 'object') ? pack.brief : {};
+					var brief = (wrapped.input && typeof wrapped.input === 'object' && wrapped.input.prompt)
+						? wrapped.input : wrapped;
 					if (!brief.prompt) { brief.prompt = pack.conceptName ? ('Rebuild the ' + pack.conceptName + ' design.') : 'Rebuild the approved design.'; }
 
-					proceedFromMockup(myRun, sig, brief, pack);
+					// One object with everything: the pack's build context plus the
+					// homepage and the page list — the same shape a fresh
+					// generation hands to the review.
+					var mock = pack;
+					mock.designId = designId;
+					mock.html = page.html;
+					mock.pages = page.available || [];
+					mock.fromLibrary = true;
+
+					stepState('design', 'done', 'from library');
+					busy = false;
+					showMockup(myRun, sig, brief, mock);
 				}).catch(genFail(myRun));
 			}
 
@@ -5520,6 +5577,14 @@ final class WPAB_Editor {
 				var goBtn = $('wpab-ed-mockgo');
 				var briefBtn = $('wpab-ed-mockbrief');
 				var redoBtn = $('wpab-ed-mockredo');
+				var backBtn = $('wpab-ed-mockback');
+
+				// The studio always has somewhere to go back to; the editor's
+				// modal wizard does not.
+				if (backBtn) {
+					backBtn.hidden = cfg.mode !== 'design';
+					backBtn.onclick = function () { backToStudio(); };
+				}
 
 				if (useBtn) { useBtn.hidden = !hasPages; }
 				if (goBtn) { goBtn.hidden = hasPages; }
@@ -5548,6 +5613,7 @@ final class WPAB_Editor {
 						if (!alive(myRun) || !mock.designId || !cfg.restDesignPages) { return; }
 						var chosen = pickedPages();
 						if (!chosen.length) { return; }
+						busy = true;
 						leaveReview();
 						runPages(myRun, sig, brief, mock, chosen);
 					};
@@ -5557,6 +5623,7 @@ final class WPAB_Editor {
 					useBtn.onclick = function () {
 						if (!alive(myRun)) { return; }
 						markDesign('used');
+						busy = true;
 						leaveReview();
 						proceedFromMockup(myRun, sig, brief, mock);
 					};
@@ -5591,6 +5658,7 @@ final class WPAB_Editor {
 					redoBtn.onclick = function () {
 						if (!alive(myRun)) { return; }
 						markDesign('rejected');
+						busy = true;
 						leaveReview();
 						startDesignPhase(myRun, sig, brief, 'The previous design direction was rejected. Take a clearly different visual direction: a different palette family, a different typography feel, a different hero structure.');
 					};
@@ -5712,6 +5780,7 @@ final class WPAB_Editor {
 				if (cfg && cfg.mode === 'design') {
 					closeWizard = function () {
 						if (busy) { return; }
+						if (wizard && wizard.classList.contains('is-design')) { backToStudio(); return; }
 						window.location.href = cfg.dashboardUrl || cfg.editorUrl || '';
 					};
 					if (picked) { setTimeout(function () { startFromDesign(picked); }, 60); }

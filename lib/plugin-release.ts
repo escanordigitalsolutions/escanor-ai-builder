@@ -11,13 +11,17 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.43.0",
+  version: "1.44.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.44.0</h4><ul>" +
+    "<li>Opening a design from the library is a review now, not a purchase: walk it, change it, pick its pages \u2014 and Build is a button you press on purpose. Back to studio takes you out without touching anything.</li>" +
+    "<li>Every library card shows its picture \u2014 designs from before pictures existed get one on first sight, and a card that truly has none shows a quiet pattern instead of blank white.</li>" +
+    "</ul>" +
     "<h4>1.43.0</h4><ul>" +
     "<li>The Wizard is a full-width studio now: the brief on the left, your design library as a cover grid on the right, and the review stage taking the whole floor when a design is open.</li>" +
     "<li>One-shot, an experiment you can toggle on: a single prompt designs three pages at once \u2014 home, an inner page it chooses, contact \u2014 to test how consistent one head is against the staged pipeline.</li>" +
