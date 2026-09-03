@@ -462,6 +462,7 @@ final class WPAB_Admin {
 						.wpabd-dbar { display:flex; gap:4px; padding:0 2px 6px; }
 						.wpabd-dbar i { width:7px; height:7px; border-radius:50%; background:#cfccc7; }
 						.wpabd-dthumb { position:relative; height:160px; overflow:hidden; background:#fff; border-radius:6px 6px 0 0; }
+						.wpabd-dthumb.is-none { height:160px; background:repeating-linear-gradient(45deg,#f4f2ef,#f4f2ef 12px,#efede9 12px,#efede9 24px); }
 						.wpabd-dthumb.is-img { height:auto; }
 						.wpabd-dthumb.is-img img { display:block; width:100%; height:160px; object-fit:cover; object-position:top; }
 						.wpabd-dthumb iframe { width:1280px; height:1024px; border:0; transform-origin:0 0; pointer-events:none; background:#fff; display:block; }
@@ -488,17 +489,18 @@ final class WPAB_Admin {
 								title="Open full preview">
 								<div class="wpabd-dshell">
 									<div class="wpabd-dbar"><i></i><i></i><i></i></div>
-									<?php $tver = (int) ( $d['thumb'] ?? 0 ); ?>
-									<?php if ( $tver > 0 ) : ?>
-										<div class="wpabd-dthumb is-img">
-											<img src="<?php echo esc_url( WPAB_Cloud::builder_url() . '/api/agent/design-thumb/' . rawurlencode( (string) ( $d['id'] ?? '' ) ) . '?v=' . $tver ); ?>" alt="" loading="lazy" />
-										</div>
-									<?php else : ?>
-										<div class="wpabd-dthumb">
-											<div class="wpabd-dload">Loading…</div>
-											<iframe sandbox="" scrolling="no" tabindex="-1" aria-hidden="true"></iframe>
-										</div>
-									<?php endif; ?>
+									<?php
+									// Always the picture, never the page. A design made
+									// before thumbnails existed renders its picture on the
+									// SaaS the first time this img asks for it, and every
+									// later load is cache. If even that fails, the card
+									// shows a flat placeholder — it never falls back to
+									// loading the design's HTML.
+									$tver = (int) ( $d['thumb'] ?? 0 );
+									?>
+									<div class="wpabd-dthumb is-img">
+										<img src="<?php echo esc_url( WPAB_Cloud::builder_url() . '/api/agent/design-thumb/' . rawurlencode( (string) ( $d['id'] ?? '' ) ) . '?v=' . $tver ); ?>" alt="" loading="lazy" onerror="this.parentNode.className='wpabd-dthumb is-none'; this.remove();" />
+									</div>
 								</div>
 								<div class="wpabd-dmeta">
 									<div class="t"><?php echo esc_html( $title ); ?></div>
@@ -591,25 +593,8 @@ final class WPAB_Admin {
 					}
 
 					var cards = Array.prototype.slice.call(document.querySelectorAll('.wpabd-dcard'));
-						var queue = cards.slice();
-						function next() {
-							var card = queue.shift();
-							if (!card) { return; }
-							var id = card.getAttribute('data-design');
-							var thumb = card.querySelector('.wpabd-dthumb');
-							// A card with a picture needs nothing fetched — that is the point.
-							if (!thumb || thumb.classList.contains('is-img')) { return next(); }
-							var frame = thumb.querySelector('iframe');
-							var load = thumb.querySelector('.wpabd-dload');
-							fitThumb(card);
-							fetchHtml(id, 'home').then(function (html) {
-								frame.srcdoc = html;
-								if (load) { load.style.display = 'none'; }
-							}).catch(function () {
-								if (load) { load.textContent = 'Preview unavailable'; }
-							}).then(next);
-						}
-						next(); next(); next();
+						// Cards are plain <img> tags now — the browser loads them, the
+						// CDN caches them, and nothing here fetches a page per card.
 
 						var resizeTimer = null;
 						window.addEventListener('resize', function () {

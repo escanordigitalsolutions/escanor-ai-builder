@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { createServiceClient } from "@/lib/supabase/service";
+import { renderThumbnail } from "@/lib/agent/thumbnail";
 
 /**
  * GET /api/agent/design-thumb/{designId} — the design's preview picture.
@@ -19,6 +20,10 @@ import { createServiceClient } from "@/lib/supabase/service";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Rendering on a miss takes seconds, so this function needs the room the
+// design job has, not an API route's default.
+export const maxDuration = 60;
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ designId: string }> }
@@ -29,13 +34,36 @@ export async function GET(
     return new NextResponse("Not found.", { status: 404 });
   }
 
-  const { data: design } = await createServiceClient()
+  const db = createServiceClient();
+
+  const { data: design } = await db
     .from("ai_designs")
-    .select("assets")
+    .select("html, assets")
     .eq("id", designId)
     .single();
 
-  const thumb = (design?.assets as { thumb?: { jpeg?: string } } | null)?.thumb;
+  if (!design) {
+    return new NextResponse("Not found.", { status: 404 });
+  }
+
+  let thumb = (design.assets as { thumb?: { jpeg?: string } } | null)?.thumb;
+
+  // A design made before thumbnails existed gets its picture the first time
+  // anything asks for it — once, then stored, then immutable like the rest.
+  // This is what backfills the archive: the dashboard requesting its own
+  // images IS the backfill, sixty lazy renders instead of a migration.
+  if (!thumb?.jpeg && typeof design.html === "string" && design.html.length > 0) {
+    const rendered = await renderThumbnail(design.html);
+
+    if (rendered) {
+      await db
+        .from("ai_designs")
+        .update({ assets: { ...((design.assets ?? {}) as object), thumb: rendered } })
+        .eq("id", designId);
+
+      thumb = rendered;
+    }
+  }
 
   if (!thumb?.jpeg) {
     return new NextResponse("This design has no preview picture.", { status: 404 });

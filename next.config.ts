@@ -18,6 +18,10 @@ const nextConfig: NextConfig = {
       "./node_modules/@sparticuz/chromium/**",
       "./node_modules/puppeteer-core/**",
     ],
+    "/api/agent/design-thumb/[designId]": [
+      "./node_modules/@sparticuz/chromium/**",
+      "./node_modules/puppeteer-core/**",
+    ],
   },
 };
 

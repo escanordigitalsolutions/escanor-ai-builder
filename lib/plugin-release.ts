@@ -11,13 +11,16 @@
  * zip that has been renamed away.
  */
 export const PLUGIN_RELEASE = {
-  version: "1.41.0",
+  version: "1.42.0",
   file: "/plugin/meikero-bridge.zip",
   released: "2026-09-01",
   requiresWordPress: "6.2",
   requiresPhp: "7.4",
   testedWordPress: "6.9",
   changelog:
+    "<h4>1.42.0</h4><ul>" +
+    "<li>The dashboard archive no longer loads any design's page. Every card is a cached picture; a design from before pictures existed gets one the first time its card is shown, automatically.</li>" +
+    "</ul>" +
     "<h4>1.41.0</h4><ul>" +
     "<li>Experiment: the art director and homepage designer now run on bare-minimum prompts \u2014 the JSON schema, the technical contract, and nothing else. Compare a few generations against the archive.</li>" +
     "<li>Every design list \u2014 wp-admin and meikero.com \u2014 now shows the one-time preview picture instead of loading pages.</li>" +
